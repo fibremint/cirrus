@@ -1,113 +1,269 @@
-use std::iter::Copied;
+use std::{iter::Copied, any::Any, collections::{HashMap, VecDeque}, sync::{Arc, Mutex, Weak, RwLock}, borrow::Borrow, rc::Rc};
 
 use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
 
-pub fn sample_next(o: &mut SampleRequestOption) -> f32 {
-    o.tick();
-    o.tone(440.0) * 0.1 + o.tone(880.) * 0.1
+use crate::request::AudioRequest;
+
+trait Playable {
+    fn play(&self);
+    fn pause(&self);
 }
 
-pub struct SampleRequestOption {
-    pub sample_rate: f32,
-    pub sample_clock: f32,
-    pub channels: usize,
+pub struct AudioPlayer {
+    ctx: AudioContext,
+    // audio_source_lists: Arc<Vec<String>>,
+    streams: HashMap<String, AudioStream>,
+    // streams: HashMap<String, AudioStream<Box<dyn Send>>>,
 }
 
-impl SampleRequestOption {
-    fn tone(&self, freq: f32) -> f32 {
-        (self.sample_clock * freq * 2.0 * std::f32::consts::PI / self.sample_rate).sin()
-    }
+impl AudioPlayer {
+    pub fn new() -> Self {
+        // let audio_source_lsits = audio_source_lists.clone();
+        let ctx = AudioContext::new().unwrap();
 
-    fn tick(&mut self) {
-        self.sample_clock = (self.sample_clock + 1.0) % self.sample_rate;
-    }
-}
-
-pub fn stream_setup_for<F>(on_sample: F) -> Result<cpal::Stream, anyhow::Error>
-where
-    F: FnMut(&mut SampleRequestOption) -> f32 + std::marker::Send + Copy + 'static,
-{
-    let (_, device, config) = host_device_setup()?;
-
-    match config.sample_format() {
-        cpal::SampleFormat::F32 => stream_make::<f32, _>(&device, &config.into(), on_sample),
-        cpal::SampleFormat::I16 => stream_make::<i16, _>(&device, &config.into(), on_sample),
-        cpal::SampleFormat::U16 => stream_make::<u16, _>(&device, &config.into(), on_sample),
-
-    }
-}
-
-fn host_device_setup() -> Result<(cpal::Host, cpal::Device, cpal::SupportedStreamConfig), anyhow::Error> {
-    let host = cpal::default_host();
-
-    let device = host
-        .default_output_device()
-        .ok_or_else(|| anyhow::Error::msg("Default output device is not available"))?;
-    
-    println!("Output device: {}", device.name()?);
-
-    let config = device.default_output_config()?;
-    println!("Default output config: {:?}", config);
-
-    Ok((host, device, config))
-}
-
-fn stream_make<T, F>(
-    device: &cpal::Device,
-    config: &cpal::StreamConfig,
-    on_sample: F,
-) -> Result<cpal::Stream, anyhow::Error>
-where
-    T: cpal::Sample,
-    F: FnMut(&mut SampleRequestOption) -> f32 + std::marker::Send + Copy + 'static,
-{
-    let sample_rate = config.sample_rate.0 as f32;
-    let sample_clock = 0f32;
-    let channels = config.channels as usize;
-    let mut request = SampleRequestOption {
-        sample_rate,
-        sample_clock,
-        channels,
-    };
-
-    let err_fn = |err| println!("Error building output soud stream: {}", err);
-
-    let stream = device.build_output_stream(
-        config, 
-        move |output: &mut [T], _: &cpal::OutputCallbackInfo| {
-            on_window(output, &mut request, on_sample)
-        }, 
-        err_fn
-    )?;
-
-    Ok(stream)
-}
-
-fn on_window<T, F>(output: &mut [T], request: &mut SampleRequestOption, mut on_sample: F)
-where 
-    T: cpal::Sample,
-    F: FnMut(&mut SampleRequestOption) -> f32 + std::marker::Send + Copy,
-{
-    for frame in output.chunks_mut(request.channels) {
-        let value: T = cpal::Sample::from::<f32>(&on_sample(request));
-        for sample in frame.iter_mut() {
-            *sample = value;
+        Self {
+            ctx,
+            streams: HashMap::new(),
         }
     }
+
+    pub fn add_audio(&mut self, uri: String) -> Result<(), anyhow::Error> {
+        let audio_source = AudioSource::new(uri.clone()).unwrap();
+        let audio_stream = AudioStream::new(&self.ctx, audio_source)?;
+
+        self.streams.insert(uri.clone(), audio_stream);
+
+        Ok(())
+    }
+
+    pub fn remove_audio(&self) {
+
+    }
+
+    pub fn set_next(&self, uri: String) {
+
+    }
+
+    pub fn set_previous(&self, uri: String) {
+
+    }
+
+    pub fn add_stream(&self, uri: String) {
+        // let stream = Arc::new(
+        //     AudioStream::new(uri)
+        // );
+
+        // let stream = AudioStream::new(uri);
+
+        // self.streams.insert(uri, stream);
+        // self.streams.extend_one((uri, stream));
+    }
+
+    pub fn remove_stream(&self, target_uri: String) {
+
+    }
+
+    pub fn play(&self) {
+        println!("play audio");
+    }
+
+    pub fn pause(&self) {
+        println!("pause audio");
+    }
 }
 
+struct AudioContext {
+    // host: cpal::Host,
+    device: cpal::Device,
+    stream_config: cpal::StreamConfig,
+}
 
+impl AudioContext {
+    fn new() -> Result<Self, anyhow::Error> {
+        let host = cpal::default_host();
+    
+        let device = host
+            .default_output_device()
+            .ok_or_else(|| anyhow::Error::msg("Default output device is not available"))?;
+        
+        println!("Output device: {}", device.name()?);
+    
+        let config = device.default_output_config()?.into();
+        println!("Default output config: {:?}", config);
 
-// pub struct AudioPlayer<'a> {
-//     audio_stream: &'a cpal::Stream
-// }
+        Ok(Self {
+            // host,
+            device,
+            stream_config: config,
+        })
+    }
+}
 
-// impl<'a> AudioPlayer<'a> {
-//     fn new() -> Self {
-//         Self 
+enum PlayStatus {
+    Play,
+    Pause,
+}
+
+struct AudioSample {
+    source: AudioSource,
+    // sample_buffer: VecDeque<f32>,
+    sample_buffer: Arc<RwLock<VecDeque<f32>>>,
+
+}
+
+impl AudioSample {
+    pub fn new(source: AudioSource) -> Self {
+        Self {
+            source,
+            sample_buffer: Arc::new(RwLock::new(VecDeque::new())),
+        }
+    }
+    
+    fn play_for(&self, output: &mut [f32]) {
+        // for frame in output.chunks_mut(self.source.metadata.channels) {
+        //     // let value: T = cpal::Sample::from::<f32>(&on_sample(request));
+        //     // let sample_buffer = self.sample_buffer.lock().unwrap();
+        //     let sample_buffer = self.sample_buffer.write().unwrap();
+        //     let sample_data = match self.sample_buffer. {
+        //         Some(s) => s,
+        //         None => {
+        //             println!("end of sample");
+        //             self.pause();
+        //             &0.0
+        //         }
+        //     };
+
+        //     drop(sample_buffer);
+
+        //     for sample in frame.iter_mut() {
+        //         *sample = sample_data;
+        //     }
+        // }
+    }
+
+    // pub fn sample_play(self: Arc<Self>, output: &mut [f32]) {
+    //     // for frame in output.chunks_mut(self.source.metadata.channels) {
+    //     //     // let value: T = cpal::Sample::from::<f32>(&on_sample(request));
+    //     //     // let sample_buffer = self.sample_buffer.lock().unwrap();
+    //     //     let sample_buffer = self.sample_buffer.write().unwrap();
+    //     //     let sample_data = match self.sample_buffer. {
+    //     //         Some(s) => s,
+    //     //         None => {
+    //     //             println!("end of sample");
+    //     //             self.pause();
+    //     //             &0.0
+    //     //         }
+    //     //     };
+
+    //     //     drop(sample_buffer);
+
+    //     //     for sample in frame.iter_mut() {
+    //     //         *sample = sample_data;
+    //     //     }
+    //     // }
+    // }
+}
+
+struct AudioStream {
+    stream: cpal::Stream,
+    // source: AudioSource, 
+    // sample_buffer: Arc<RwLock<VecDeque<f32>>>,
+    // sample_buffer: VecDeque<f32>,
+    audio_sample: Arc<AudioSample>,
+    // audio_sample: Arc<RwLock<AudioSample>>,
+    play_status: PlayStatus,
+}
+
+// unsafe impl Send for AudioStream {}
+
+impl AudioStream {
+    pub fn new(ctx: &AudioContext, source: AudioSource) -> Result<Self, anyhow::Error> {
+        let sample = ctx.stream_config.sample_rate.0 as f32;
+        let channels = ctx.stream_config.channels as usize;
+        // let audio_sample = AudioSample::new(source);
+        let audio_sample = Arc::new(AudioSample::new(source));
+
+        let sample_play_err_fn = |err: cpal::StreamError| {
+            println!("an error occured on stream: {}", err);
+        };
+
+        let _audio_sample = audio_sample.clone();
+
+        let stream = ctx.device.build_output_stream(
+            &ctx.stream_config,
+            move |output: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                _audio_sample.play_for(output)
+            }, 
+            sample_play_err_fn
+        )?;
+
+        Ok(Self {
+            stream,
+            audio_sample,
+            play_status: PlayStatus::Pause,
+        })
+    }
+}
+
+// impl Playable for AudioStream {
+//     fn play(&self) {
+//         self.stream.play();
+//     }
+
+//     fn pause(&self) {
+//         self.stream.pause();
 //     }
 // }
 
-// struct PlayerStatus {
+struct AudioSource {
+    id: String,
+    metadata: AudioSourceMetadata,
+    // source_buffer: Arc<RwLock<VecDeque<u8>>>,
+}
 
-// }
+impl AudioSource {
+    fn new(uri: String) -> Result<Self, anyhow::Error> {
+        // let metadata = AudioRequest::get_audio_source_metadata();
+        let metadata = AudioSourceMetadata::new(
+            16,
+            44100,
+            2,
+            70_000_000
+        );
+
+        Ok(Self {
+            id: String::from("test-source"),
+            metadata,
+            // source_buffer: Arc::new(RwLock::new(VecDeque::new())),
+        })
+    }
+
+    fn get_source_data(length: f32) {
+
+    }
+}
+
+struct AudioSourceMetadata {
+    bit_rate: u32,
+    sample_rate: u32,
+    channels: usize,
+    content_bytes: u32,
+    content_ms: u32,
+}
+
+impl AudioSourceMetadata {
+    fn new(bit_rate: u32, sample_rate: u32, channels: usize, content_bytes: u32) -> Self {
+        // let content_ms = 
+        Self {
+            bit_rate,
+            sample_rate,
+            channels,
+            content_bytes,
+            content_ms: 0,
+        }
+    }
+
+    fn get_byte_address_by_ms(&self, ms: u32) -> u32 {
+        return ms / self.content_ms * self.content_bytes  
+    }
+}
