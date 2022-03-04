@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package audio;
+
+service AudioMeta {
+    rpc GetMeta (AudioMetaReq) returns (AudioMetaRes) {}
+}
+
+message AudioMetaReq {
+    string id = 1;
+}
+
+message AudioMetaRes {
+    string content = 1;
+}
