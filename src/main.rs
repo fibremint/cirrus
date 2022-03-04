@@ -88,50 +88,25 @@
 //     run();
 // }
 
-use std::fmt::format;
+pub mod audio;
+pub mod server;
 
-use tonic::{transport::Server, Request, Response, Status};
-
-use audio_meta::audio_meta_server::{AudioMeta, AudioMetaServer};
-use audio_meta::{AudioMetaReq, AudioMetaRes};
-
-pub mod audio_meta {
-    tonic::include_proto!("audio");
-}
-
-#[derive(Debug, Default)]
-pub struct AudioMetaSvc {}
-
-#[tonic::async_trait]
-impl AudioMeta for AudioMetaSvc {
-    // fn get_meta< 'life0, 'async_trait>(& 'life0 self,request:tonic::Request<audio_meta::AudioMetaReq> ,) 
-    // ->  core::pin::Pin<Box<dyn core::future::Future<Output = Result<tonic::Response<audio_meta::AudioMetaRes> ,tonic::Status> > + core::marker::Send+ 'async_trait> >where 'life0: 'async_trait,Self: 'async_trait {
-    //     todo!()
-    // }
-
-    async fn get_meta(
-        &self,
-        request: Request<AudioMetaReq>
-    ) -> Result<Response<AudioMetaRes>, Status> {
-        println!("Got a request: {:?}", request);
-
-        let resp = AudioMetaRes {
-            content: format!("msg 1"),
-        };
-
-        Ok(Response::new(resp))
-    }
-} 
+// pub mod audio_meta {
+//     tonic::include_proto!("audio");
+// }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "[::1]:50000".parse()?;
-    let audio_meta_svc = AudioMetaSvc::default();
+    // let addr = "[::1]:50000".parse()?;
+    let addr = "[::1]:50000";
+    // let audio_meta_svc = AudioMetaSvc::default();
 
-    Server::builder()
-        .add_service(AudioMetaServer::new(audio_meta_svc))
-        .serve(addr)
-        .await?;
+    // Server::builder()
+    //     .add_service(AudioMetaServer::new(audio_meta_svc))
+    //     .serve(addr)
+    //     .await?;
 
+    server::run_server(addr).await?;
+    
     Ok(())
 }

@@ -7,9 +7,12 @@ service AudioMeta {
 }
 
 message AudioMetaReq {
-    string id = 1;
+    string filename = 1;
 }
 
 message AudioMetaRes {
-    string content = 1;
+    uint32 bit_rate = 1;
+    uint32 channels = 2;
+    uint32 sample_frames = 3;
+    uint32 sample_rate = 4;
 }
