@@ -1,24 +1,19 @@
 use tonic::{transport::Server, Request, Response, Status};
 
-use audio_meta::audio_meta_server::{AudioMeta, AudioMetaServer};
-use audio_meta::{AudioMetaReq, AudioMetaRes};
-
-pub mod audio_meta {
+pub mod audio_proto {
     tonic::include_proto!("audio");
 }
+
+use audio_proto::audio_svc_server::{AudioSvc, AudioSvcServer};
+use audio_proto::{AudioMetaReq, AudioMetaRes, AudioDataReq, AudioDataRes};
 
 use crate::audio;
 
 #[derive(Debug, Default)]
-pub struct AudioMetaSvc {}
+pub struct AudioSvcImpl {}
 
 #[tonic::async_trait]
-impl AudioMeta for AudioMetaSvc {
-    // fn get_meta< 'life0, 'async_trait>(& 'life0 self,request:tonic::Request<audio_meta::AudioMetaReq> ,) 
-    // ->  core::pin::Pin<Box<dyn core::future::Future<Output = Result<tonic::Response<audio_meta::AudioMetaRes> ,tonic::Status> > + core::marker::Send+ 'async_trait> >where 'life0: 'async_trait,Self: 'async_trait {
-    //     todo!()
-    // }
-
+impl AudioSvc for AudioSvcImpl {
     async fn get_meta(
         &self,
         request: Request<AudioMetaReq>
@@ -45,14 +40,38 @@ impl AudioMeta for AudioMetaSvc {
 
         Ok(Response::new(audio_meta_res))
     }
+
+    // fn get_data< 'life0, 'async_trait>(& 'life0 self,request:tonic::Request<audio_proto::AudioDataReq> ,) ->  core::pin::Pin<Box<dyn core::future::Future<Output = Result<tonic::Response<audio_proto::AudioDataRes> ,tonic::Status> > + core::marker::Send+ 'async_trait> >where 'life0: 'async_trait,Self: 'async_trait {
+    //     todo!()
+    // }
+
+    async fn get_data(
+        &self,
+        request: Request<AudioDataReq>
+    ) -> Result<Response<AudioDataRes>, Status> {
+        println!("Got a request: {:?}", request);
+
+        let filepath = &request.get_ref().filename;
+        // let filepath = 
+        let byte_start = request.get_ref().byte_start as usize;
+        let byte_end = request.get_ref().byte_end as usize;
+        let audio_data_res = audio::read_data(filepath, byte_start, byte_end).unwrap();
+
+        // let audio_data_res = AudioDataRes {
+        //     content: Vec::<u8>::new()
+        // };
+
+        Ok(Response::new(audio_data_res))
+
+    }
 }
 
 pub async fn run_server(addr: &str) -> Result<(), Box<dyn std::error::Error>> {
     let addr = addr.parse()?;
-    let audio_meta_svc = AudioMetaSvc::default();
+    let audio_svc = AudioSvcImpl::default();
 
     let server = Server::builder()
-        .add_service(AudioMetaServer::new(audio_meta_svc))
+        .add_service(AudioSvcServer::new(audio_svc))
         .serve(addr)
         .await?;
 
