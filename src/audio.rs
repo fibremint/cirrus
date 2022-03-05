@@ -167,35 +167,56 @@ impl AudioSample {
     }
 
     pub fn run_buffer_thread(self: Arc<Self>) {
-        let buffer_margin: u32 = 15;
-        let fetch_buffer_sec: u32 = 30;
-        let sample_frames = self.source.metadata.sample_frames;
+        let buffer_margin: f32 = 20.;
+        let fetch_buffer_sec: f32 = 50.;
+        // let sample_frames = self.source.metadata.sample_frames;
+        let content_length = self.source.metadata.sample_frames as f32 / self.source.metadata.sample_rate as f32;
+        println!("content length: {}", content_length);
 
         tokio::spawn(async move {
             loop {
                 let sample_buffer_len = self.sample_buffer.read().unwrap().len();
+                let remain_sample_buffer = sample_buffer_len as f32 / self.source.metadata.sample_rate as f32 / 2.0;
                 let current_sample_frame = self.current_sample_frame.load(Ordering::SeqCst);
+                let current_pos = (current_sample_frame as f32 / self.source.metadata.sample_rate as f32);
 
                 println!(
-                    "current pos: {}, played samples: {}, remain sample buffer len: {}",
-                    (current_sample_frame as f32 / self.source.metadata.sample_rate as f32) / 2.0,
-                    current_sample_frame, 
-                    sample_buffer_len
+                    "current pos: {:.2}s\tplayed samples: {}\tremain sample buffer: {:.2}s",
+                    current_pos,
+                    current_sample_frame,
+                    remain_sample_buffer
                 );
                 // if current_sample_frame + (self.source.metadata.sample_rate * 15) as usize > sample_buffer_len  {
 
-                if current_sample_frame + sample_buffer_len < sample_frames {
-                    if (self.source.metadata.sample_rate * buffer_margin) as usize > sample_buffer_len {
+                if content_length - current_pos > buffer_margin {
+                // if current_pos + remain_sample_buffer < content_length {
+                    if buffer_margin > remain_sample_buffer {
                         println!("fetch audio sample buffer");
-                        self.get_buffer_for(fetch_buffer_sec * 1000).await.unwrap();
+                        self.get_buffer_for(fetch_buffer_sec as u32 * 1000).await.unwrap();
                     } else if sample_buffer_len == 0 {
                         self.buffer_status.store(AudioSampleStatus::FillBuffer as usize, Ordering::SeqCst);
                     } else {
                         self.buffer_status.store(AudioSampleStatus::Play as usize, Ordering::SeqCst);
                     }
+
+                    sleep(Duration::from_millis(100)).await;
+
                 } else {
                     break;
                 }
+
+                // if current_sample_frame + sample_buffer_len < sample_frames {
+                //     if (self.source.metadata.sample_rate * buffer_margin) as usize > sample_buffer_len {
+                //         println!("fetch audio sample buffer");
+                //         self.get_buffer_for(fetch_buffer_sec * 1000).await.unwrap();
+                //     } else if sample_buffer_len == 0 {
+                //         self.buffer_status.store(AudioSampleStatus::FillBuffer as usize, Ordering::SeqCst);
+                //     } else {
+                //         self.buffer_status.store(AudioSampleStatus::Play as usize, Ordering::SeqCst);
+                //     }
+                // } else {
+                //     break;
+                // }
 
                 // if (self.source.metadata.sample_rate * buffer_margin) as usize > sample_buffer_len {
                 //     println!("fetch audio sample buffer");
@@ -206,7 +227,7 @@ impl AudioSample {
                 //     self.buffer_status.store(AudioSampleStatus::Play as usize, Ordering::SeqCst);
                 // }
     
-                sleep(Duration::from_millis(100)).await;
+                // sleep(Duration::from_millis(100)).await;
             }
         });
     }
@@ -237,8 +258,8 @@ impl AudioSample {
                 
 
                 let resp = api::get_audio_data(
-                    &self.source.id, 
-                    last_buf_req_pos as u32 + 1, 
+                    &self.source.id,
+                    std::cmp::min(last_buf_req_pos as u32 + 1, self.source.metadata.sample_frames as u32),
                     std::cmp::min(last_buf_req_pos as u32 + req_samples, self.source.metadata.sample_frames as u32)).await.unwrap();
                 // let resp = api::get_audio_data(
                 //     &self.source.id, 
@@ -283,15 +304,20 @@ impl AudioSample {
 
             // let current_sample_frame = self.current_sample_frame.load(Ordering::SeqCst);
 
-            let mut sample_buffer= self.sample_buffer.write().unwrap();
+            let mut sample_buffer = self.sample_buffer.write().unwrap();
             
             for frame in output.chunks_mut(2) {
                 for point in 0..2 as usize {
-                    frame[point] = sample_buffer.pop_front().unwrap();
-                    let current_sample_frame = self.current_sample_frame.load(Ordering::SeqCst);
-                    self.current_sample_frame.store(current_sample_frame + 1, Ordering::SeqCst);
+                    // frame[point] = sample_buffer.pop_front().unwrap();
+                    match sample_buffer.pop_front() {
+                        Some(sample) => frame[point] = sample,
+                        None => break,
+                    }
                     // self.current_sample_frame.store(self.current_sample_frame.load(Ordering::SeqCst), Ordering::SeqCst);
                 }
+
+                let current_sample_frame = self.current_sample_frame.load(Ordering::SeqCst);
+                self.current_sample_frame.store(current_sample_frame + 1, Ordering::SeqCst);
             }
             // for frame in output.chunks_mut(2) {
             //     if let Some(sample) = sample_buffer.pop_front() {
@@ -453,14 +479,6 @@ struct AudioSource {
 
 impl AudioSource {
     async fn new(uri: &str) -> Result<Self, anyhow::Error> {
-        // let metadata = AudioRequest::get_audio_source_metadata();
-        // let metadata = AudioSourceMetadata::new(
-        //     16,
-        //     44100,
-        //     2,
-        //     70_000_000
-        // );
-
         let metadata_res = api::get_audio_meta(uri).await.unwrap().into_inner();
 
         let metadata = AudioSourceMetadata {
