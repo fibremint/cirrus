@@ -1,10 +1,6 @@
-use cpal::traits::StreamTrait;
-
 pub mod audio;
 pub mod client;
 pub mod request;
-
-use crate::request::AudioRequest;
 
 #[tokio::main]
 async fn run() -> anyhow::Result<()> {
@@ -12,7 +8,7 @@ async fn run() -> anyhow::Result<()> {
     audio_player.add_audio("test-source.aiff").await?;
     println!("main: done add audio");
     audio_player.play().await;
-    std::thread::sleep(std::time::Duration::from_millis(10_000));
+    std::thread::sleep(std::time::Duration::from_millis(100_000));
 
     // let res = client::get_audio_data("test-source.aiff", 0, 1323000).await.unwrap();
     // let content = res.into_inner().content;
@@ -39,5 +35,10 @@ fn main() {
     // Ok(())
     run();
     std::thread::sleep(std::time::Duration::from_millis(100_000));
+    // let test = vec![1, 2, 3, 4, 5, 6];
+    // let res = test.chunks(2)
+    //     .map(|chunk| chunk.iter().sum::<i32>())
+    //     .collect::<Vec<i32>>();
 
+    // println!("{:?}", res);
 }

@@ -1,5 +1,6 @@
-use std::{iter::Copied, any::Any, collections::{HashMap, VecDeque}, sync::{Arc, Mutex, Weak, atomic::AtomicUsize}, borrow::{Borrow, BorrowMut}, rc::Rc, thread};
-use tokio::sync::RwLock;
+use std::{iter::Copied, any::Any, collections::{HashMap, VecDeque}, sync::{Arc, Mutex, Weak, atomic::{AtomicUsize, Ordering}, RwLock}, borrow::{Borrow, BorrowMut}, rc::Rc, thread};
+// std::sync::atomic::Ordering;
+// use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
 
 use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
@@ -121,7 +122,7 @@ enum PlayStatus {
     Pause,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum AudioSampleStatus {
     Init,
     FillBuffer,
@@ -145,7 +146,8 @@ struct AudioSample {
     source: AudioSource,
     // sample_buffer: VecDeque<f32>,
     sample_buffer: Arc<RwLock<VecDeque<f32>>>,
-    current_sample_frame: usize,
+    // current_sample_frame: usize,
+    current_sample_frame: Arc<AtomicUsize>,
     // buffer_status: Arc<RwLock<AudioSampleStatus>>,
     buffer_status: Arc<AtomicUsize>,
 
@@ -156,7 +158,8 @@ impl AudioSample {
         Self {
             source,
             sample_buffer: Arc::new(RwLock::new(VecDeque::new())),
-            current_sample_frame: 0,
+            current_sample_frame: Arc::new(AtomicUsize::new(0)),
+            // current_sample_frame: 0,
             // buffer_status: Arc::new(RwLock::new(AudioSampleStatus::FillBuffer)),
             buffer_status: Arc::new(AtomicUsize::new(AudioSampleStatus::Init as usize)),
         }
@@ -209,20 +212,29 @@ impl AudioSample {
             loop {
                 // println!("run buffer fill task");
 
-                let sample_buffer_len = {
-                    self.sample_buffer.read().await.len()
-                };
+                // let sample_buffer_len = {
+                //     self.sample_buffer.read().await.len()
+                // };
+
+                let sample_buffer_len = self.sample_buffer.read().unwrap().len();
+                let current_sample_frame = self.current_sample_frame.load(Ordering::SeqCst);
     
-                if self.current_sample_frame + (self.source.metadata.sample_rate * 15) as usize > sample_buffer_len  {
+                // if self.current_sample_frame + (self.source.metadata.sample_rate * 15) as usize > sample_buffer_len  {
+                if current_sample_frame + (self.source.metadata.sample_rate * 15) as usize > sample_buffer_len  {
+
                     // let mut buffer_status = self.buffer_status.write().await.borrow_mut();
                     // let buffer_status = self.buffer_status.borrow_mut();
                     // buffer_status = RwLock::new(AudioSampleStatus::FillBuffer);
-                    self.buffer_status.store(AudioSampleStatus::FillBuffer as usize, std::sync::atomic::Ordering::SeqCst);
+                    // self.buffer_status.store(AudioSampleStatus::FillBuffer as usize, Ordering::SeqCst);
                     
                     println!("fill buffer");
                     self.get_buffer_for(30 * 1000).await.unwrap();
-                } else {
-                    self.buffer_status.store(AudioSampleStatus::Play as usize, std::sync::atomic::Ordering::SeqCst);
+                } else if sample_buffer_len == 0 {
+                    self.buffer_status.store(AudioSampleStatus::FillBuffer as usize, Ordering::SeqCst);
+                } 
+                
+                else {
+                    self.buffer_status.store(AudioSampleStatus::Play as usize, Ordering::SeqCst);
 
                     println!("enough buffer");
                 }
@@ -282,19 +294,31 @@ impl AudioSample {
         let req_samples = ms * self.source.metadata.sample_rate / 1000;
         
         println!("req sample");
+        let current_sample_frame = self.current_sample_frame.load(Ordering::SeqCst);
         let sample_res = api::get_audio_data(
-            &self.source.id, 
-            self.current_sample_frame as u32, self.current_sample_frame as u32 + req_samples
+            &self.source.id,
+            current_sample_frame as u32, current_sample_frame as u32 + req_samples
         ).await.unwrap();
 
+        // let sample_res = api::get_audio_data(
+        //     &self.source.id, 
+        //     self.current_sample_frame as u32, self.current_sample_frame as u32 + req_samples
+        // ).await.unwrap();
+
         println!("transform sample res");
+        // ref: https://users.rust-lang.org/t/convert-slice-u8-to-u8-4/63836
         let sample_res = sample_res.into_inner().content
-            .iter()
-            .map(|item| *item as f32 / sample_rate as f32)
+            .chunks(2)
+            .map(|chunks| i16::from_be_bytes(chunks.try_into().unwrap()) as f32 / sample_rate as f32)
             .collect::<Vec<f32>>();
+        // let sample_res = sample_res.into_inner().content
+        //     .iter()
+        //     .map(|item| *item as f32 / sample_rate as f32)
+        //     .collect::<Vec<f32>>();
         println!("get sample res");
         // sample_res.get_ref().content
-        let mut sample_buffer = self.sample_buffer.write().await;
+        // let mut sample_buffer = self.sample_buffer.write().await;
+        let mut sample_buffer = self.sample_buffer.write().unwrap();
         println!("done sample buffer write await");
 
         // sample_buffer.extend(sample_res.get_ref().content);
@@ -307,12 +331,53 @@ impl AudioSample {
     }
     
     fn play_for(&self, output: &mut [f32]) {
-        println!("run play for function");
+        // println!("run play for function");
 
         let buffer_status = self.buffer_status.load(std::sync::atomic::Ordering::SeqCst);
         let buffer_status = AudioSampleStatus::from(buffer_status);
 
-        println!("buf status: {:?}", buffer_status);
+        // println!("buf status: {:?}", buffer_status);
+
+        if buffer_status == AudioSampleStatus::Play {
+            // println!("play content function");
+
+            let buf_len = self.sample_buffer.read().unwrap().len();
+            // println!("buf len: {}", buf_len);
+
+            let current_sample_frame = self.current_sample_frame.load(Ordering::SeqCst);
+
+            let mut sample_buffer= self.sample_buffer.write().unwrap();
+            
+            for frame in output.chunks_mut(2) {
+                for point in 0..2 as usize {
+                    frame[point] = sample_buffer.pop_front().unwrap();
+                }
+            }
+            // for frame in output.chunks_mut(2) {
+            //     if let Some(sample) = sample_buffer.pop_front() {
+            //         println!("current_sample: {}, sample_frame_pos: {}", sample, current_sample_frame);
+            //         let value: f32 = cpal::Sample::from::<f32>(&sample);
+
+            //         for sample in frame.iter_mut() {
+            //             *sample = value;
+            //         }
+
+            //         self.current_sample_frame.store(current_sample_frame + 1, Ordering::SeqCst);
+            //     } else {
+            //         println!("empty sample buffer");
+            //         break;
+            //     }
+
+            // }
+            // if let Some(sample) = sample_buffer.pop_front() {
+            //     println!("current_sample: {}, sample_frame_pos: {}", sample, current_sample_frame);
+
+            //     self.current_sample_frame.store(current_sample_frame + 1, Ordering::SeqCst);
+            // } else {
+            //     println!("empty sample buffer");
+            // }
+
+        }
 
         // for frame in output.chunks_mut(self.source.metadata.channels) {
         //     // let value: T = cpal::Sample::from::<f32>(&on_sample(request));
