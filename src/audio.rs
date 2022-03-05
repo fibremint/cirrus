@@ -150,7 +150,7 @@ struct AudioSample {
     current_sample_frame: Arc<AtomicUsize>,
     // buffer_status: Arc<RwLock<AudioSampleStatus>>,
     buffer_status: Arc<AtomicUsize>,
-
+    last_buf_req_pos: Arc<AtomicUsize>,
 }
 
 impl AudioSample {
@@ -162,170 +162,106 @@ impl AudioSample {
             // current_sample_frame: 0,
             // buffer_status: Arc::new(RwLock::new(AudioSampleStatus::FillBuffer)),
             buffer_status: Arc::new(AtomicUsize::new(AudioSampleStatus::Init as usize)),
+            last_buf_req_pos: Arc::new(AtomicUsize::new(0)),
         }
     }
 
-    // pub async fn run_buffer_thread(&self) {
-    //     // let sample_buffer = Arc::clone(&self.sample_buffer);
-
-    //     // thread::spawn(move || {
-    //     //     loop {
-    //     //         println!("run buffer thread");
-    //     //     }
-    //     // });
-
-    //     loop {
-    //         println!("run buffer thread");
-
-    //         let sample_buffer = self.sample_buffer.read().await;
-
-    //         if self.current_sample_frame < sample_buffer.len() + (self.source.metadata.sample_rate * 15) as usize {
-    //             println!("fill buffer");
-    //             self.get_buffer_for(30 * 1000).await.unwrap();
-    //             println!("done fill buffer");
-    //         } else {
-    //             println!("buffer enough");
-    //         }
-    //         // let buf_len = sample_buffer.len();
-
-    //         // println!("buf len: {}", buf_len);
-    //     }
-
-    //     // println!("run buffer thread");
-
-    //     // let sample_buffer = self.sample_buffer.read().await;
-
-    //     // if self.current_sample_frame < sample_buffer.len() + (self.source.metadata.sample_rate * 15) as usize {
-    //     //     println!("fill buffer");
-    //     //     self.get_buffer_for(30 * 1000).await.unwrap();
-    //     //     println!("done fill buffer");
-    //     // } else {
-    //     //     println!("buffer enough");
-    //     // }
-    // }
-
     pub fn run_buffer_thread(self: Arc<Self>) {
-        // let _self = self.clone();
-        // let _self = Arc::get_mut(&mut self).unwrap();
+        let buffer_margin: u32 = 15;
+        let fetch_buffer_sec: u32 = 30;
+        let sample_frames = self.source.metadata.sample_frames;
 
         tokio::spawn(async move {
             loop {
-                // println!("run buffer fill task");
-
-                // let sample_buffer_len = {
-                //     self.sample_buffer.read().await.len()
-                // };
-
                 let sample_buffer_len = self.sample_buffer.read().unwrap().len();
                 let current_sample_frame = self.current_sample_frame.load(Ordering::SeqCst);
-    
-                // if self.current_sample_frame + (self.source.metadata.sample_rate * 15) as usize > sample_buffer_len  {
-                if current_sample_frame + (self.source.metadata.sample_rate * 15) as usize > sample_buffer_len  {
 
-                    // let mut buffer_status = self.buffer_status.write().await.borrow_mut();
-                    // let buffer_status = self.buffer_status.borrow_mut();
-                    // buffer_status = RwLock::new(AudioSampleStatus::FillBuffer);
-                    // self.buffer_status.store(AudioSampleStatus::FillBuffer as usize, Ordering::SeqCst);
-                    
-                    println!("fill buffer");
-                    self.get_buffer_for(30 * 1000).await.unwrap();
-                } else if sample_buffer_len == 0 {
-                    self.buffer_status.store(AudioSampleStatus::FillBuffer as usize, Ordering::SeqCst);
-                } 
-                
-                else {
-                    self.buffer_status.store(AudioSampleStatus::Play as usize, Ordering::SeqCst);
+                println!(
+                    "current pos: {}, played samples: {}, remain sample buffer len: {}",
+                    (current_sample_frame as f32 / self.source.metadata.sample_rate as f32) / 2.0,
+                    current_sample_frame, 
+                    sample_buffer_len
+                );
+                // if current_sample_frame + (self.source.metadata.sample_rate * 15) as usize > sample_buffer_len  {
 
-                    println!("enough buffer");
+                if current_sample_frame + sample_buffer_len < sample_frames {
+                    if (self.source.metadata.sample_rate * buffer_margin) as usize > sample_buffer_len {
+                        println!("fetch audio sample buffer");
+                        self.get_buffer_for(fetch_buffer_sec * 1000).await.unwrap();
+                    } else if sample_buffer_len == 0 {
+                        self.buffer_status.store(AudioSampleStatus::FillBuffer as usize, Ordering::SeqCst);
+                    } else {
+                        self.buffer_status.store(AudioSampleStatus::Play as usize, Ordering::SeqCst);
+                    }
+                } else {
+                    break;
                 }
+
+                // if (self.source.metadata.sample_rate * buffer_margin) as usize > sample_buffer_len {
+                //     println!("fetch audio sample buffer");
+                //     self.get_buffer_for(fetch_buffer_sec * 1000).await.unwrap();
+                // } else if sample_buffer_len == 0 {
+                //     self.buffer_status.store(AudioSampleStatus::FillBuffer as usize, Ordering::SeqCst);
+                // } else {
+                //     self.buffer_status.store(AudioSampleStatus::Play as usize, Ordering::SeqCst);
+                // }
     
                 sleep(Duration::from_millis(100)).await;
             }
         });
-
-        // loop {
-        //     let _self = self.clone();
-        //     // let _self = Arc::clone(&self);
-
-        //     tokio::task::spawn(async move {
-        //         println!("run buffer fill task");
-
-        //         let sample_buffer_len = {
-        //             _self.sample_buffer.read().await.len()
-        //         };
-
-        //         if _self.current_sample_frame + (_self.source.metadata.sample_rate * 15) as usize > sample_buffer_len  {
-        //             println!("fill buffer");
-        //             _self.get_buffer_for(30 * 1000).await.unwrap();
-        //         } else {
-        //             println!("enough buffer");
-        //         }
-
-        //         sleep(Duration::from_millis(100)).await;
-        //     });
-
-        //     // tokio::join!(task());
-
-        //     // task.
-        // }
     }
-
-    // pub fn run_buffer_thread(&self) {
-    //     loop {
-    //         println!("run buffer thread");
-
-    //         tokio::spawn(async move {
-    //             let sample_buffer = _self.sample_buffer.write().await;
-    //             if self.current_sample_frame < sample_buffer.len() + (self.source.metadata.sample_rate * 15) as usize {
-    //                 println!("fill buffer");
-    //                 // _self.get_buffer_for(30 * 1000).await.unwrap();
-    //             } else {
-    //                 println!("buffer enough");
-    //             }
-    //         });
-    //     } 
-
-    // }
 
     // pub async fn get_buffer_for(&self, ms: u32) -> Result<(), anyhow::Error> {
     pub async fn get_buffer_for(&self, ms: u32) -> Result<(), anyhow::Error> {
-        println!("get buffer fn");
         let sample_rate = self.source.metadata.sample_rate;
         let req_samples = ms * self.source.metadata.sample_rate / 1000;
         
-        println!("req sample");
-        let current_sample_frame = self.current_sample_frame.load(Ordering::SeqCst);
-        let sample_res = api::get_audio_data(
-            &self.source.id,
-            current_sample_frame as u32, current_sample_frame as u32 + req_samples
-        ).await.unwrap();
+        println!("request audio data part");
+        let buffer_status = AudioSampleStatus::from(self.buffer_status.load(Ordering::SeqCst));
+        // let current_sample_frame = self.current_sample_frame.load(Ordering::SeqCst) as u32;
+        let last_buf_req_pos = self.last_buf_req_pos.load(Ordering::SeqCst);
 
-        // let sample_res = api::get_audio_data(
-        //     &self.source.id, 
-        //     self.current_sample_frame as u32, self.current_sample_frame as u32 + req_samples
-        // ).await.unwrap();
+        let sample_res = match buffer_status {
+            AudioSampleStatus::Init => {
+                let resp = api::get_audio_data(
+                    &self.source.id, 
+                    0, 
+                    req_samples).await.unwrap();
 
-        println!("transform sample res");
+                self.last_buf_req_pos.store(req_samples as usize, Ordering::SeqCst);
+
+                resp
+            },
+
+            AudioSampleStatus::FillBuffer | AudioSampleStatus::Play => {
+                
+
+                let resp = api::get_audio_data(
+                    &self.source.id, 
+                    last_buf_req_pos as u32 + 1, 
+                    std::cmp::min(last_buf_req_pos as u32 + req_samples, self.source.metadata.sample_frames as u32)).await.unwrap();
+                // let resp = api::get_audio_data(
+                //     &self.source.id, 
+                //     last_buf_req_pos as u32 + 1, 
+                //     last_buf_req_pos as u32 + req_samples).await.unwrap();
+
+                self.last_buf_req_pos.store(req_samples as usize + last_buf_req_pos, Ordering::SeqCst);
+
+                resp
+            },
+        };
+
+        println!("parse audio data response as audio sample");
         // ref: https://users.rust-lang.org/t/convert-slice-u8-to-u8-4/63836
         let sample_res = sample_res.into_inner().content
             .chunks(2)
             .map(|chunks| i16::from_be_bytes(chunks.try_into().unwrap()) as f32 / sample_rate as f32)
             .collect::<Vec<f32>>();
-        // let sample_res = sample_res.into_inner().content
-        //     .iter()
-        //     .map(|item| *item as f32 / sample_rate as f32)
-        //     .collect::<Vec<f32>>();
-        println!("get sample res");
-        // sample_res.get_ref().content
-        // let mut sample_buffer = self.sample_buffer.write().await;
+
         let mut sample_buffer = self.sample_buffer.write().unwrap();
-        println!("done sample buffer write await");
 
-        // sample_buffer.extend(sample_res.get_ref().content);
         sample_buffer.extend(sample_res);
-        println!("done extend sample buffer");
-
-        // drop(sample_buffer);
+        println!("done fetch audio sample buffer");
 
         Ok(())
     }
@@ -338,19 +274,23 @@ impl AudioSample {
 
         // println!("buf status: {:?}", buffer_status);
 
-        if buffer_status == AudioSampleStatus::Play {
+        // if buffer_status == AudioSampleStatus::Play {
+        if buffer_status != AudioSampleStatus::Init {
             // println!("play content function");
 
             let buf_len = self.sample_buffer.read().unwrap().len();
             // println!("buf len: {}", buf_len);
 
-            let current_sample_frame = self.current_sample_frame.load(Ordering::SeqCst);
+            // let current_sample_frame = self.current_sample_frame.load(Ordering::SeqCst);
 
             let mut sample_buffer= self.sample_buffer.write().unwrap();
             
             for frame in output.chunks_mut(2) {
                 for point in 0..2 as usize {
                     frame[point] = sample_buffer.pop_front().unwrap();
+                    let current_sample_frame = self.current_sample_frame.load(Ordering::SeqCst);
+                    self.current_sample_frame.store(current_sample_frame + 1, Ordering::SeqCst);
+                    // self.current_sample_frame.store(self.current_sample_frame.load(Ordering::SeqCst), Ordering::SeqCst);
                 }
             }
             // for frame in output.chunks_mut(2) {
@@ -378,49 +318,7 @@ impl AudioSample {
             // }
 
         }
-
-        // for frame in output.chunks_mut(self.source.metadata.channels) {
-        //     // let value: T = cpal::Sample::from::<f32>(&on_sample(request));
-        //     // let sample_buffer = self.sample_buffer.lock().unwrap();
-        //     let sample_buffer = self.sample_buffer.write().unwrap();
-        //     let sample_data = match self.sample_buffer. {
-        //         Some(s) => s,
-        //         None => {
-        //             println!("end of sample");
-        //             self.pause();
-        //             &0.0
-        //         }
-        //     };
-
-        //     drop(sample_buffer);
-
-        //     for sample in frame.iter_mut() {
-        //         *sample = sample_data;
-        //     }
-        // }
     }
-
-    // pub fn sample_play(self: Arc<Self>, output: &mut [f32]) {
-    //     // for frame in output.chunks_mut(self.source.metadata.channels) {
-    //     //     // let value: T = cpal::Sample::from::<f32>(&on_sample(request));
-    //     //     // let sample_buffer = self.sample_buffer.lock().unwrap();
-    //     //     let sample_buffer = self.sample_buffer.write().unwrap();
-    //     //     let sample_data = match self.sample_buffer. {
-    //     //         Some(s) => s,
-    //     //         None => {
-    //     //             println!("end of sample");
-    //     //             self.pause();
-    //     //             &0.0
-    //     //         }
-    //     //     };
-
-    //     //     drop(sample_buffer);
-
-    //     //     for sample in frame.iter_mut() {
-    //     //         *sample = sample_data;
-    //     //     }
-    //     // }
-    // }
 }
 
 // struct StreamPlayStatus {

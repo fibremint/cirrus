@@ -29,8 +29,8 @@ pub async fn get_audio_data(filepath: &str, sample_pos_start: u32, sample_pos_en
     let request = Request::new({
         AudioDataReq {
             filename: filepath.to_string(),
-            byte_start: sample_pos_start * 4,
-            byte_end: sample_pos_end * 4,
+            byte_start: sample_pos_start,
+            byte_end: sample_pos_end,
         }
     });
 

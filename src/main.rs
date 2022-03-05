@@ -5,10 +5,10 @@ pub mod request;
 #[tokio::main]
 async fn run() -> anyhow::Result<()> {
     let mut audio_player = audio::AudioPlayer::new();
-    audio_player.add_audio("test-source.aiff").await?;
+    audio_player.add_audio("test-source2.aiff").await?;
     println!("main: done add audio");
     audio_player.play().await;
-    std::thread::sleep(std::time::Duration::from_millis(100_000));
+    std::thread::sleep(std::time::Duration::from_secs(5000));
 
     // let res = client::get_audio_data("test-source.aiff", 0, 1323000).await.unwrap();
     // let content = res.into_inner().content;
