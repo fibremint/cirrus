@@ -1,12 +1,12 @@
 [package]
 name = "cirrus-client"
+author = "lunarbridge"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-aiff = {git = "https://github.com/julientregoat/aiff-rs.git"}
 anyhow = "1"
 bytes = "1"
 cpal = "0.13"
