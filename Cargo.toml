@@ -1,6 +1,6 @@
 [package]
 name = "cirrus-client"
-author = "lunarbridge"
+authors = ["Lunar Bridge <fibremint@gmail.com>"]
 version = "0.1.0"
 edition = "2021"
 
