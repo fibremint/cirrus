@@ -18,8 +18,6 @@ pub async fn get_audio_meta(filepath: &str) -> Result<Response<AudioMetaRes>, Bo
 
     let response = client.get_meta(request).await?;
 
-    // println!("response: {:?}", response);
-
     Ok(response)
 }
 
@@ -35,8 +33,6 @@ pub async fn get_audio_data(filepath: &str, sample_pos_start: u32, sample_pos_en
     });
 
     let response = client.get_data(request).await?;
-
-    // println!("response: {:?}", response);
 
     Ok(response)
 }
