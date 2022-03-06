@@ -1,7 +1,6 @@
 use aiff::reader::AiffReader;
 use std::fs::File;
 
-// use crate::server::audio_meta::AudioMetaRes;
 use crate::server::audio_proto::{AudioMetaRes, AudioDataRes};
 
 pub fn read_meta(filepath: &str) -> Result<AudioMetaRes, Box<dyn std::error::Error>> {
@@ -43,8 +42,4 @@ pub fn read_data(filepath: &str, byte_start: usize, byte_end: usize) -> Result<A
     };
 
     Ok(audio_data_res)
-}
-
-pub fn check_file_exists(filename: &str) {
-    println!("filename: {}", filename);
 }

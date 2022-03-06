@@ -20,30 +20,12 @@ impl AudioSvc for AudioSvcImpl {
     ) -> Result<Response<AudioMetaRes>, Status> {
         println!("Got a request: {:?}", request);
 
-        // println!("resp: {:?}", request.get_ref().filename);
-        // audio::check_file_exists(&request.get_ref().filename);
-
-        // audio::read_meta(&request.get_ref().filename);
-
         let filepath = &request.get_ref().filename;
-
         let audio_meta_res = audio::read_meta(filepath).unwrap();
-
-        // if let audio_meta_res = Some(audio::read_meta(filepath)) {
-        //     Ok(resp) => Response::new(resp),
-        //     Err(err) => Response,
-        // }
-
-        // let resp = AudioMetaRes {
-        //     content: format!("msg 1"),
-        // };
 
         Ok(Response::new(audio_meta_res))
     }
 
-    // fn get_data< 'life0, 'async_trait>(& 'life0 self,request:tonic::Request<audio_proto::AudioDataReq> ,) ->  core::pin::Pin<Box<dyn core::future::Future<Output = Result<tonic::Response<audio_proto::AudioDataRes> ,tonic::Status> > + core::marker::Send+ 'async_trait> >where 'life0: 'async_trait,Self: 'async_trait {
-    //     todo!()
-    // }
 
     async fn get_data(
         &self,
@@ -52,14 +34,9 @@ impl AudioSvc for AudioSvcImpl {
         println!("Got a request: {:?}", request);
 
         let filepath = &request.get_ref().filename;
-        // let filepath = 
         let byte_start = request.get_ref().byte_start as usize;
         let byte_end = request.get_ref().byte_end as usize;
         let audio_data_res = audio::read_data(filepath, byte_start, byte_end).unwrap();
-
-        // let audio_data_res = AudioDataRes {
-        //     content: Vec::<u8>::new()
-        // };
 
         Ok(Response::new(audio_data_res))
 
