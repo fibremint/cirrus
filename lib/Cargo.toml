@@ -1,5 +1,5 @@
 [package]
-name = "cirrus-client"
+name = "cirrus-lib"
 authors = ["Lunar Bridge <fibremint@gmail.com>"]
 version = "0.1.0"
 edition = "2021"
@@ -12,6 +12,7 @@ bytes = "1"
 cpal = "0.13"
 futures = "0.3"
 http = "0.2"
+tauri = {version = "1.0.0-rc.4", default-features = false, features = []}
 tonic = "0.6"
 tokio = {version = "1.0", features = ["rt-multi-thread", "time", "macros", "fs"]}
 prost = "0.9"
