@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package audio;
+
+service AudioSvc {
+    rpc GetMeta (AudioMetaReq) returns (AudioMetaRes) {}
+    rpc GetData (AudioDataReq) returns (AudioDataRes) {}
+}
+
+message AudioMetaReq {
+    string filename = 1;
+}
+
+message AudioMetaRes {
+    uint32 bit_rate = 1;
+    uint32 channels = 2;
+    uint32 sample_frames = 3;
+    uint32 sample_rate = 4;
+    uint32 size = 5;
+    uint32 offset = 6;
+    uint32 block_size = 7;
+
+}
+
+message AudioDataReq {
+    string filename = 1;
+    uint32 byte_start = 2;
+    uint32 byte_end = 3;
+}
+
+message AudioDataRes {
+    bytes content = 1;
+}
