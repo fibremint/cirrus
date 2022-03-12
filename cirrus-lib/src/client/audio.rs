@@ -3,18 +3,21 @@ use std::{
     sync::{
         Arc, 
         atomic::{AtomicUsize, Ordering},
-        RwLock
-    }
+        RwLock, Mutex
+    }, rc::Rc
 };
 
 use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
 use tokio::time::{sleep, Duration};
 
-use crate::client as api;
+use crate::client::request;
 
 pub struct AudioPlayer {
     ctx: AudioContext,
     streams: VecDeque<AudioStream>,
+    // streams: Arc<Mutex<VecDeque<AudioStream>>>,
+    // streams: VecDeque<Arc<RwLock<AudioStream>>>,
+    // streams: Arc<RwLock<VecDeque<AudioStream>>>,
 }
 
 impl AudioPlayer {
@@ -111,6 +114,8 @@ struct AudioSample {
     last_buf_req_pos: Arc<AtomicUsize>,
 }
 
+// unsafe impl Send for AudioSample {}
+
 impl AudioSample {
     pub fn new(source: AudioSource) -> Self {
         Self {
@@ -171,7 +176,7 @@ impl AudioSample {
 
         let sample_res = match buffer_status {
             AudioSampleStatus::Init => {
-                let resp = api::get_audio_data(
+                let resp = request::get_audio_data(
                     &self.source.id, 
                     0, 
                     req_samples).await.unwrap();
@@ -182,7 +187,7 @@ impl AudioSample {
             },
 
             AudioSampleStatus::FillBuffer | AudioSampleStatus::Play => {
-                let resp = api::get_audio_data(
+                let resp = request::get_audio_data(
                     &self.source.id,
                     std::cmp::min(last_buf_req_pos as u32 + 1, self.source.metadata.sample_frames as u32),
                     std::cmp::min(last_buf_req_pos as u32 + req_samples, self.source.metadata.sample_frames as u32)).await.unwrap();
@@ -230,9 +235,17 @@ impl AudioSample {
     }
 }
 struct AudioStream {
+    // stream: Arc<RwLock<cpal::Stream>>,
+    // stream: Arc<Mutex<cpal::Stream>>,
+    // stream: &cpal::Stream,
+    // stream: Rc<cpal::Stream>,
+    // stream: Box<cpal::Stream>,
     stream: cpal::Stream,
     audio_sample: Arc<AudioSample>,
 }
+
+unsafe impl Send for AudioStream {}
+unsafe impl Sync for AudioStream {}
 
 impl AudioStream {
     pub async fn new(ctx: &AudioContext, source: AudioSource) -> Result<Self, anyhow::Error> {
@@ -271,7 +284,7 @@ struct AudioSource {
 
 impl AudioSource {
     async fn new(uri: &str) -> Result<Self, anyhow::Error> {
-        let metadata_res = api::get_audio_meta(uri).await.unwrap().into_inner();
+        let metadata_res = request::get_audio_meta(uri).await.unwrap().into_inner();
 
         let metadata = AudioSourceMetadata {
             bit_rate: metadata_res.bit_rate,

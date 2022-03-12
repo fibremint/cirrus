@@ -314,6 +314,8 @@ dependencies = [
  "futures",
  "http",
  "prost",
+ "serde",
+ "serde_json",
  "tauri",
  "tokio",
  "tonic",
