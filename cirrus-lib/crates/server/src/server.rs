@@ -1,11 +1,9 @@
 use tonic::{transport::Server, Request, Response, Status};
 
-pub mod audio_proto {
-    tonic::include_proto!("audio");
-}
-
-use audio_proto::audio_svc_server::{AudioSvc, AudioSvcServer};
-use audio_proto::{AudioMetaReq, AudioMetaRes, AudioDataReq, AudioDataRes};
+use cirrus_grpc::audio_proto::{
+    AudioMetaReq, AudioMetaRes, AudioDataReq, AudioDataRes,
+    audio_svc_server::{AudioSvc, AudioSvcServer}
+};
 
 use crate::audio;
 

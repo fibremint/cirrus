@@ -1,11 +1,9 @@
 use tonic::{Request, Response};
 
-use audio_proto::audio_svc_client::AudioSvcClient;
-use audio_proto::{AudioDataReq, AudioDataRes, AudioMetaReq, AudioMetaRes};
-
-pub mod audio_proto {
-    tonic::include_proto!("audio");
-}
+use cirrus_grpc::audio_proto::{
+    AudioDataReq, AudioDataRes, AudioMetaReq, AudioMetaRes,
+    audio_svc_client::AudioSvcClient,
+};
 
 pub async fn get_audio_meta(filepath: &str) -> Result<Response<AudioMetaRes>, Box<dyn std::error::Error>> {
     let mut client = AudioSvcClient::connect("http://[::1]:50000").await?;

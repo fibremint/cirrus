@@ -1,23 +1,13 @@
-[package]
-name = "cirrus-lib"
-authors = ["Lunar Bridge <fibremint@gmail.com>"]
-version = "0.1.0"
-edition = "2021"
+#[package]
+#name = "cirrus"
+#authors = ["Lunar Bridge <fibremint@gmail.com>"]
+#version = "0.1.0"
+#edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[dependencies]
-anyhow = "1"
-bytes = "1"
-cpal = "0.13"
-futures = "0.3"
-http = "0.2"
-serde = "1"
-serde_json = "1"
-tauri = { version = "1.0.0-rc.4", default-features = false, features = [] }
-tonic = "0.6"
-tokio = { version = "1.0", features = ["rt-multi-thread", "time", "macros", "fs"] }
-prost = "0.9"
+[workspace]
+members = ["crates/*"]
 
-[build-dependencies]
-tonic-build = "0.6"
+#[build-dependencies]
+#tonic-build = "0.6"

@@ -129,15 +129,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "cirrus-grpc"
+version = "0.1.0"
+dependencies = [
+ "prost",
+ "tonic",
+ "tonic-build",
+]
+
+[[package]]
 name = "cirrus-server"
+version = "0.1.0"
+dependencies = [
+ "cirrus-server-lib",
+ "structopt",
+ "tokio",
+]
+
+[[package]]
+name = "cirrus-server-lib"
 version = "0.1.0"
 dependencies = [
  "aiff",
  "bytes 1.1.0",
+ "cirrus-grpc",
  "futures",
  "http",
- "prost",
- "structopt",
  "tokio",
  "tonic",
  "tonic-build",

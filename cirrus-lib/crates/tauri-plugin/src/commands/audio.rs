@@ -6,7 +6,7 @@ use tauri::{
     AppHandle, Manager, Runtime, State,
 };
 
-use crate::tauri_plugin::state::AppState;
+use crate::state::AppState;
 
 // #[tauri::command]
 // pub fn baz(app_state: State<'_, AppState>, target: String) {

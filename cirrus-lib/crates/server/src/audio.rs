@@ -1,7 +1,7 @@
 use aiff::reader::AiffReader;
 use std::fs::File;
 
-use crate::server::audio_proto::{AudioMetaRes, AudioDataRes};
+use cirrus_grpc::audio_proto::{AudioMetaRes, AudioDataRes};
 
 pub fn read_meta(filepath: &str) -> Result<AudioMetaRes, Box<dyn std::error::Error>> {
     let file = File::open(filepath)?;
