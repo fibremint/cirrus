@@ -5,7 +5,7 @@
 
 fn main() {
   tauri::Builder::default()
-    .plugin(cirrus_lib::tauri_plugin::init())
+    .plugin(cirrus_tauri_plugin::init())
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }

@@ -10,7 +10,7 @@ use std::{
 use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
 use tokio::time::{sleep, Duration};
 
-use crate::client::request;
+use crate::request;
 
 pub struct AudioPlayer {
     ctx: AudioContext,

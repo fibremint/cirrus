@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tauri::async_runtime::{RwLock, Mutex};
 
-use crate::client::audio::AudioPlayer;
+use cirrus_client_lib::audio::AudioPlayer;
 
 pub struct AppState {
     // audio_player: Arc<RwLock<AudioPlayer>>,
