@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1"
 #bytes = "1"
+#cirrus-grpc = { path = "../grpc", features = ["only-client"] }
 cirrus-grpc = { path = "../grpc" }
 cpal = "0.13"
 tokio = { version = "1.0", features = ["rt-multi-thread", "time", "macros", "fs"] }

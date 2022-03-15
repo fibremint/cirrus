@@ -1,0 +1,10 @@
+syntax = "proto3";
+package cirrus.common;
+
+message RequestAction {
+    string action = 1;
+}
+
+message Response {
+    string status = 1;
+}

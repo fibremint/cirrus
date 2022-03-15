@@ -350,6 +350,7 @@ dependencies = [
  "cirrus-grpc",
  "futures",
  "http",
+ "prost",
  "tokio",
  "tonic",
  "tonic-build",

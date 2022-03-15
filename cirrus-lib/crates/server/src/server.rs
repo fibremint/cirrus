@@ -1,17 +1,17 @@
 use tonic::{transport::Server, Request, Response, Status};
 
-use cirrus_grpc::audio_proto::{
-    AudioMetaReq, AudioMetaRes, AudioDataReq, AudioDataRes,
-    audio_svc_server::{AudioSvc, AudioSvcServer}
+use cirrus_grpc::{
+    api::{AudioMetaReq, AudioMetaRes, AudioDataReq, AudioDataRes},
+    audio_data_svc_server::{AudioDataSvc, AudioDataSvcServer},
 };
 
 use crate::audio;
 
 #[derive(Debug, Default)]
-pub struct AudioSvcImpl {}
+pub struct AduioDataSvcImpl {}
 
 #[tonic::async_trait]
-impl AudioSvc for AudioSvcImpl {
+impl AudioDataSvc for AduioDataSvcImpl {
     async fn get_meta(
         &self,
         request: Request<AudioMetaReq>
@@ -43,10 +43,10 @@ impl AudioSvc for AudioSvcImpl {
 
 pub async fn run_server(addr: &str) -> Result<(), Box<dyn std::error::Error>> {
     let addr = addr.parse()?;
-    let audio_svc = AudioSvcImpl::default();
+    let audio_svc = AduioDataSvcImpl::default();
 
-    let server = Server::builder()
-        .add_service(AudioSvcServer::new(audio_svc))
+    let _server = Server::builder()
+        .add_service(AudioDataSvcServer::new(audio_svc))
         .serve(addr)
         .await?;
 

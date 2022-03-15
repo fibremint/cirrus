@@ -1,11 +1,5 @@
 syntax = "proto3";
-
-package audio;
-
-service AudioSvc {
-    rpc GetMeta (AudioMetaReq) returns (AudioMetaRes) {}
-    rpc GetData (AudioDataReq) returns (AudioDataRes) {}
-}
+package cirrus.api;
 
 message AudioMetaReq {
     string filename = 1;
@@ -30,4 +24,8 @@ message AudioDataReq {
 
 message AudioDataRes {
     bytes content = 1;
+}
+
+message AudioLibraryReq {
+    string path = 1;
 }

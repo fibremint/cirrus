@@ -3,8 +3,8 @@ use std::{
     sync::{
         Arc, 
         atomic::{AtomicUsize, Ordering},
-        RwLock, Mutex
-    }, rc::Rc
+        RwLock,
+    },
 };
 
 use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
