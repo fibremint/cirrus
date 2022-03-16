@@ -1,5 +1,6 @@
-use std::path::Path;
+use std::{path::Path, rc::Rc, sync::Arc};
 
+use tokio::sync::Mutex;
 use tonic::{Code, Request, Response, Status};
 
 use cirrus_grpc::{
@@ -13,7 +14,9 @@ use cirrus_grpc::{
 use crate::logic;
 
 #[derive(Debug, Default)]
-pub struct AudioDataSvcImpl {}
+pub struct AudioDataSvcImpl {
+    // db_handle: mongodb::Database,
+}
 
 #[tonic::async_trait]
 impl AudioDataSvc for AudioDataSvcImpl {
@@ -49,8 +52,18 @@ impl AudioDataSvc for AudioDataSvcImpl {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct AudioLibrarySvcImpl {}
+// #[derive(Debug, Default)]
+pub struct AudioLibrarySvcImpl {
+    pub db_handle: Arc<Mutex<mongodb::Database>>,
+}
+
+impl AudioLibrarySvcImpl {
+    pub fn new(db_handle: Arc<Mutex<mongodb::Database>>) -> Self {
+        Self {
+            db_handle
+        }
+    }
+}
 
 #[tonic::async_trait]
 impl AudioLibrarySvc for AudioLibrarySvcImpl {
@@ -61,7 +74,9 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
         let path = &request.get_ref().path;
         let path = Path::new(path);
 
-        let res = match logic::AudioLibrary::add_audio_library(path) {
+        let db_handle = self.db_handle.lock().await;
+
+        let res = match logic::AudioLibrary::add_audio_library(db_handle, path).await {
             Ok(_) => Response::new(Res {
                 code: Code::Ok as u32,
                 status: Option::None,
@@ -80,31 +95,33 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
         let path = request.get_ref().path.clone();
         let path = Path::new(path.as_str());
 
-        logic::AudioLibrary::remove_audio_library(path);
+        let db_handle = self.db_handle.lock().await;
 
-        // let is_path_exists = match path.
-        let res = Res {
-            code: Code::Ok as u32,
-            status: Option::None,
-            // status: String::from("ok")
+        let res = match logic::AudioLibrary::remove_audio_library(db_handle, path).await {
+            Ok(res) => Response::new(Res {
+                code: Code::Ok as u32,
+                status: Some(format!("Removed item count: {}", res.deleted_count)),
+            }),
+            Err(err) => return Err(Status::not_found(err)),
         };
 
-        Ok(Response::new(res))
-
+        Ok(res)
     }
 
     async fn refresh_audio_library(
         &self,
         request: Request<RequestAction>
     ) -> Result<Response<Res>, Status> {
-        logic::AudioLibrary::refresh_audio_library();
+        let db_handle = self.db_handle.lock().await;
 
-        let res = Res {
-            code: Code::Ok as u32,
-            status: Option::None,
-            // status: String::from("ok")
+        let res = match logic::AudioLibrary::refresh_audio_library(db_handle).await {
+            Ok(_) => Response::new(Res {
+                code: Code::Ok as u32,
+                status: Some(format!("Refreshed audio library"))
+            }),
+            Err(err) => return Err(Status::internal(err)),
         };
 
-        Ok(Response::new(res))
+        Ok(res)
     }
 }

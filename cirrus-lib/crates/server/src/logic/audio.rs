@@ -4,9 +4,13 @@ use std::{
 };
 
 use aiff::reader::AiffReader;
+use chrono::DateTime;
 use cirrus_grpc::api::{
     AudioDataRes, AudioMetaRes
 };
+// use futures::{TryStreamExt};
+use mongodb::{bson::{Document, doc}, options::FindOptions};
+use tokio::sync::{Mutex, MutexGuard};
 
 pub struct AudioFile {}
 
@@ -19,7 +23,7 @@ impl AudioFile {
             Ok(file) => file,
             Err(err) => return Err(String::from("failed to load file")),
         };
-    
+
         let mut reader = AiffReader::new(file);
         // reader.read().unwrap();
         match reader.read() {
@@ -85,26 +89,86 @@ impl AudioFile {
 pub struct AudioLibrary {}
 
 impl AudioLibrary {
-    pub fn add_audio_library(
+    // * path not exist -> return not found
+    // * path is added already -> return added already 
+    pub async fn add_audio_library(
+        db_handle: MutexGuard<'_, mongodb::Database>,
         path: &Path
-    ) -> Result<(), &str> {
-        // match path.exists() {
-        //     true => todo!(),
-        //     false => todo!(),
-        // }
+    ) -> Result<(), String> {
+        use futures::StreamExt;
 
         if !path.exists() {
-            return Err("not exists")
+            return Err(String::from("not exists"))
         }
+
+        let path_modified_time = path.metadata().unwrap().modified().unwrap();
+        let path_modified_time = DateTime::<chrono::Utc>::from(path_modified_time);
+
+        let collection = db_handle.collection::<Document>("libraries");
+        let filter = doc! {
+            "path": path.to_str(),
+        };
+        let mut cursor = collection.find(filter, None).await.unwrap();
+
+        let count = cursor.count().await;
+
+        if count > 0 {
+            return Err(String::from("path is already added"))
+        }
+
+        let doc = doc! {
+            "path": path.to_str(),
+            "modified": path_modified_time.to_string(),
+        };
+        collection.insert_one(doc, None).await.unwrap();
 
         Ok(())
     }
 
-    pub fn remove_audio_library(path: &Path) {
-        todo!()
+    pub async fn remove_audio_library(
+        db_handle: MutexGuard<'_, mongodb::Database>,
+        path: &Path
+    ) -> Result<mongodb::results::DeleteResult, String> {
+        use futures::StreamExt;
+
+        let collection = db_handle.collection::<Document>("libraries");
+        let filter = doc! {
+            "path": path.to_str(),
+        };
+        let cursor = collection.find(filter, None).await.unwrap();
+
+        let count = cursor.count().await;
+        if count == 0 {
+            return Err(String::from("path is not registered"))
+        }
+
+        let query = doc! {
+            "path": path.to_str(),
+        };
+
+        let delete_res = match collection.delete_one(query, None).await {
+            Ok(res) => res,
+            Err(err) => return Err(err.to_string()),
+        };
+
+        Ok(delete_res)
     }
 
-    pub fn refresh_audio_library() {
-        todo!()
+    pub async fn refresh_audio_library(
+        db_handle: MutexGuard<'_, mongodb::Database>
+    ) -> Result<(), String> {
+        // filter updated path (by paths' modified datetime)
+        // use futures::TryStreamExt;
+        use futures::StreamExt;
+
+        let collection = db_handle.collection::<Document>("libraries");
+        let cursor = collection.find(None, None).await.unwrap();
+
+        // let paths: Vec<Document> = cursor.try_collect().await;
+        let paths: Vec<Result<Document>> = cursor.collect().await?;
+
+        println!("paths: {:?}", paths);
+
+        Ok(())
     }
 }

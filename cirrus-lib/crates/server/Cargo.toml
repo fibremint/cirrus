@@ -8,12 +8,14 @@ edition = "2021"
 [dependencies]
 aiff = {git = "https://github.com/julientregoat/aiff-rs.git"}
 bytes = "1.1"
+chrono = "0.4"
 futures = "0.3"
 #cirrus-grpc = { path = "../grpc", features = ["only-server"] }
 cirrus-grpc = { path = "../grpc" }
 http = "0.2"
+mongodb = { version = "2.1", default-features = false, features = ["tokio-runtime"] }
 tonic = "0.6"
-tokio = {version = "1.0", features = ["rt-multi-thread", "time", "macros", "fs"]}
+tokio = { version = "1.0", features = ["rt-multi-thread", "time", "macros", "fs"] }
 prost = "0.9"
 
 [build-dependencies]
