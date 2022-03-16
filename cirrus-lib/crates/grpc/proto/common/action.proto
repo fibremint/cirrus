@@ -6,5 +6,6 @@ message RequestAction {
 }
 
 message Response {
-    string status = 1;
+    uint32 code = 1;
+    optional string status = 2;
 }
