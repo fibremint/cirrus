@@ -12,6 +12,8 @@ use cirrus_grpc::api::{
 use mongodb::{bson::{Document, doc}, options::FindOptions};
 use tokio::sync::{Mutex, MutexGuard};
 
+use crate::model::{self, document};
+
 pub struct AudioFile {}
 
 impl AudioFile {
@@ -92,83 +94,131 @@ impl AudioLibrary {
     // * path not exist -> return not found
     // * path is added already -> return added already 
     pub async fn add_audio_library(
-        db_handle: MutexGuard<'_, mongodb::Database>,
+        // db_handle: MutexGuard<'_, mongodb::Database>,
+        // db_handle: mongodb::Database,
+        // db_handle: &mongodb::Database,
+        mongodb_client: mongodb::Client,
+
+        // db: Mutex<mongodb::Database>,
+        
         path: &Path
     ) -> Result<(), String> {
-        use futures::StreamExt;
+        // use futures::StreamExt;
 
         if !path.exists() {
             return Err(String::from("not exists"))
         }
 
+        let path_str = path.to_str().unwrap();
+
+        if let Some(res) = model::AudioLibrary::get_by_path(mongodb_client.clone(), path_str).await.unwrap() {
+            return Err(format!("path '{}' already exists", path_str))
+        }
+
         let path_modified_time = path.metadata().unwrap().modified().unwrap();
         let path_modified_time = DateTime::<chrono::Utc>::from(path_modified_time);
 
-        let collection = db_handle.collection::<Document>("libraries");
-        let filter = doc! {
-            "path": path.to_str(),
+        let path_doc = document::AudioLibrary {
+            id: None,
+            path: String::from(path_str),
+            modified: path_modified_time,
         };
-        let mut cursor = collection.find(filter, None).await.unwrap();
 
-        let count = cursor.count().await;
+        let create_res = model::AudioLibrary::create(mongodb_client.clone(), path_doc).await;
+        // let collection = db_handle.collection::<Document>("libraries");
+        // let filter = doc! {
+        //     "path": path.to_str(),
+        // };
+        // let mut cursor = collection.find(filter, None).await.unwrap();
 
-        if count > 0 {
-            return Err(String::from("path is already added"))
-        }
+        // let count = cursor.count().await;
 
-        let doc = doc! {
-            "path": path.to_str(),
-            "modified": path_modified_time.to_string(),
-        };
-        collection.insert_one(doc, None).await.unwrap();
+        // if count > 0 {
+        //     return Err(String::from("path is already added"))
+        // }
+
+        // let doc = doc! {
+        //     "path": path.to_str(),
+        //     "modified": path_modified_time.to_string(),
+        // };
+        // collection.insert_one(doc, None).await.unwrap();
 
         Ok(())
     }
 
     pub async fn remove_audio_library(
-        db_handle: MutexGuard<'_, mongodb::Database>,
+        // db_handle: MutexGuard<'_, mongodb::Database>,
+        // db_handle: mongodb::Database,
+        mongodb_client: mongodb::Client,
+
+        // db: Mutex<mongodb::Database>,
         path: &Path
     ) -> Result<mongodb::results::DeleteResult, String> {
         use futures::StreamExt;
 
-        let collection = db_handle.collection::<Document>("libraries");
-        let filter = doc! {
-            "path": path.to_str(),
-        };
-        let cursor = collection.find(filter, None).await.unwrap();
+        let path_str = path.to_str().unwrap();
 
-        let count = cursor.count().await;
-        if count == 0 {
-            return Err(String::from("path is not registered"))
+        if let None = model::AudioLibrary::get_by_path(mongodb_client.clone(), path_str).await.unwrap() {
+            return Err(format!("path '{}' is not registered", path_str))
         }
 
-        let query = doc! {
-            "path": path.to_str(),
-        };
+        let delete_res = model::AudioLibrary::delete_by_path(mongodb_client.clone(), path_str).await;
 
-        let delete_res = match collection.delete_one(query, None).await {
-            Ok(res) => res,
-            Err(err) => return Err(err.to_string()),
-        };
+        // let collection = db_handle.collection::<Document>("libraries");
+        // let filter = doc! {
+        //     "path": path.to_str(),
+        // };
+        // let cursor = collection.find(filter, None).await.unwrap();
+
+        // let count = cursor.count().await;
+        // if count == 0 {
+        //     return Err(String::from("path is not registered"))
+        // }
+
+        // let query = doc! {
+        //     "path": path.to_str(),
+        // };
+
+        // let delete_res = match collection.delete_one(query, None).await {
+        //     Ok(res) => res,
+        //     Err(err) => return Err(err.to_string()),
+        // };
 
         Ok(delete_res)
     }
 
     pub async fn refresh_audio_library(
-        db_handle: MutexGuard<'_, mongodb::Database>
+        // db_handle: MutexGuard<'_, mongodb::Database>
+        // db_handle: mongodb::Database,
+        mongodb_client: mongodb::Client,
+
+        // db: Mutex<mongodb::Database>,
     ) -> Result<(), String> {
-        // filter updated path (by paths' modified datetime)
-        // use futures::TryStreamExt;
-        use futures::StreamExt;
-
-        let collection = db_handle.collection::<Document>("libraries");
-        let cursor = collection.find(None, None).await.unwrap();
-
-        // let paths: Vec<Document> = cursor.try_collect().await;
-        let paths: Vec<Result<Document>> = cursor.collect().await?;
+        let paths = model::AudioLibrary::get_all(mongodb_client.clone()).await;
 
         println!("paths: {:?}", paths);
+        // collection; libraries - audio library root
+        //             libraries-detail - actual contents (sub_dirs, audio_files)
+
+        // filter updated path (by paths' modified datetime)
+        // use futures::TryStreamExt;
+
+        // use futures::StreamExt;
+
+        // let collection = db_handle.collection::<Document>("libraries");
+        // let cursor = collection.find(None, None).await.unwrap();
+
+        // // let paths: Vec<Document> = cursor.try_collect().await;
+        // let paths = cursor.collect::<Vec<Result<Document, mongodb::error::Error>>>().await;
+
+        // println!("paths: {:?}", paths);
 
         Ok(())
+    }
+
+    async fn create_audio_library(
+        db_handle: MutexGuard<'_, mongodb::Database>
+    ) -> Result<(), String> {
+        todo!()
     }
 }
