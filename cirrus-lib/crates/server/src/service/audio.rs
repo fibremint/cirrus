@@ -111,6 +111,23 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
         Ok(res)
     }
 
+    async fn analyze_audio_library(
+        &self,
+        request: Request<RequestAction>
+    ) -> Result<Response<Res>, Status> {
+        // let mongodb_client = self.mongodb_client.lock().await;
+
+        let res = match logic::AudioLibrary::analyze_audio_library(self.mongodb_client.clone()).await {
+            Ok(_) => Response::new(Res {
+                code: Code::Ok as u32,
+                status: Some(format!("Refreshed audio library"))
+            }),
+            Err(err) => return Err(Status::internal(err)),
+        };
+
+        Ok(res)
+    }
+
     async fn refresh_audio_library(
         &self,
         request: Request<RequestAction>

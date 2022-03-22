@@ -1,14 +1,17 @@
+use std::cmp::Eq;
+
 use chrono::{DateTime, Utc};
 use mongodb::bson::oid::ObjectId;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct AudioLibrary {
-    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
-    pub id: Option<ObjectId>,
-    pub path: String,
+    // #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    // pub id: Option<ObjectId>,
+    pub id: String,
+    pub path: Option<String>,
     pub modified_timestamp: i64,
-    pub contents: Option<Vec<FileMetadata>>,
+    // pub contents: Option<Vec<FileMetadata>>,
 }
 // #[derive(Deserialize, Serialize, Debug)]
 // pub struct AudioLibrary {
@@ -40,12 +43,13 @@ pub struct AudioLibrary {
 // }
 
 #[derive(Deserialize, Serialize, Debug)]
-pub struct FileMetadata {
+pub struct AudioFile {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
     pub id: Option<ObjectId>,
     pub modified_timestamp: i64,
+    pub parent_path: String,
     pub filename: String,
-    pub referer: Option<ObjectId>,
+    pub audio_tag_refer: Option<ObjectId>,
 }
 
 // #[derive(Deserialize, Serialize, Debug)]
@@ -62,17 +66,17 @@ pub struct FileMetadata {
 //     id: Option<ObjectId>,
 // }
 
-#[derive(Deserialize, Serialize, Debug)]
-pub struct AudioFile {
-    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
-    pub id: Option<ObjectId>,
-    pub metadata: Option<AudioFileMetadata>,
-    pub modified_timestamp: i64,
-    pub path: String,
-}
+// #[derive(Deserialize, Serialize, Debug)]
+// pub struct AudioFile {
+//     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+//     pub id: Option<ObjectId>,
+//     pub metadata: Option<AudioFileMetadata>,
+//     pub modified_timestamp: i64,
+//     pub path: String,
+// }
 
 #[derive(Deserialize, Serialize, Debug)]
-pub struct AudioFileMetadata {
+pub struct AudioTag {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
     pub id: Option<ObjectId>,
     pub artist: Option<String>,

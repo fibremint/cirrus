@@ -12,5 +12,6 @@ service AudioDataSvc {
 service AudioLibrarySvc {
     rpc AddAudioLibrary (cirrus.api.AudioLibraryReq) returns (cirrus.common.Response) {}
     rpc RemoveAudioLibrary (cirrus.api.AudioLibraryReq) returns (cirrus.common.Response) {}
+    rpc AnalyzeAudioLibrary (cirrus.common.RequestAction) returns (cirrus.common.Response) {}
     rpc RefreshAudioLibrary (cirrus.common.RequestAction) returns (cirrus.common.Response) {}
 }
