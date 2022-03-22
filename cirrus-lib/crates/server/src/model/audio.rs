@@ -2,7 +2,7 @@ use std::path::Path;
 
 use bson::oid::ObjectId;
 use futures::{lock::MutexGuard, TryStreamExt};
-use mongodb::{self, bson::doc, results::UpdateResult, error::Error};
+use mongodb::{self, bson::doc, results::UpdateResult, error::Error, IndexModel, options::IndexOptions};
 
 use crate::{
     util, 
@@ -249,6 +249,18 @@ impl AudioFile {
     ) -> Result<mongodb::results::InsertManyResult, Box<dyn std::error::Error>> {
         let collection = Self::get_collection(mongodb_client.clone());
 
+        // let doc_keys: Vec<_> = doc.iter()
+        //     .map(|item| doc! { "_id": item.id.unwrap() } )
+        //     .collect();
+
+        // let options = IndexOptions::builder().unique(true).build();
+        // let models = IndexModel::builder()
+        //     .keys(doc_keys)
+        //     .options(options)
+        //     .build();
+
+        // collection.index
+
         let insert_res = collection.insert_many(doc, None).await.unwrap();
         
         Ok(insert_res)
@@ -297,7 +309,7 @@ impl AudioFile {
 
     pub async fn set_audio_tag_refer(
         mongodb_client: mongodb::Client,
-        doc_id: &ObjectId,
+        doc_id: &i64,
         tag_id: &ObjectId,
     ) -> Result<UpdateResult, Error> {
         let collection = Self::get_collection(mongodb_client.clone());

@@ -1,4 +1,5 @@
 use std::cmp::Eq;
+use std::hash::{Hash, Hasher};
 
 use chrono::{DateTime, Utc};
 use mongodb::bson::oid::ObjectId;
@@ -8,6 +9,8 @@ use serde::{Deserialize, Serialize};
 pub struct AudioLibrary {
     // #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
     // pub id: Option<ObjectId>,
+    // #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "_id")]
     pub id: String,
     pub path: Option<String>,
     pub modified_timestamp: i64,
@@ -45,11 +48,20 @@ pub struct AudioLibrary {
 #[derive(Deserialize, Serialize, Debug)]
 pub struct AudioFile {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
-    pub id: Option<ObjectId>,
+    // pub id: Option<ObjectId>,
+    pub id: Option<i64>,
     pub modified_timestamp: i64,
     pub parent_path: String,
     pub filename: String,
     pub audio_tag_refer: Option<ObjectId>,
+}
+
+impl Hash for AudioFile {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.modified_timestamp.hash(state);
+        // self.parent_path.hash(state);
+        self.filename.hash(state);
+    }
 }
 
 // #[derive(Deserialize, Serialize, Debug)]
@@ -79,6 +91,7 @@ pub struct AudioFile {
 pub struct AudioTag {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
     pub id: Option<ObjectId>,
+    // pub audio_file_refer: Option<i64>,
     pub artist: Option<String>,
     pub album: Option<String>,
     pub album_artist: Option<String>,
