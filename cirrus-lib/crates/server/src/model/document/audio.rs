@@ -45,6 +45,7 @@ pub struct FileMetadata {
     pub id: Option<ObjectId>,
     pub modified_timestamp: i64,
     pub filename: String,
+    pub referer: Option<ObjectId>,
 }
 
 // #[derive(Deserialize, Serialize, Debug)]

@@ -1,7 +1,12 @@
+use std::path::Path;
+
 use futures::{lock::MutexGuard, TryStreamExt};
 use mongodb::{self, bson::doc};
 
-use crate::model::{GetCollection, document};
+use crate::{
+    util, 
+    model::{GetCollection, document}
+};
 
 pub struct AudioLibraryContents {}
 
@@ -34,6 +39,42 @@ impl AudioLibraryContents {
         let insert_res = collection.insert_many(doc, None).await.unwrap();
         
         Ok(insert_res)
+    }
+
+    pub async fn get_by_path(
+        mongodb_client: mongodb::Client,
+        path: &Path
+    ) -> Result<Vec<document::AudioLibrary>, Box<dyn std::error::Error>> {
+        // let path = util::path::path_to_materialized(path.to_str().unwrap());
+        let path = util::path::path_to_materialized(path);
+        let collection = Self::get_collection(mongodb_client.clone());
+
+        let filter = doc! {
+            "path": { "$regex": format!("^{}", path) }
+        };
+        
+        let find_res = collection.find(filter, None).await.unwrap();
+
+        Ok(find_res.try_collect().await.unwrap_or_else(|_| vec![]))
+
+    }
+
+    pub async fn get_by_materialized_path(
+        mongodb_client: mongodb::Client,
+        path: &str
+    ) -> Result<Vec<document::AudioLibrary>, Box<dyn std::error::Error>> {
+        // let path = util::path::path_to_materialized(path.to_str().unwrap());
+        // let path = util::path::path_to_materialized(path);
+        let collection = Self::get_collection(mongodb_client.clone());
+
+        let filter = doc! {
+            "path": { "$regex": format!("^{}", path) }
+        };
+        
+        let find_res = collection.find(filter, None).await.unwrap();
+
+        Ok(find_res.try_collect().await.unwrap_or_else(|_| vec![]))
+
     }
 }
 
@@ -96,8 +137,9 @@ impl AudioLibrary {
 
     pub async fn get_by_path(
         mongodb_client: mongodb::Client,
-        path: &str
+        path: &Path
     ) -> Result<Option<document::AudioLibrary>, Box<dyn std::error::Error>> {
+        let path = util::path::path_to_materialized(path);
         let collection = Self::get_collection(mongodb_client.clone());
 
         let filter = doc! {
@@ -111,12 +153,18 @@ impl AudioLibrary {
 
     pub async fn delete_by_path(
         mongodb_client: mongodb::Client,
-        path: &str
+        path: &Path
     ) -> mongodb::results::DeleteResult {
+        let path = util::path::path_to_materialized(path);
+
         let collection = Self::get_collection(mongodb_client.clone());
 
+        // let filter = doc! {
+        //     "path": path
+        // };
+
         let filter = doc! {
-            "path": path
+            "path": { "$regex": format!("^{}", path) }
         };
 
         let delete_res = collection.delete_one(filter, None).await.unwrap();
