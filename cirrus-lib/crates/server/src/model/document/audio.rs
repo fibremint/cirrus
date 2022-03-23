@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::util;
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Eq, PartialEq, Hash, Clone)]
 pub struct AudioLibrary {
     // #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
     // pub id: Option<ObjectId>,
@@ -21,14 +21,15 @@ pub struct AudioLibrary {
 }
 
 impl AudioLibrary {
-    pub fn check_modified(&self, local_path: &Path) -> bool {
-        let local_path = util::path::replace_with_common_separator(local_path.to_str().unwrap());
+    // pub fn check_modified(&self, local_path: &Path) -> bool {
+    pub fn check_modified(&self) -> bool {
+        // let local_path = util::path::replace_with_common_separator(local_path.to_str().unwrap());
         // assert!(local_path == self.id);
         // if local_path != self.id {
         //     return Err()
         // }
 
-        let local_timestamp = util::path::get_timestamp(Path::new(&local_path));
+        let local_timestamp = util::path::get_timestamp(Path::new(&self.id));
 
         local_timestamp != self.modified_timestamp
     }
