@@ -1,9 +1,12 @@
 use std::cmp::Eq;
 use std::hash::{Hash, Hasher};
+use std::path::Path;
 
 use chrono::{DateTime, Utc};
 use mongodb::bson::oid::ObjectId;
 use serde::{Deserialize, Serialize};
+
+use crate::util;
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct AudioLibrary {
@@ -15,6 +18,20 @@ pub struct AudioLibrary {
     pub path: Option<String>,
     pub modified_timestamp: i64,
     // pub contents: Option<Vec<FileMetadata>>,
+}
+
+impl AudioLibrary {
+    pub fn check_modified(&self, local_path: &Path) -> bool {
+        let local_path = util::path::replace_with_common_separator(local_path.to_str().unwrap());
+        // assert!(local_path == self.id);
+        // if local_path != self.id {
+        //     return Err()
+        // }
+
+        let local_timestamp = util::path::get_timestamp(Path::new(&local_path));
+
+        local_timestamp != self.modified_timestamp
+    }
 }
 // #[derive(Deserialize, Serialize, Debug)]
 // pub struct AudioLibrary {
@@ -48,21 +65,21 @@ pub struct AudioLibrary {
 #[derive(Deserialize, Serialize, Debug)]
 pub struct AudioFile {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
-    // pub id: Option<ObjectId>,
-    pub id: Option<i64>,
+    pub id: Option<ObjectId>,
+    // pub id: Option<i64>,
     pub modified_timestamp: i64,
     pub parent_path: String,
     pub filename: String,
     pub audio_tag_refer: Option<ObjectId>,
 }
 
-impl Hash for AudioFile {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.modified_timestamp.hash(state);
-        // self.parent_path.hash(state);
-        self.filename.hash(state);
-    }
-}
+// impl Hash for AudioFile {
+//     fn hash<H: Hasher>(&self, state: &mut H) {
+//         self.modified_timestamp.hash(state);
+//         // self.parent_path.hash(state);
+//         self.filename.hash(state);
+//     }
+// }
 
 // #[derive(Deserialize, Serialize, Debug)]
 // pub struct AudioFileSimple {
@@ -87,11 +104,14 @@ impl Hash for AudioFile {
 //     pub path: String,
 // }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Default)]
 pub struct AudioTag {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
     pub id: Option<ObjectId>,
+    // #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    // pub id: Option<i64>,
     // pub audio_file_refer: Option<i64>,
+    pub property_hash: Option<i64>,
     pub artist: Option<String>,
     pub album: Option<String>,
     pub album_artist: Option<String>,
@@ -113,6 +133,17 @@ pub struct AudioTag {
     pub total_tracks: Option<u32>,
     pub track: Option<u32>,
     pub year: Option<i32>,
+}
+
+impl Hash for AudioTag {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.artist.hash(state);
+        self.album.hash(state);
+        self.date_recorded.hash(state);
+        self.date_released.hash(state);
+        self.title.hash(state);
+        self.year.hash(state);
+    }
 }
 
 #[derive(Deserialize, Serialize, Debug)]

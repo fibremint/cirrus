@@ -146,28 +146,28 @@ impl AudioLibrary {
 
             libraries.insert(parent_path);
 
-            let mut hasher = DefaultHasher::new();
+            // let mut hasher = DefaultHasher::new();
 
-            let mut audio_file_doc = document::AudioFile {
-                id: None,
-                modified_timestamp,
-                parent_path: parent_path_materialized,
-                filename,
-                audio_tag_refer: None,
-            };
-            audio_file_doc.hash(&mut hasher);
-            let audio_file_doc_hash = hasher.finish() as i64;
-            // println!("afdh: {}", audio_file_doc_hash);
-            audio_file_doc.id = Some(audio_file_doc_hash); 
-            audio_file_docs.push(audio_file_doc);
-
-            // audio_file_docs.push(document::AudioFile {
-            //     id: Some(mongodb::bson::oid::ObjectId::new()),
+            // let mut audio_file_doc = document::AudioFile {
+            //     id: None,
             //     modified_timestamp,
             //     parent_path: parent_path_materialized,
             //     filename,
             //     audio_tag_refer: None,
-            // });
+            // };
+            // audio_file_doc.hash(&mut hasher);
+            // let audio_file_doc_hash = hasher.finish() as i64;
+            // println!("afdh: {}", audio_file_doc_hash);
+            // audio_file_doc.id = Some(audio_file_doc_hash); 
+            // audio_file_docs.push(audio_file_doc);
+
+            audio_file_docs.push(document::AudioFile {
+                id: Some(mongodb::bson::oid::ObjectId::new()),
+                modified_timestamp,
+                parent_path: parent_path_materialized,
+                filename,
+                audio_tag_refer: None,
+            });
         }
 
         // let libraries_docs = libraries.into_iter()
@@ -286,14 +286,21 @@ impl AudioLibrary {
         let audio_libraries = model::AudioLibraryRoot::get_all(mongodb_client.clone()).await;
 
         for audio_library in audio_libraries.into_iter() {
-            let audio_files = model::AudioFile::get_by_library_path(mongodb_client.clone(), Path::new(&audio_library.id), true).await;
+            let audio_files = model::AudioFile::get_by_library_path(mongodb_client.clone(), Path::new(&audio_library.id), true).await.unwrap();
 
             for audio_file in audio_files.iter() {
-                let audio_file_path = Path::new(&util::path::materialized_to_path(&audio_file.parent_path)).join(&audio_file.filename);
-                let audio_tag = Self::create_audio_tag(&audio_file_path).unwrap();
+                // let audio_file_path = Path::new(&util::path::materialized_to_path(&audio_file.parent_path)).join(&audio_file.filename);
+                // let audio_tag = Self::create_audio_tag(&audio_file_path).unwrap();
+                let audio_tag = Self::create_audio_tag(&audio_file);
                 let audio_tag_id = audio_tag.id.clone();
                 
-                let tag_create_res = model::AudioTag::create(mongodb_client.clone(), audio_tag).await.unwrap();
+                // let tag_create_res = model::AudioTag::create(mongodb_client.clone(), audio_tag).await.unwrap();
+                match model::AudioTag::create(mongodb_client.clone(), audio_tag).await {
+                    Ok(_) => (),
+                    // Err(err) => println!("duplicated audio file {:?}, tag id {:?} exists", audio_file_path, audio_tag_id),
+                    Err(err) => return Err(format!("{}", err)),
+                }
+
                 let update_res = model::AudioFile::set_audio_tag_refer(mongodb_client.clone(), &audio_file.id.unwrap(), &audio_tag_id.unwrap()).await.unwrap();
                 println!("ur: {:?}", update_res);
             }
@@ -310,8 +317,9 @@ impl AudioLibrary {
 
         for audio_library_root in audio_library_roots.into_iter() {
             let audio_libraries = model::AudioLibrary::get_by_path(mongodb_client.clone(), Path::new(&audio_library_root.id)).await.unwrap();
-            let local_library_root = std::fs::read_dir(Path::new(&audio_library_root.id)).unwrap();
-
+            // let local_library_root = std::fs::read_dir(Path::new(&audio_library_root.id)).unwrap();
+            let local_library_root = WalkDir::new(audio_library_root.id);
+            
             let local_library_root_directories: HashSet<_> = local_library_root.into_iter()
                 .map(|item| item.unwrap())
                 .filter(|item| 
@@ -319,9 +327,18 @@ impl AudioLibrary {
                 .map(|item| util::path::replace_with_common_separator(item.path().to_str().unwrap()))
                 .collect();
 
+            // let local_library_root_directories: Vec<_> = local_library_root.into_iter()
+            //     .filter_map(|item| 
+            //         item.unwrap().metadata().unwrap().is_dir())
+            //     // .map(|item| util::path::replace_with_common_separator(item.path().to_str().unwrap()))
+            //     .collect();
+
+            // let local_library_root_directories = local_library_root_directories.iter()
+            //     .map(|item| )
+
             let audio_library_hashset: HashSet<_> = audio_libraries.iter()
                 .map(|item| item.id.to_owned())
-                .filter(|item| item != &audio_library_root.id)
+                // .filter(|item| item != &audio_library_root.id)
                 .collect();
 
             // new directories on local library root
@@ -359,26 +376,26 @@ impl AudioLibrary {
             
                         // libraries.insert(parent_path);
 
-                        let mut hasher = DefaultHasher::new();
+                        // let mut hasher = DefaultHasher::new();
 
-                        let mut audio_file_doc = document::AudioFile {
-                            id: None,
-                            modified_timestamp,
-                            parent_path: parent_path_materialized,
-                            filename,
-                            audio_tag_refer: None,
-                        };
-                        audio_file_doc.hash(&mut hasher);
-                        let audio_file_doc_hash = hasher.finish() as i64;
-                        audio_file_doc.id = Some(audio_file_doc_hash.try_into().unwrap()); 
-                        audio_file_docs.push(audio_file_doc);
-                        // audio_file_docs.push(document::AudioFile {
-                        //     id: Some(mongodb::bson::oid::ObjectId::new()),
+                        // let mut audio_file_doc = document::AudioFile {
+                        //     id: None,
                         //     modified_timestamp,
                         //     parent_path: parent_path_materialized,
                         //     filename,
                         //     audio_tag_refer: None,
-                        // });
+                        // };
+                        // audio_file_doc.hash(&mut hasher);
+                        // let audio_file_doc_hash = hasher.finish() as i64;
+                        // audio_file_doc.id = Some(audio_file_doc_hash.try_into().unwrap()); 
+                        // audio_file_docs.push(audio_file_doc);
+                        audio_file_docs.push(document::AudioFile {
+                            id: Some(mongodb::bson::oid::ObjectId::new()),
+                            modified_timestamp,
+                            parent_path: parent_path_materialized,
+                            filename,
+                            audio_tag_refer: None,
+                        });
                     }
                 }
 
@@ -405,6 +422,24 @@ impl AudioLibrary {
                 model::AudioLibrary::create_many(mongodb_client.clone(), new_libraries_docs).await.unwrap();
 
                 model::AudioFile::create_many(mongodb_client.clone(), audio_file_docs).await.unwrap();
+            }
+
+            if !deleted_libraries.is_empty() {
+                for deleted_library in deleted_libraries.into_iter() {
+                    println!("sync delete audio library: {:?}", deleted_library);
+
+                    let audio_files = model::AudioFile::get_by_library_path(mongodb_client.clone(), Path::new(&deleted_library), false).await.unwrap();
+                    let delete_audio_tag_ids: Vec<_> = audio_files.iter()
+                        .filter_map(|item| item.audio_tag_refer)
+                        // .map(|item| item.audio_tag_refer.un)
+                        .collect();
+                    
+                    let audio_tag_delete_res = model::AudioTag::delete_by_ids(mongodb_client.clone(), delete_audio_tag_ids).await.unwrap();
+
+                    let audio_file_delete_res = model::AudioFile::delete_by_selfs(mongodb_client.clone(), &audio_files).await.unwrap();
+
+                    let library_delete_res = model::AudioLibrary::delete_by_path(mongodb_client.clone(), Path::new(deleted_library)).await.unwrap();
+                }
             }
 
         }
@@ -486,8 +521,10 @@ impl AudioLibrary {
     }
 
     fn create_audio_tag(
-        audio_file_path: &Path
-    ) -> Result<document::AudioTag, String> {
+        // audio_file_path: &Path
+        audio_file_doc: &document::AudioFile,
+    ) -> document::AudioTag {
+        let audio_file_path = Path::new(&util::path::materialized_to_path(&audio_file_doc.parent_path)).join(&audio_file_doc.filename);
         let audio_file = File::open(audio_file_path).unwrap();
         let mut aiff = AiffReader::new(audio_file);
         aiff.read().unwrap();
@@ -562,8 +599,9 @@ impl AudioLibrary {
                 None => None,
             };
 
-            return Ok(document::AudioTag {
+            let mut audio_tag = document::AudioTag {
                 id: Some(ObjectId::new()),
+                property_hash: None,
                 artist: artist,
                 album: album,
                 album_artist: album_artist,
@@ -578,11 +616,39 @@ impl AudioLibrary {
                 total_tracks: id3v2_tag.total_tracks(),
                 track: id3v2_tag.track(),
                 year: id3v2_tag.year(),
-            });
+            };
+
+            audio_tag.property_hash = Some(util::hash::get_hashed_value(&audio_tag));
+
+            return audio_tag
+
+            // return Ok(document::AudioTag {
+            //     id: Some(ObjectId::new()),
+            //     artist: artist,
+            //     album: album,
+            //     album_artist: album_artist,
+            //     date_recorded,
+            //     date_released,
+            //     disc: id3v2_tag.disc(),
+            //     duration: id3v2_tag.duration(),
+            //     genre: genre,
+            //     pictures: pictures,
+            //     title: title,
+            //     total_discs: id3v2_tag.total_discs(),
+            //     total_tracks: id3v2_tag.total_tracks(),
+            //     track: id3v2_tag.track(),
+            //     year: id3v2_tag.year(),
+            // });
 
         } else {
             // println!("id3v2 tag is none");
-            return Err(format!("id3v2 tag is none"));
+            // return Err(format!("id3v2 tag is none"));
+            return document::AudioTag {
+                id: Some(ObjectId::new()),
+                property_hash: None,
+                title: Some(audio_file_doc.filename.clone().to_owned()),
+                ..Default::default()
+            };
             // None
         };
 

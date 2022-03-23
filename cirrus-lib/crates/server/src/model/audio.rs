@@ -2,7 +2,7 @@ use std::path::Path;
 
 use bson::oid::ObjectId;
 use futures::{lock::MutexGuard, TryStreamExt};
-use mongodb::{self, bson::doc, results::UpdateResult, error::Error, IndexModel, options::{IndexOptions, InsertManyOptions}};
+use mongodb::{self, bson::doc, results::{UpdateResult, DeleteResult}, error::Error, IndexModel, options::{IndexOptions, InsertManyOptions}};
 
 use crate::{
     util, 
@@ -80,31 +80,18 @@ impl AudioLibrary {
     pub async fn delete_by_path(
         mongodb_client: mongodb::Client,
         path: &Path
-    ) -> mongodb::results::DeleteResult {
-        let path = util::path::path_to_materialized(path);
-
+    ) -> Result<DeleteResult, mongodb::error::Error> {
         let collection = Self::get_collection(mongodb_client.clone());
-
-        // let filter = doc! {
-        //     "path": path
-        // };
-
+       
+        let path = util::path::path_to_materialized(path);
         let filter = doc! {
             "path": { "$regex": format!("^{}", path) }
         };
 
-        let delete_res = collection.delete_many(filter, None).await.unwrap();
+        let delete_res = collection.delete_many(filter, None).await?;
 
-        delete_res
+        Ok(delete_res)
     }
-
-    // pub async fn get_none_refered_files(
-    //     mongodb_client: mongodb::Client,
-    // ) {
-    //     let collection = Self::get_collection(mongodb_client.clone());
-
-    //     collection.
-    // }
 }
 
 pub struct AudioLibraryRoot {}
@@ -287,16 +274,22 @@ impl AudioFile {
         //     write_concern: None,
         // };
 
-        let insert_option = InsertManyOptions::builder()
-            .ordered(false)
-            .build();
+        // dedup option
+        // let insert_option = InsertManyOptions::builder()
+        //     .ordered(false)
+        //     .build();
 
-        let insert_res = collection.insert_many(doc, insert_option).await;
+        // let insert_res = collection.insert_many(doc, insert_option).await;
 
-        match insert_res {
-            Ok(res) => return Ok(res),
-            Err(err) => return Err(err),
-        }
+        // match insert_res {
+        //     Ok(res) => return Ok(res),
+        //     Err(err) => return Err(err),
+        // }
+
+        // end of dedup option
+
+        let insert_res = collection.insert_many(doc, None).await.unwrap();
+
 
         // for d in doc.iter() {
         //     let options = IndexOptions::builder().unique(true).build();
@@ -316,14 +309,14 @@ impl AudioFile {
 
         // }
         
-        // Ok(insert_res)
+        Ok(insert_res)
     }
 
     pub async fn get_by_library_path(
         mongodb_client: mongodb::Client,
         path: &Path,
         filter_none_refer: bool,
-    ) -> Vec<document::AudioFile> {
+    ) -> Result<Vec<document::AudioFile>, mongodb::error::Error> {
         let collection = Self::get_collection(mongodb_client.clone());
         let path = util::path::path_to_materialized(path);
 
@@ -355,15 +348,18 @@ impl AudioFile {
     //     //     }]
     //     // };
 
-        let find_res = collection.find(filter, None).await.unwrap();
+        let find_res = collection.find(filter, None).await?;
 
-        find_res.try_collect().await.unwrap_or_else(|_| vec![])
+        Ok(find_res.try_collect().await.unwrap_or_else(|_| vec![]))
     }
 
     pub async fn set_audio_tag_refer(
         mongodb_client: mongodb::Client,
-        doc_id: &i64,
+        // doc_id: &i64,
+        doc_id: &ObjectId,
         tag_id: &ObjectId,
+        // tag_id: &i64,
+        
     ) -> Result<UpdateResult, Error> {
         let collection = Self::get_collection(mongodb_client.clone());
 
@@ -377,6 +373,27 @@ impl AudioFile {
         };
 
         collection.update_one(query, update, None).await
+    }
+
+    pub async fn delete_by_selfs(
+        mongodb_client: mongodb::Client,
+        target: &Vec<document::AudioFile>,
+    ) -> Result<DeleteResult, mongodb::error::Error> {
+        let collection = Self::get_collection(mongodb_client.clone());
+        
+        let delete_ids: Vec<_> = target.iter()
+            .map(|item| item.id.unwrap())
+            .collect();
+
+        let query = doc! {
+            "_id": {
+                "$in": delete_ids,
+            }
+        };
+
+        let delete_res = collection.delete_many(query, None).await?;
+
+        Ok(delete_res)
     }
 
     // pub async fn get_by_library_path_and_none_referer(
@@ -435,11 +452,50 @@ impl AudioTag {
         // db_handle: MutexGuard<'_, mongodb::Database>,
         mongodb_client: mongodb::Client,
         doc: document::AudioTag
-    ) -> Result<mongodb::results::InsertOneResult, Box<dyn std::error::Error>> {
+    ) -> Result<mongodb::results::InsertOneResult, mongodb::error::Error> {
+        let collection = Self::get_collection(mongodb_client.clone());
+        collection.insert_one(doc, None).await
+        // let insert_res = collection.insert_one(doc, None).await;
+        
+        // Ok(insert_res)
+
+        // match insert_res {
+        //     Ok(res) => return Ok(res),
+        //     Err(err) => return Err(err),
+        // }
+    }
+
+    pub async fn get_by_ids(
+        mongodb_client: mongodb::Client,
+        ids: Vec<ObjectId>,
+    ) -> Result<Vec<document::AudioTag>, mongodb::error::Error> {
         let collection = Self::get_collection(mongodb_client.clone());
 
-        let insert_res = collection.insert_one(doc, None).await.unwrap();
+        let filter = doc! {
+            "_id": {
+                "$in": ids,
+            }
+        };
+
+        let find_res = collection.find(filter, None).await?;
         
-        Ok(insert_res)
+        Ok(find_res.try_collect().await.unwrap_or_else(|_| vec![]))
+    }
+
+    pub async fn delete_by_ids(
+        mongodb_client: mongodb::Client,
+        ids: Vec<ObjectId>,
+    ) -> Result<DeleteResult, mongodb::error::Error> {
+        let collection = Self::get_collection(mongodb_client.clone());
+
+        let query = doc! {
+            "_id": {
+                "$in": ids,
+            }
+        };
+
+        let delete_res = collection.delete_many(query, None).await?;
+
+        Ok(delete_res)
     }
 }
