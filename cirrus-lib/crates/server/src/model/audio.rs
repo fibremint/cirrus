@@ -2,7 +2,7 @@ use std::path::Path;
 
 use bson::oid::ObjectId;
 use futures::{lock::MutexGuard, TryStreamExt};
-use mongodb::{self, bson::doc, results::UpdateResult, error::Error, IndexModel, options::IndexOptions};
+use mongodb::{self, bson::doc, results::UpdateResult, error::Error, IndexModel, options::{IndexOptions, InsertManyOptions}};
 
 use crate::{
     util, 
@@ -246,7 +246,7 @@ impl AudioFile {
         // db_handle: MutexGuard<'_, mongodb::Database>,
         mongodb_client: mongodb::Client,
         doc: Vec<document::AudioFile>,
-    ) -> Result<mongodb::results::InsertManyResult, Box<dyn std::error::Error>> {
+    ) -> Result<mongodb::results::InsertManyResult, mongodb::error::Error> {
         let collection = Self::get_collection(mongodb_client.clone());
 
         // let doc_keys: Vec<_> = doc.iter()
@@ -261,9 +261,62 @@ impl AudioFile {
 
         // collection.index
 
-        let insert_res = collection.insert_many(doc, None).await.unwrap();
+        // let doc_keys: Vec<_> = doc.iter()
+        //     .map(|item| {
+        //         let options = IndexOptions::builder().unique(true).build();
+
+        //         IndexModel::builder()
+        //             .keys(doc! { "_id": item.id.unwrap() })
+        //             .options(options)
+        //             .build()
+        //     })
+        //     .collect();
+
+        // let indexes = IndexModel::builder()
+        //     .keys(keys)
+
+        // let create_index_res = collection.create_indexes(doc_keys, None).await;
+
+        // for cir in create_index_res.into_iter() {
+        //     println!("{:?}", cir);
+        // }
+
+        // let insert_option = InsertManyOptions {
+        //     bypass_document_validation: None,
+        //     ordered: Some(false),
+        //     write_concern: None,
+        // };
+
+        let insert_option = InsertManyOptions::builder()
+            .ordered(false)
+            .build();
+
+        let insert_res = collection.insert_many(doc, insert_option).await;
+
+        match insert_res {
+            Ok(res) => return Ok(res),
+            Err(err) => return Err(err),
+        }
+
+        // for d in doc.iter() {
+        //     let options = IndexOptions::builder().unique(true).build();
+
+        //     let index_model = IndexModel::builder()
+        //         .keys(doc! { "_id": item.id.unwrap() })
+        //         .options(options)
+        //         .build();
+
+        //     let create_index_res = collection.create_index(index_model, None).await;
+
+        //     if let Ok(res) = create_index_res {
+        //         collection.insert_one(doc, options)
+        //     } else {
+
+        //     }
+
+        // }
         
-        Ok(insert_res)
+        // Ok(insert_res)
     }
 
     pub async fn get_by_library_path(

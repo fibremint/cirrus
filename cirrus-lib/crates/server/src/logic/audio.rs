@@ -101,7 +101,7 @@ impl AudioLibrary {
     pub async fn add_audio_library(
         mongodb_client: mongodb::Client,
         library_root: &Path
-    ) -> Result<(), String> {
+    ) -> Result<String, String> {
         if !library_root.exists() {
             return Err(String::from("not exists"))
         }
@@ -230,7 +230,18 @@ impl AudioLibrary {
 
         model::AudioLibrary::create_many(mongodb_client.clone(), libraries_docs).await.unwrap();
 
-        model::AudioFile::create_many(mongodb_client.clone(), audio_file_docs).await.unwrap();
+        // model::AudioFile::create_many(mongodb_client.clone(), audio_file_docs).await.unwrap();
+        let create_many_res = model::AudioFile::create_many(mongodb_client.clone(), audio_file_docs).await;
+
+        // match create_many_res {
+        //     Ok(res) => println!("{:?}", res),
+        //     Err(err) => println!("{:?}", err.kind),
+        // }
+
+        match create_many_res {
+            Ok(res) => return Ok(format!("{:?}", res)),
+            Err(err) => return Err(format!("{:?}", err)),
+        }
 
         // model::AudioLibraryContents::create_many(mongodb_client.clone(), libraries_docs).await.unwrap();
 
@@ -245,7 +256,7 @@ impl AudioLibrary {
 
         // let create_res = model::AudioLibrary::create(mongodb_client.clone(), path_doc).await;
 
-        Ok(())
+        // Ok(())
     }
 
     pub async fn remove_audio_library(
