@@ -1,6 +1,6 @@
 use std::cmp::Eq;
 use std::hash::{Hash, Hasher};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
 use mongodb::bson::oid::ObjectId;
@@ -21,6 +21,17 @@ pub struct AudioLibrary {
 }
 
 impl AudioLibrary {
+    pub fn create_from_path(path: &Path) -> Self {
+        let id = util::path::replace_with_common_separator(path.to_str().unwrap());
+        let modified_timestamp = util::path::get_timestamp(&path);
+        let path = util::path::path_to_materialized(&path);
+        
+        Self {
+            id,
+            path: Some(path),
+            modified_timestamp,
+        }
+    }
     // pub fn check_modified(&self, local_path: &Path) -> bool {
     pub fn check_modified(&self) -> bool {
         // let local_path = util::path::replace_with_common_separator(local_path.to_str().unwrap());
@@ -34,34 +45,6 @@ impl AudioLibrary {
         local_timestamp != self.modified_timestamp
     }
 }
-// #[derive(Deserialize, Serialize, Debug)]
-// pub struct AudioLibrary {
-//     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
-//     pub id: Option<ObjectId>,
-//     pub path: String,
-//     // #[serde(with = "bson::serde_helpers::chrono_datetime_as_bson_datetime")]
-//     // pub modified: DateTime<Utc>,
-//     pub modified_timestamp: i64
-// }
-
-// pub struct AudioLibrary {
-//     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
-//     pub id: Option<ObjectId>,
-//     pub path: String,
-//     // #[serde(with = "bson::serde_helpers::chrono_datetime_as_bson_datetime")]
-//     // pub modified: DateTime<Utc>,
-//     pub modified_timestamp: i64
-// }
-
-// #[derive(Deserialize, Serialize, Debug)]
-// pub struct AudioLibrary {
-//     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
-//     pub id: Option<ObjectId>,
-//     pub path: String,
-//     pub modified_timestamp: i64,
-//     pub audio_files: Option<Vec<AudioFileSimple>>,
-//     pub parent: Option<Rc<AudioLibrary>>,
-// }
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct AudioFile {
@@ -74,36 +57,42 @@ pub struct AudioFile {
     pub audio_tag_refer: Option<ObjectId>,
 }
 
-// impl Hash for AudioFile {
-//     fn hash<H: Hasher>(&self, state: &mut H) {
-//         self.modified_timestamp.hash(state);
-//         // self.parent_path.hash(state);
-//         self.filename.hash(state);
-//     }
-// }
+impl AudioFile {
+    pub fn create_from_path(path: &Path) -> Self {
+        let parent_path = path.parent().unwrap();
+        let parent_path_materialized = util::path::path_to_materialized(&parent_path);
+        let modified_timestamp = util::path::get_timestamp(path);
+        let filename = path.file_name().unwrap().to_str().unwrap().to_string();
 
-// #[derive(Deserialize, Serialize, Debug)]
-// pub struct AudioFileSimple {
-//     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
-//     pub id: Option<ObjectId>,
-//     pub modified_timestamp: i64,
-//     pub audio_filename: String,
-// }
+        Self {
+            id: Some(mongodb::bson::oid::ObjectId::new()),
+            modified_timestamp,
+            parent_path: parent_path_materialized,
+            filename,
+            audio_tag_refer: None,
+        }
+    }
 
-// #[derive(Deserialize, Serialize, Debug)]
-// pub struct AudioLibraryDetail {
-//     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
-//     id: Option<ObjectId>,
-// }
+    pub fn check_modified(&self) -> bool {
+        let local_timestamp = util::path::get_timestamp(&self.get_path());
 
-// #[derive(Deserialize, Serialize, Debug)]
-// pub struct AudioFile {
-//     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
-//     pub id: Option<ObjectId>,
-//     pub metadata: Option<AudioFileMetadata>,
-//     pub modified_timestamp: i64,
-//     pub path: String,
-// }
+        local_timestamp != self.modified_timestamp
+    }
+
+    pub fn get_path(&self) -> PathBuf {
+        let parent_path = util::path::materialized_to_path(&self.parent_path);
+        let mut path = Path::new(&parent_path).to_path_buf();
+        path.push(&self.filename);
+
+        path
+    }
+
+    pub fn update_modified_timestamp(&mut self) {
+        let path = self.get_path();
+        
+        self.modified_timestamp = util::path::get_timestamp(&path);
+    }
+}
 
 #[derive(Deserialize, Serialize, Debug, Default)]
 pub struct AudioTag {

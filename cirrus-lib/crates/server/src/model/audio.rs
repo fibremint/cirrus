@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use bson::oid::ObjectId;
+use bson::{oid::ObjectId};
 use futures::{lock::MutexGuard, TryStreamExt};
 use mongodb::{self, bson::doc, results::{UpdateResult, DeleteResult}, error::Error, IndexModel, options::{IndexOptions, InsertManyOptions}};
 
@@ -91,6 +91,28 @@ impl AudioLibrary {
         let delete_res = collection.delete_many(filter, None).await?;
 
         Ok(delete_res)
+    }
+
+    pub async fn update_modified_timestamp(
+        mongodb_client: mongodb::Client,
+        // doc_id: &i64,
+        doc_id: &str,
+        modified_timestamp: i64,
+        // tag_id: &i64,
+        
+    ) -> Result<UpdateResult, Error> {
+        let collection = Self::get_collection(mongodb_client.clone());
+
+        // let doc_id = doc_id.to_string();
+        let query = doc! {
+            "_id": doc_id
+        };
+
+        let update = doc! {
+            "$set": {"modified_timestamp": modified_timestamp}
+        };
+
+        collection.update_one(query, update, None).await
     }
 }
 
@@ -236,83 +258,12 @@ impl AudioFile {
     ) -> Result<mongodb::results::InsertManyResult, mongodb::error::Error> {
         let collection = Self::get_collection(mongodb_client.clone());
 
-        // let doc_keys: Vec<_> = doc.iter()
-        //     .map(|item| doc! { "_id": item.id.unwrap() } )
-        //     .collect();
-
-        // let options = IndexOptions::builder().unique(true).build();
-        // let models = IndexModel::builder()
-        //     .keys(doc_keys)
-        //     .options(options)
-        //     .build();
-
-        // collection.index
-
-        // let doc_keys: Vec<_> = doc.iter()
-        //     .map(|item| {
-        //         let options = IndexOptions::builder().unique(true).build();
-
-        //         IndexModel::builder()
-        //             .keys(doc! { "_id": item.id.unwrap() })
-        //             .options(options)
-        //             .build()
-        //     })
-        //     .collect();
-
-        // let indexes = IndexModel::builder()
-        //     .keys(keys)
-
-        // let create_index_res = collection.create_indexes(doc_keys, None).await;
-
-        // for cir in create_index_res.into_iter() {
-        //     println!("{:?}", cir);
-        // }
-
-        // let insert_option = InsertManyOptions {
-        //     bypass_document_validation: None,
-        //     ordered: Some(false),
-        //     write_concern: None,
-        // };
-
-        // dedup option
-        // let insert_option = InsertManyOptions::builder()
-        //     .ordered(false)
-        //     .build();
-
-        // let insert_res = collection.insert_many(doc, insert_option).await;
-
-        // match insert_res {
-        //     Ok(res) => return Ok(res),
-        //     Err(err) => return Err(err),
-        // }
-
-        // end of dedup option
-
         let insert_res = collection.insert_many(doc, None).await.unwrap();
 
-
-        // for d in doc.iter() {
-        //     let options = IndexOptions::builder().unique(true).build();
-
-        //     let index_model = IndexModel::builder()
-        //         .keys(doc! { "_id": item.id.unwrap() })
-        //         .options(options)
-        //         .build();
-
-        //     let create_index_res = collection.create_index(index_model, None).await;
-
-        //     if let Ok(res) = create_index_res {
-        //         collection.insert_one(doc, options)
-        //     } else {
-
-        //     }
-
-        // }
-        
         Ok(insert_res)
     }
 
-    pub async fn get_by_library_path(
+    pub async fn get_self_by_library_path(
         mongodb_client: mongodb::Client,
         path: &Path,
         filter_none_refer: bool,
@@ -336,22 +287,37 @@ impl AudioFile {
             }
         };
 
-        // let filter = doc! {
-        //     "parent_path": { "$regex": format!("^{}", path) }
-        // };
-
-            //     // let filter = doc! {
-    //     //     "$and": [{
-    //     //         "parent_path": { "$regex": format!("^{}", path) }
-    //     //     }, {
-    //     //         "audio_tag_refer": null,
-    //     //     }]
-    //     // };
-
         let find_res = collection.find(filter, None).await?;
 
         Ok(find_res.try_collect().await.unwrap_or_else(|_| vec![]))
     }
+
+    // pub async fn get_audio_tag_refer_id_by_self_id(
+    //     mongodb_client: mongodb::Client,
+    //     id: &ObjectId,
+    // ) -> Result<ObjectId, mongodb::error::Error> {
+    //     let collection = Self::get_collection(mongodb_client.clone());
+
+    //     let filter = {
+    //         if filter_none_refer {
+    //             doc! {
+    //                 "$and": [{
+    //                     "parent_path": { "$regex": format!("^{}", path) }
+    //                 }, {
+    //                     "audio_tag_refer": null,
+    //                 }]
+    //             }
+    //         } else {
+    //             doc! {
+    //                 "parent_path": { "$regex": format!("^{}", path) }
+    //             }
+    //         }
+    //     };
+
+    //     let find_res = collection.find(filter, None).await?;
+
+    //     Ok(find_res.try_collect().await.unwrap_or_else(|_| vec![]))
+    // }
 
     pub async fn set_audio_tag_refer(
         mongodb_client: mongodb::Client,
@@ -373,6 +339,7 @@ impl AudioFile {
         };
 
         collection.update_one(query, update, None).await
+
     }
 
     pub async fn delete_by_selfs(
@@ -396,45 +363,25 @@ impl AudioFile {
         Ok(delete_res)
     }
 
-    // pub async fn get_by_library_path_and_none_referer(
-    //     mongodb_client: mongodb::Client,
-    //     path: &Path,
-    // ) -> Vec<document::AudioFile> {
-    //     let collection = Self::get_collection(mongodb_client.clone());
-    //     let path = util::path::path_to_materialized(path);
+    pub async fn update_self(
+        mongodb_client: mongodb::Client,
+        document: document::AudioFile,
+    ) -> Result<UpdateResult, Error> {
+        let collection = Self::get_collection(mongodb_client.clone());
+        
+        // let doc_id = doc_id.to_string();
+        let query = doc! {
+            "_id": document.id,
+        };
 
-    //     // let filter = doc! {
-    //     //     "parent_path": { "$regex": format!("^{}", path) }
-    //     // };
+        let serialized_document = mongodb::bson::to_document(&document).unwrap();
+        // document.
+        let update = doc! {
+            "$set": serialized_document,
+        };
 
-    //     // let filter = doc! {
-    //     //     "$and": [{
-    //     //         "parent_path": { "$regex": format!("^{}", path) }
-    //     //     }, {
-    //     //         "audio_tag_refer": null,
-    //     //     }]
-    //     // };
-
-    //     let find_res = collection.find(filter, None).await.unwrap();
-
-    //     find_res.try_collect().await.unwrap_or_else(|_| vec![])
-    // }
-
-    // pub async fn get_by_materialized_library_path(
-    //     mongodb_client: mongodb::Client,
-    //     path: &Path,
-    // ) -> Vec<document::AudioFile> {
-    //     let collection = Self::get_collection(mongodb_client.clone());
-    //     // let path = util::path::path_to_materialized(path);
-
-    //     let filter = doc! {
-    //         "parent_path": { "$regex": format!("^{}", path) }
-    //     };
-
-    //     let find_res = collection.find(filter, None).await.unwrap();
-
-    //     find_res.try_collect().await.unwrap_or_else(|_| vec![])
-    // }
+        collection.update_one(query, update, None).await
+    }
 }
 
 pub struct AudioTag {}
@@ -455,14 +402,6 @@ impl AudioTag {
     ) -> Result<mongodb::results::InsertOneResult, mongodb::error::Error> {
         let collection = Self::get_collection(mongodb_client.clone());
         collection.insert_one(doc, None).await
-        // let insert_res = collection.insert_one(doc, None).await;
-        
-        // Ok(insert_res)
-
-        // match insert_res {
-        //     Ok(res) => return Ok(res),
-        //     Err(err) => return Err(err),
-        // }
     }
 
     pub async fn get_by_ids(
@@ -497,5 +436,28 @@ impl AudioTag {
         let delete_res = collection.delete_many(query, None).await?;
 
         Ok(delete_res)
+    }
+
+    pub async fn update_self(
+        mongodb_client: mongodb::Client,
+        // doc_id: &i64,
+        document: document::AudioTag,
+        // tag_id: &i64,
+        
+    ) -> Result<UpdateResult, Error> {
+        let collection = Self::get_collection(mongodb_client.clone());
+        
+        // let doc_id = doc_id.to_string();
+        let query = doc! {
+            "_id": document.id,
+        };
+
+        let serialized_document = mongodb::bson::to_document(&document).unwrap();
+        // document.
+        let update = doc! {
+            "$set": serialized_document,
+        };
+
+        collection.update_one(query, update, None).await
     }
 }
