@@ -52,6 +52,25 @@ fn run_fs_notify() -> Result<(), ()> {
     }
 }
 
+// fn process_chaged_audio_files_at_start() {
+//     let audio_types = ["aiff"];
+
+//     // let mut libraries: HashMap<PathBuf, Vec<document::AudioFile>> = HashMap::new();
+//     // let mut libraries = HashSet::new();
+//     // let mut audio_file_docs: Vec<document::AudioFile> = Vec::new();
+
+//     let audio_file_entry_iter = WalkDir::new(library_root).into_iter()
+//         .filter_map(|item| item.ok())
+//         // .map(|item| item.unwrap())
+//         .filter(|item| 
+//             item.metadata().unwrap().is_file() && 
+//             item.path().extension() != None)
+//         .filter(|item| {
+//             let file_extension = item.path().extension().unwrap();
+//             audio_types.contains(&file_extension.to_str().unwrap())
+//         });
+// }
+
 pub async fn run_server(addr: &str) -> Result<(), Box<dyn std::error::Error>> {
     std::thread::spawn(|| {
         run_fs_notify()

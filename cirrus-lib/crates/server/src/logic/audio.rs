@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    path::{Path, PathBuf}, collections::{HashMap, HashSet, hash_map::DefaultHasher}, hash::{Hash, Hasher}, ops::{Deref, DerefMut},
+    path::{Path, PathBuf}, collections::{HashMap, HashSet, hash_map::DefaultHasher}, hash::{Hash, Hasher}, ops::{Deref, DerefMut}, borrow::{BorrowMut, Borrow}, rc::Rc, sync::Arc,
 };
 
 use aiff::reader::AiffReader;
@@ -201,7 +201,7 @@ impl AudioLibrary {
 
         model::AudioLibrary::create_many(mongodb_client.clone(), library_docs).await.unwrap();
 
-        let create_many_res = model::AudioFile::create_many(mongodb_client.clone(), audio_file_docs).await;
+        let create_many_res = model::AudioFile::create_many(mongodb_client.clone(), &audio_file_docs).await;
 
         match create_many_res {
             Ok(res) => return Ok(format!("{:?}", res)),
@@ -241,7 +241,8 @@ impl AudioLibrary {
             for audio_file in audio_files.iter() {
                 // let audio_file_path = Path::new(&util::path::materialized_to_path(&audio_file.parent_path)).join(&audio_file.filename);
                 // let audio_tag = Self::create_audio_tag(&audio_file_path).unwrap();
-                let audio_tag = Self::create_audio_tag(None, &audio_file.parent_path, &audio_file.filename);
+                let parent_path = util::path::materialized_to_path(&audio_file.parent_path);
+                let audio_tag = Self::create_audio_tag(None, &parent_path, &audio_file.filename);
                 let audio_tag_id = audio_tag.id.clone();
                 
                 // let tag_create_res = model::AudioTag::create(mongodb_client.clone(), audio_tag).await.unwrap();
@@ -296,7 +297,8 @@ impl AudioLibrary {
             if !new_library_pathstrs.is_empty() {
                 let new_audio_file_docs: Vec<_> = new_library_pathstrs
                     .iter()
-                    .map(|item| Self::get_audio_file_paths(Path::new(&item), &audio_types))
+                    // .map(|item| Self::get_audio_file_paths(Path::new(&item), &audio_types))
+                    .map(|item| Self::get_audio_file_paths(Path::new(item), &audio_types))
                     .flat_map(|item| item)
                     .map(|item| document::AudioFile::create_from_path(&item))
                     .collect();
@@ -308,7 +310,7 @@ impl AudioLibrary {
 
                 model::AudioLibrary::create_many(mongodb_client.clone(), new_library_docs).await.unwrap();
 
-                model::AudioFile::create_many(mongodb_client.clone(), new_audio_file_docs).await.unwrap();
+                model::AudioFile::create_many(mongodb_client.clone(), &new_audio_file_docs).await.unwrap();
     
             }
 
@@ -323,7 +325,7 @@ impl AudioLibrary {
                         // .map(|item| item.audio_tag_refer.un)
                         .collect();
 
-                    let audio_tag_delete_res = model::AudioTag::delete_by_ids(mongodb_client.clone(), delete_audio_tag_ids).await.unwrap();
+                    let audio_tag_delete_res = model::AudioTag::delete_by_ids(mongodb_client.clone(), &delete_audio_tag_ids).await.unwrap();
 
                     let audio_file_delete_res = model::AudioFile::delete_by_selfs(mongodb_client.clone(), &audio_files).await.unwrap();
 
@@ -342,11 +344,19 @@ impl AudioLibrary {
                         // .map(|item| item.filename.as_str())
                         .map(|item| item.filename.to_owned())
                         .collect();
-                    let audio_files: HashMap<String, document::AudioFile> = audio_files
+                    let mut audio_files: HashMap<String, document::AudioFile> = audio_files
                         .into_iter()
                         // .map(|item| (item.filename.as_str(), item))
                         .map(|item| (item.filename.to_owned(), item))
+                        // .map(|item| (item.filename.to_owned(), Arc::new(Mutex::new(item))))
                         .collect();
+                    // let audio_files: HashMap<String, Arc<Mutex<document::AudioFile>>> = audio_files
+                    //     .into_iter()
+                    //     // .map(|item| (item.filename.as_str(), item))
+                    //     // .map(|item| (item.filename.to_owned(), item))
+                    //     .map(|item| (item.filename.to_owned(), Arc::new(Mutex::new(item))))
+                    //     .collect();
+                    println!("af: {:?}", audio_files);
                     let local_audio_file_paths = Self::get_audio_file_paths(Path::new(&updated_local_library.id), &audio_types);
                     // let local_audio_file_modified_timestamps: HashMap<&str, i64> = local_audio_file_paths
                     //     .iter()
@@ -359,6 +369,7 @@ impl AudioLibrary {
                     //     .iter()
                     //     .map(|(_, v)| v.filename.as_str())
                     //     .collect();
+                    // audio_files.get_mut("foo").unwrap().update_modified_timestamp();
                     let local_audio_filenames: HashSet<_> = local_audio_file_paths
                         .iter()
                         .filter_map(|item| item.file_name()
@@ -370,21 +381,124 @@ impl AudioLibrary {
                     let new_audio_filenames: HashSet<_> = local_audio_filenames.difference(&audio_filenames).cloned().collect();
                     let deleted_audio_filenames: HashSet<_> = audio_filenames.difference(&local_audio_filenames).cloned().collect();
                     let managed_audio_filenames: HashSet<_> = audio_filenames.difference(&deleted_audio_filenames).cloned().collect();
-                    let updated_audio_files: Vec<_> = managed_audio_filenames
-                        .into_iter()
-                        .filter_map(|item| audio_files.get(&item)
-                            .and_then(|mut audio_file| audio_file.check_modified().then(move || mut audio_file)))
-                        .collect();
-                        // .map(|item| )
-                    let updated_audio_tags: Vec<_> = updated_audio_files
-                        .iter()
-                        .filter_map(|item| match item.audio_tag_refer {
-                            Some(_) => Some(item),
-                            None => None,
-                        })
-                        .map(|item| Self::create_audio_tag(item.audio_tag_refer, &item.parent_path, &item.filename))
-                        .collect();
+                    // let updated_audio_files: Vec<_> = managed_audio_filenames
+                    //     .into_iter()
+                    //     .filter_map(|item| audio_files.get(&item)
+                    //         .and_then(|audio_file | audio_file.check_modified().then(|| audio_file.borrow_mut())))
+                    //     .collect();
+                    //     // .map(|item| )
 
+                    // let mut updated_audio_files: Vec<Arc<Mutex<document::AudioFile>>> = vec![];
+                    // let mut updated_audio_files: Vec<Arc<document::AudioFile>> = vec![];
+                    let mut updated_audio_files: Vec<document::AudioFile> = vec![];
+                    let mut updated_audio_tags: Vec<document::AudioTag> = vec![];
+
+                    for managed_audio_filename in managed_audio_filenames.iter() {
+                        // let audio_file = audio_files.get_mut(managed_audio_filename).unwrap();
+                        // let audio_file = audio_files.get(managed_audio_filename).unwrap();
+
+                        // let mut _audio_file = audio_file.lock().await;
+                        let mut audio_file = audio_files.remove(managed_audio_filename).unwrap();
+                        if audio_file.check_modified() {
+                        // if audio_files.get(managed_audio_filename).unwrap().check_modified() {
+                            match audio_file.audio_tag_refer {
+                                Some(audio_tag_id) => {
+                                    let parent_path = util::path::materialized_to_path(&audio_file.parent_path);
+                                    let updated_audio_tag = Self::create_audio_tag(Some(audio_tag_id), &parent_path, &audio_file.filename);
+                                    updated_audio_tags.push(updated_audio_tag);
+                                },
+                                None => (),
+                            }
+
+                            // audio_file.borrow_mut().
+                            audio_file.update_modified_timestamp();
+                            // {
+                            //     let reference = audio_file.borrow_mut();
+                            //     reference.update_modified_timestamp();
+                            // }
+
+                            // updated_audio_files.push(Arc::new(*audio_file));
+                            updated_audio_files.push(audio_file);
+                        }
+                    }
+
+                    // let updated_audio_files: Vec<_> = managed_audio_filenames
+                    //     .into_iter()
+                    //     .filter_map(|item| audio_files.get(&item)
+                    //         .and_then(|audio_file | audio_file.check_modified().then(|| audio_file)))
+                    //     .collect();
+                    // let updated_audio_filenames: Vec<_> = updated_audio_files
+                    //     .iter()
+                    //     .map(|item| item.filename.to_owned())
+                    //     .collect();
+
+
+                    // let updated_audio_files: HashMap<_, _> = managed_audio_filenames
+                    //     .into_iter()
+                    //     .filter_map(|item| audio_files.get(&item)
+                    //         .and_then(|audio_file | audio_file.check_modified().then(|| audio_file)))
+                    //     .map(|item| (item.filename.to_owned(), item))
+                    //     .collect();
+
+                        // .map(|item| )
+
+                    // let updated_audio_tags: Vec<_> = updated_audio_files
+                    //     .iter() 
+                    //     .filter_map(|item| match item.audio_tag_refer {
+                    //         Some(_) => Some(item),
+                    //         None => None,
+                    //     })
+                    //     .map(|item| Self::create_audio_tag(item.audio_tag_refer, &item.parent_path, &item.filename))
+                    //     .collect();
+
+                    // let updated_audio_tags: Vec<_> = updated_audio_files.clone()
+                    //     .into_iter() 
+                    //     .filter_map(|item| match item.audio_tag_refer {
+                    //         Some(_) => Some(item),
+                    //         None => None,
+                    //     })
+                    //     .map(|item| Self::create_audio_tag(item.audio_tag_refer, &item.parent_path, &item.filename))
+                    //     .collect();
+
+                    // drop(updated_audio_files);
+
+                    // updated_audio_files
+                    //     .iter()
+                    //     .filter_map(|item| audio_files.get_mut(&item.filename))
+                    //     .for_each(|item| item.update_modified_timestamp());
+
+                    // updated_audio_files
+                    //     .iter()
+                    //     .for_each(|mut item| {
+                    //         let mut audio_file = audio_files.get_mut(&item.filename).unwrap();
+                    //         audio_file.update_modified_timestamp();
+                    //     });
+
+
+
+                    // for updated_audio_filename in updated_audio_filenames {
+                    //     let audio_file = audio_files.get_mut(&updated_audio_filename).unwrap();
+                    //     audio_file.update_modified_timestamp();
+                    // }
+
+                    // updated_audio_files.keys()
+                    //     .map(|item| )
+
+                    // updated_audio_files
+                    //     .keys()
+                    //     .for_each(|k: &String| {
+                    //         let audio_file = audio_files.get_mut(k).unwrap();
+                    //         audio_file.update_modified_timestamp();
+                    //     });
+
+
+                    // let keys: Vec<_> = updated_audio_files.keys().collect();
+                    // keys.into_iter()
+                    //     .for_each(|item: &String| {
+                    //         let current_audio_file = audio_files.get_mut(item).unwrap();
+                    //         current_audio_file.update_modified_timestamp();
+                    //     });
+                    
                     // updated_audio_files
                     //     .iter_mut()
                     //     .for_each(|&item| {
@@ -401,9 +515,9 @@ impl AudioLibrary {
                     //     updated_audio_file.update_modified_timestamp();
                     // }
 
-                    for uaf in updated_audio_files {
-                        uaf.update_modified_timestamp();
-                    }
+                    // for &mut uaf in updated_audio_files {
+                    //     uaf.update_modified_timestamp();
+                    // }
                         // .for_each(|mut item| item.update_modified_timestamp());
                     // for updated_audio_file in updated_audio_files.iter() {
                     //     match updated_audio_file.audio_tag_refer {
@@ -423,12 +537,43 @@ impl AudioLibrary {
                         })
                         .collect();
 
+                    // let delete_audio_file_docs: Vec<_> = deleted_audio_filenames
+                    //     .iter()
+                    //     .filter_map(|item| audio_files.get(item))
+                    //     .collect();
                     let delete_audio_file_docs: Vec<_> = deleted_audio_filenames
                         .iter()
-                        .filter_map(|item| audio_files.get(item))
+                        .filter_map(|item| audio_files.remove(item))
                         .collect();
 
-                    
+                    if !new_audio_file_docs.is_empty() {
+                        model::AudioFile::create_many(mongodb_client.clone(), &new_audio_file_docs).await.unwrap();
+                    }
+
+                    if !delete_audio_file_docs.is_empty() {
+                        let deleted_audio_tag_ids: Vec<_> = delete_audio_file_docs
+                            .iter()
+                            .filter_map(|item| item.audio_tag_refer)
+                            .collect();
+
+                        model::AudioTag::delete_by_ids(mongodb_client.clone(), &deleted_audio_tag_ids).await.unwrap();
+
+                        model::AudioFile::delete_by_selfs(mongodb_client.clone(), &delete_audio_file_docs).await.unwrap();
+                    }
+
+                    if !updated_audio_files.is_empty() {
+                        model::AudioFile::update_self(mongodb_client.clone(), &updated_audio_files).await;
+                        // updated_audio_files
+                        //     .iter()
+                        //     .map(async |item| item.lock().await)
+                        //     .for_each(|item| model::AudioFile::update_self(mongodb_client.clone(), item));
+                    }
+
+                    if !updated_audio_tags.is_empty() {
+                        model::AudioTag::update_self(mongodb_client.clone(), &updated_audio_tags).await;
+                    }
+
+                    println!("nafd: {:?}, dafd: {:?}, uaf: {:?}, uat: {:?}", new_audio_file_docs, delete_audio_file_docs, updated_audio_files, updated_audio_tags);
 
                     let local_library_modified_timestamp = util::path::get_timestamp(&local_library_path);
                     let update_local_library_res = model::AudioLibrary::update_modified_timestamp(mongodb_client.clone(), &updated_local_library.id, local_library_modified_timestamp).await;
@@ -469,11 +614,11 @@ impl AudioLibrary {
         let audio_metadata = if let Some(id3v2_tag) = aiff.id3v2_tag {
             let date_recorded = match id3v2_tag.date_recorded() {
                 Some(datetime) => {
-                    let month = datetime.month.unwrap_or_default();
-                    let day = datetime.day.unwrap_or_default();
-                    let hour = datetime.hour.unwrap_or_default();
-                    let minute = datetime.minute.unwrap_or_default();
-                    let second = datetime.second.unwrap_or_default();
+                    let month = datetime.month.unwrap_or_else(|| 1u8);
+                    let day = datetime.day.unwrap_or_else(|| 1u8);
+                    let hour = datetime.hour.unwrap_or_else(|| 0u8);
+                    let minute = datetime.minute.unwrap_or_else(|| 0u8);
+                    let second = datetime.second.unwrap_or_else(|| 0u8);
 
                     Some(Utc.ymd(datetime.year, month.into(), day.into()).and_hms(hour.into(), minute.into(), second.into()))
                 },
@@ -482,11 +627,11 @@ impl AudioLibrary {
 
             let date_released = match id3v2_tag.date_released() {
                 Some(datetime) => {
-                    let month = datetime.month.unwrap_or_default();
-                    let day = datetime.day.unwrap_or_default();
-                    let hour = datetime.hour.unwrap_or_default();
-                    let minute = datetime.minute.unwrap_or_default();
-                    let second = datetime.second.unwrap_or_default();
+                    let month = datetime.month.unwrap_or_else(|| 1u8);
+                    let day = datetime.day.unwrap_or_else(|| 1u8);
+                    let hour = datetime.hour.unwrap_or_else(|| 0u8);
+                    let minute = datetime.minute.unwrap_or_else(|| 0u8);
+                    let second = datetime.second.unwrap_or_else(|| 0u8);
 
                     Some(Utc.ymd(datetime.year, month.into(), day.into()).and_hms(hour.into(), minute.into(), second.into()))
                 },

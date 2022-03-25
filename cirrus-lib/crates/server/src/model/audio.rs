@@ -114,6 +114,54 @@ impl AudioLibrary {
 
         collection.update_one(query, update, None).await
     }
+
+    // pub async fn update_self(
+    //     mongodb_client: mongodb::Client,
+    //     // doc_id: &i64,
+    //     document: document::AudioLibrary,
+    //     // tag_id: &i64,
+        
+    // ) -> Result<UpdateResult, Error> {
+    //     let collection = Self::get_collection(mongodb_client.clone());
+        
+    //     // let doc_id = doc_id.to_string();
+    //     let query = doc! {
+    //         "_id": document.id,
+    //     };
+
+    //     let serialized_document = mongodb::bson::to_document(&document).unwrap();
+    //     // document.
+    //     let update = doc! {
+    //         "$set": serialized_document,
+    //     };
+
+    //     collection.update_one(query, update, None).await
+    // }
+    pub async fn update_self(
+        mongodb_client: mongodb::Client,
+        documents: &Vec<document::AudioLibrary>,
+    ) -> Vec<Result<UpdateResult, Error>> {
+        let collection = Self::get_collection(mongodb_client.clone());
+        
+        // let doc_id = doc_id.to_string();
+        let mut update_results: Vec<Result<UpdateResult, Error>> = vec![];
+        for document in documents.iter() {
+            let query = doc! {
+                "_id": document.id.clone(),
+            };
+
+            let serialized_document = mongodb::bson::to_document(&document).unwrap();
+            // document.
+            let update = doc! {
+                "$set": serialized_document,
+            };
+
+            let update_res = collection.update_one(query, update, None).await;
+            update_results.push(update_res);
+        }
+
+        update_results
+    }
 }
 
 pub struct AudioLibraryRoot {}
@@ -254,7 +302,7 @@ impl AudioFile {
     pub async fn create_many(
         // db_handle: MutexGuard<'_, mongodb::Database>,
         mongodb_client: mongodb::Client,
-        doc: Vec<document::AudioFile>,
+        doc: &Vec<document::AudioFile>,
     ) -> Result<mongodb::results::InsertManyResult, mongodb::error::Error> {
         let collection = Self::get_collection(mongodb_client.clone());
 
@@ -365,22 +413,28 @@ impl AudioFile {
 
     pub async fn update_self(
         mongodb_client: mongodb::Client,
-        document: document::AudioFile,
-    ) -> Result<UpdateResult, Error> {
+        documents: &Vec<document::AudioFile>,
+    ) -> Vec<Result<UpdateResult, Error>> {
         let collection = Self::get_collection(mongodb_client.clone());
         
         // let doc_id = doc_id.to_string();
-        let query = doc! {
-            "_id": document.id,
-        };
+        let mut update_results: Vec<Result<UpdateResult, Error>> = vec![];
+        for document in documents.iter() {
+            let query = doc! {
+                "_id": document.id,
+            };
 
-        let serialized_document = mongodb::bson::to_document(&document).unwrap();
-        // document.
-        let update = doc! {
-            "$set": serialized_document,
-        };
+            let serialized_document = mongodb::bson::to_document(&document).unwrap();
+            // document.
+            let update = doc! {
+                "$set": serialized_document,
+            };
 
-        collection.update_one(query, update, None).await
+            let update_res = collection.update_one(query, update, None).await;
+            update_results.push(update_res);
+        }
+
+        update_results
     }
 }
 
@@ -423,7 +477,7 @@ impl AudioTag {
 
     pub async fn delete_by_ids(
         mongodb_client: mongodb::Client,
-        ids: Vec<ObjectId>,
+        ids: &Vec<ObjectId>,
     ) -> Result<DeleteResult, mongodb::error::Error> {
         let collection = Self::get_collection(mongodb_client.clone());
 
@@ -438,26 +492,52 @@ impl AudioTag {
         Ok(delete_res)
     }
 
+    // pub async fn update_self(
+    //     mongodb_client: mongodb::Client,
+    //     // doc_id: &i64,
+    //     document: document::AudioTag,
+    //     // tag_id: &i64,
+        
+    // ) -> Result<UpdateResult, Error> {
+    //     let collection = Self::get_collection(mongodb_client.clone());
+        
+    //     // let doc_id = doc_id.to_string();
+    //     let query = doc! {
+    //         "_id": document.id,
+    //     };
+
+    //     let serialized_document = mongodb::bson::to_document(&document).unwrap();
+    //     // document.
+    //     let update = doc! {
+    //         "$set": serialized_document,
+    //     };
+
+    //     collection.update_one(query, update, None).await
+    // }
+
     pub async fn update_self(
         mongodb_client: mongodb::Client,
-        // doc_id: &i64,
-        document: document::AudioTag,
-        // tag_id: &i64,
-        
-    ) -> Result<UpdateResult, Error> {
+        documents: &Vec<document::AudioTag>,
+    ) -> Vec<Result<UpdateResult, Error>> {
         let collection = Self::get_collection(mongodb_client.clone());
         
         // let doc_id = doc_id.to_string();
-        let query = doc! {
-            "_id": document.id,
-        };
+        let mut update_results: Vec<Result<UpdateResult, Error>> = vec![];
+        for document in documents.iter() {
+            let query = doc! {
+                "_id": document.id,
+            };
 
-        let serialized_document = mongodb::bson::to_document(&document).unwrap();
-        // document.
-        let update = doc! {
-            "$set": serialized_document,
-        };
+            let serialized_document = mongodb::bson::to_document(&document).unwrap();
+            // document.
+            let update = doc! {
+                "$set": serialized_document,
+            };
 
-        collection.update_one(query, update, None).await
+            let update_res = collection.update_one(query, update, None).await;
+            update_results.push(update_res);
+        }
+
+        update_results
     }
 }

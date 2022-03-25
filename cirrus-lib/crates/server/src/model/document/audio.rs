@@ -1,5 +1,6 @@
 use std::cmp::Eq;
 use std::hash::{Hash, Hasher};
+use std::ops::{DerefMut, Deref};
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Utc};
@@ -56,6 +57,20 @@ pub struct AudioFile {
     pub filename: String,
     pub audio_tag_refer: Option<ObjectId>,
 }
+
+// impl Deref for AudioFile {
+//     type Target;
+
+//     fn deref(&self) -> &Self::Target {
+//         todo!()
+//     }
+// }
+
+// impl DerefMut for AudioFile {
+//     fn deref_mut(&mut self) -> &mut Self::Target {
+//         todo!()
+//     }
+// }
 
 impl AudioFile {
     pub fn create_from_path(path: &Path) -> Self {
