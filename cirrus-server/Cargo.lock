@@ -142,8 +142,10 @@ name = "cirrus-server"
 version = "0.1.0"
 dependencies = [
  "cirrus-server-lib",
+ "prost",
  "structopt",
  "tokio",
+ "tonic",
 ]
 
 [[package]]
@@ -155,6 +157,7 @@ dependencies = [
  "cirrus-grpc",
  "futures",
  "http",
+ "prost",
  "tokio",
  "tonic",
  "tonic-build",

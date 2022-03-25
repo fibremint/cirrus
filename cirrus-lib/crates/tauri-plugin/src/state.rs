@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use tauri::async_runtime::{RwLock, Mutex};
+use tauri::async_runtime::RwLock;
 
 use cirrus_client_lib::audio::AudioPlayer;
 
