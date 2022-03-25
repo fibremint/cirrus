@@ -199,8 +199,10 @@ impl AudioLibrary {
 
         model::AudioLibraryRoot::create(mongodb_client.clone(), audio_library_root_doc).await.unwrap();
 
-        model::AudioLibrary::create_many(mongodb_client.clone(), library_docs).await.unwrap();
-
+        if !library_docs.is_empty() {
+            model::AudioLibrary::create_many(mongodb_client.clone(), library_docs).await.unwrap();
+        }
+        
         let create_many_res = model::AudioFile::create_many(mongodb_client.clone(), &audio_file_docs).await;
 
         match create_many_res {
