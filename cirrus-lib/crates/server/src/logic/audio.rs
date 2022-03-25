@@ -212,7 +212,7 @@ impl AudioLibrary {
     pub async fn remove_audio_library(
         mongodb_client: mongodb::Client,
         path: &Path
-    ) -> Result<DeleteResult, String> {
+    ) -> Result<String, String> {
         // let path_str = path.to_str().unwrap();
 
         // if let None = model::AudioLibrary::get_by_path(mongodb_client.clone(), path).await.unwrap() {
@@ -223,11 +223,39 @@ impl AudioLibrary {
             return Err(format!("path '{:?}' not exists", path))
         }
 
-        let delete_libraries_res = model::AudioLibrary::delete_by_path(mongodb_client.clone(), path).await;
+        let mut delete_tag_count = 0;
+        let mut delete_file_count = 0;
+        let mut delete_library_count = 0;
 
-        let delete_library_root_res = model::AudioLibraryRoot::delete_by_path(mongodb_client.clone(), path).await;
+        let delete_audio_libraries = model::AudioLibrary::get_by_path(mongodb_client.clone(), path).await.unwrap();
+        for delete_audio_library in delete_audio_libraries.iter() {
+            let delete_audio_library_path = util::path::materialized_to_path(&delete_audio_library.path.as_ref().unwrap());
+            let delete_audio_library_path = Path::new(&delete_audio_library_path);
+            let audio_files = model::AudioFile::get_self_by_library_path(mongodb_client.clone(), delete_audio_library_path, false).await.unwrap();
+            let delete_audio_tag_ids: Vec<_> = audio_files.iter()
+                .filter_map(|item| item.audio_tag_refer)
+                // .map(|item| item.audio_tag_refer.un)
+                .collect();
+    
+            let audio_tag_delete_res = model::AudioTag::delete_by_ids(mongodb_client.clone(), &delete_audio_tag_ids).await.unwrap();
+            delete_tag_count += audio_tag_delete_res.deleted_count;
+    
+            let audio_file_delete_res = model::AudioFile::delete_by_selfs(mongodb_client.clone(), &audio_files).await.unwrap();
+            delete_file_count += audio_file_delete_res.deleted_count;
+    
+            let library_delete_res = model::AudioLibrary::delete_by_path(mongodb_client.clone(), delete_audio_library_path).await.unwrap();
+            delete_library_count += library_delete_res.deleted_count;
+        }
 
-        Ok(delete_library_root_res)
+        // model::AudioLibraryRoot::delete_by_selfs(mongodb_client.clone(), target)
+        model::AudioLibraryRoot::delete_by_path(mongodb_client.clone(), path).await;
+
+        // let delete_libraries_res = model::AudioLibrary::delete_by_path(mongodb_client.clone(), path).await;
+
+        // let delete_library_root_res = model::AudioLibraryRoot::delete_by_path(mongodb_client.clone(), path).await;
+
+        // Ok(delete_library_root_res)
+        Ok(format!("deleted tag count: {}, deleted file count: {}, deleted library count: {}", delete_tag_count, delete_file_count, delete_library_count))
     }
 
     pub async fn analyze_audio_library(

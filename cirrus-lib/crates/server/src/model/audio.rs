@@ -274,6 +274,27 @@ impl AudioLibraryRoot {
 
         delete_res
     }
+
+    // pub async fn delete_by_selfs(
+    //     mongodb_client: mongodb::Client,
+    //     target: &Vec<document::AudioLibrary>,
+    // ) -> Result<DeleteResult, mongodb::error::Error> {
+    //     let collection = Self::get_collection(mongodb_client.clone());
+        
+    //     let delete_ids: Vec<_> = target.iter()
+    //         .map(|item| item.id.unwrap())
+    //         .collect();
+
+    //     let query = doc! {
+    //         "_id": {
+    //             "$in": delete_ids,
+    //         }
+    //     };
+
+    //     let delete_res = collection.delete_many(query, None).await?;
+
+    //     Ok(delete_res)
+    // }
 }
 
 pub struct AudioFile {}

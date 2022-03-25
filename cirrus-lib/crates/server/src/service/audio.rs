@@ -103,7 +103,7 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
         let res = match logic::AudioLibrary::remove_audio_library(self.mongodb_client.clone(), path).await {
             Ok(res) => Response::new(Res {
                 code: Code::Ok as u32,
-                status: Some(format!("Removed item count: {}", res.deleted_count)),
+                status: Some(res),
             }),
             Err(err) => return Err(Status::not_found(err)),
         };
