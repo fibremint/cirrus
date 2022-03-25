@@ -178,12 +178,12 @@ impl AudioLibraryRoot {
     pub async fn create(
         mongodb_client: mongodb::Client,
         doc: document::AudioLibrary
-    ) -> Result<mongodb::results::InsertOneResult, Box<dyn std::error::Error>> {
+    ) -> Result<mongodb::results::InsertOneResult, mongodb::error::Error> {
         let collection = Self::get_collection(mongodb_client.clone());
 
-        let insert_res = collection.insert_one(doc, None).await.unwrap();
+        collection.insert_one(doc, None).await
         
-        Ok(insert_res)
+        // Ok(insert_res)
     }
 
     // pub async fn create_many(

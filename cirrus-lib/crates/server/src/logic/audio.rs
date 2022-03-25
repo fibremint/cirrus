@@ -168,17 +168,19 @@ impl AudioLibrary {
 
         let audio_library_root_doc = document::AudioLibrary::create_from_path(&library_root);
 
-        model::AudioLibraryRoot::create(mongodb_client.clone(), audio_library_root_doc).await.unwrap();
+        let library_create_res = model::AudioLibraryRoot::create(mongodb_client.clone(), audio_library_root_doc).await;
 
         if !library_docs.is_empty() {
             model::AudioLibrary::create_many(mongodb_client.clone(), library_docs).await.unwrap();
         }
         
-        let create_many_res = model::AudioFile::create_many(mongodb_client.clone(), &audio_file_docs).await;
+        if !audio_file_docs.is_empty() {
+            model::AudioFile::create_many(mongodb_client.clone(), &audio_file_docs).await.unwrap();
+        }
 
-        match create_many_res {
-            Ok(res) => return Ok(format!("{:?}", res)),
-            Err(err) => return Err(format!("{:?}", err)),
+        match library_create_res {
+            Ok(res) => return Ok(format!("{:?}", res.inserted_id)),
+            Err(err) => return Err(format!("failed to create library {:?}", library_root)),
         }
     }
 
