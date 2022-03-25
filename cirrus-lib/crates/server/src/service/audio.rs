@@ -1,6 +1,5 @@
-use std::{path::Path, rc::Rc, sync::Arc};
+use std::path::Path;
 
-use tokio::sync::Mutex;
 use tonic::{Code, Request, Response, Status};
 
 use cirrus_grpc::{
@@ -14,9 +13,7 @@ use cirrus_grpc::{
 use crate::logic;
 
 #[derive(Debug, Default)]
-pub struct AudioDataSvcImpl {
-    // mongodb_client: mongodb::Database,
-}
+pub struct AudioDataSvcImpl {}
 
 #[tonic::async_trait]
 impl AudioDataSvc for AudioDataSvcImpl {
@@ -54,7 +51,6 @@ impl AudioDataSvc for AudioDataSvcImpl {
 
 // #[derive(Debug, Default)]
 pub struct AudioLibrarySvcImpl {
-    // pub mongodb_client: Arc<Mutex<mongodb::Client>>,
     mongodb_client: mongodb::Client,
 }
 
@@ -75,15 +71,10 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
         let path = &request.get_ref().path;
         let path = Path::new(path);
 
-        // let mongodb_client = self.mongodb_client.lock().await;
-        // let mongodb_client = Arc::downgrade(&self.mongodb_client);
-        // let db_hanlde = self.mongodb_client.clone().lock().await;
-
         let res = match logic::AudioLibrary::add_audio_library(self.mongodb_client.clone(), path).await {
             Ok(_) => Response::new(Res {
                 code: Code::Ok as u32,
                 status: Option::None,
-                // status: String::from("ok")
             }),
             Err(err) => return Err(Status::not_found(err)),
         };
@@ -97,8 +88,6 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
     ) -> Result<Response<Res>, Status> {
         let path = request.get_ref().path.clone();
         let path = Path::new(path.as_str());
-
-        // let mongodb_client = self.mongodb_client.lock().await;
 
         let res = match logic::AudioLibrary::remove_audio_library(self.mongodb_client.clone(), path).await {
             Ok(res) => Response::new(Res {
@@ -115,7 +104,6 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
         &self,
         request: Request<RequestAction>
     ) -> Result<Response<Res>, Status> {
-        // let mongodb_client = self.mongodb_client.lock().await;
 
         let res = match logic::AudioLibrary::analyze_audio_library(self.mongodb_client.clone()).await {
             Ok(_) => Response::new(Res {
@@ -132,7 +120,6 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
         &self,
         request: Request<RequestAction>
     ) -> Result<Response<Res>, Status> {
-        // let mongodb_client = self.mongodb_client.lock().await;
 
         let res = match logic::AudioLibrary::refresh_audio_library(self.mongodb_client.clone()).await {
             Ok(_) => Response::new(Res {
