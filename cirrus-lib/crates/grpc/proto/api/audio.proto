@@ -29,3 +29,9 @@ message AudioDataRes {
 message AudioLibraryReq {
     string path = 1;
 }
+
+message AudioTagRes {
+    string artist = 1;
+    string genre = 2;
+    string title = 3;
+}

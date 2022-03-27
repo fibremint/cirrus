@@ -15,3 +15,7 @@ service AudioLibrarySvc {
     rpc AnalyzeAudioLibrary (cirrus.common.RequestAction) returns (cirrus.common.Response) {}
     rpc RefreshAudioLibrary (cirrus.common.RequestAction) returns (cirrus.common.Response) {}
 }
+
+service AudioTagSvc {
+    rpc ListAudioTags (cirrus.common.RequestAction) returns (stream cirrus.api.AudioTagRes) {}
+}

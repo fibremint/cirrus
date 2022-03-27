@@ -7,7 +7,7 @@ use aiff::reader::AiffReader;
 use bson::oid::ObjectId;
 use chrono::{DateTime, NaiveDateTime, Utc, TimeZone};
 use cirrus_grpc::api::{
-    AudioDataRes, AudioMetaRes
+    AudioDataRes, AudioMetaRes, AudioTagRes
 };
 // use futures::{TryStreamExt};
 use mongodb::{bson::{Document, doc}, options::FindOptions, results::DeleteResult};
@@ -530,5 +530,27 @@ impl AudioLibrary {
                 ..Default::default()
             };
         };
+    }
+}
+
+pub struct AudioTag {}
+
+impl AudioTag {
+    pub async fn list_audio_tags(
+        mongodb_client: mongodb::Client,
+        max_item_num: usize,
+    ) -> Result<Vec<AudioTagRes>, String> {
+        let get_all_res = model::AudioTag::get_all(mongodb_client.clone(), max_item_num as i64).await;
+
+        let res: Vec<_> = get_all_res
+            .iter()
+            .map(|item| AudioTagRes {
+                artist: item.artist.as_ref().unwrap().to_string(),
+                genre: item.genre.as_ref().unwrap().to_string(),
+                title: item.title.as_ref().unwrap().to_string(),
+            })
+            .collect();
+
+        Ok(res)
     }
 }

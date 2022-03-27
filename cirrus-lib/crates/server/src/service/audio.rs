@@ -1,13 +1,16 @@
 use std::path::Path;
 
+use tokio::sync::mpsc;
 use tonic::{Code, Request, Response, Status};
+use tokio_stream::wrappers::ReceiverStream;
 
 use cirrus_grpc::{
-    api::{AudioMetaReq, AudioMetaRes, AudioDataReq, AudioDataRes, AudioLibraryReq},
+    api::{AudioMetaReq, AudioMetaRes, AudioDataReq, AudioDataRes, AudioLibraryReq, AudioTagRes},
     common::{RequestAction, Response as Res},
 
     audio_data_svc_server::AudioDataSvc,
     audio_library_svc_server::AudioLibrarySvc,
+    audio_tag_svc_server::AudioTagSvc,
 };
 
 use crate::logic;
@@ -130,5 +133,45 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
         };
 
         Ok(res)
+    }
+}
+
+#[derive(Debug)]
+pub struct AudioTagSvcImpl {
+    mongodb_client: mongodb::Client,
+}
+
+impl AudioTagSvcImpl {
+    pub fn new(mongodb_client: mongodb::Client) -> Self {
+        Self {
+            mongodb_client,
+        }
+    }
+}
+
+#[tonic::async_trait]
+impl AudioTagSvc for AudioTagSvcImpl {
+    type ListAudioTagsStream = ReceiverStream<Result<AudioTagRes, Status>>;
+
+    async fn list_audio_tags(
+        &self,
+        request: tonic::Request<RequestAction>
+    ) -> Result<Response<Self::ListAudioTagsStream>, Status> {
+        let tag_num = 20;
+
+        let (mut tx, rx) = mpsc::channel(tag_num);
+        let res = logic::AudioTag::list_audio_tags(self.mongodb_client.clone(), tag_num).await.unwrap();
+
+        // for r in res.into_iter() {
+            
+        // }
+
+        tokio::spawn(async move {
+            for r in res.into_iter() {
+                tx.send(Ok(r)).await.unwrap();
+            }
+        });
+
+        Ok(Response::new(ReceiverStream::new(rx)))
     }
 }
