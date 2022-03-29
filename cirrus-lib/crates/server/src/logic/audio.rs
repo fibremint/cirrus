@@ -538,9 +538,10 @@ pub struct AudioTag {}
 impl AudioTag {
     pub async fn list_audio_tags(
         mongodb_client: mongodb::Client,
-        max_item_num: usize,
+        max_item_num: u64,
+        page: u64,
     ) -> Result<Vec<AudioTagRes>, String> {
-        let get_all_res = model::AudioTag::get_all(mongodb_client.clone(), max_item_num as i64).await;
+        let get_all_res = model::AudioTag::get_all(mongodb_client.clone(), max_item_num as i64, page).await;
 
         let res: Vec<_> = get_all_res
             .iter()

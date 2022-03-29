@@ -482,6 +482,7 @@ impl AudioTag {
     pub async fn get_all(
         mongodb_client: mongodb::Client,
         limit: i64,
+        page: u64,
     ) -> Vec<document::AudioTag> {
         let collection = Self::get_collection(mongodb_client.clone());
         // let options = mongodb::options::FindOptions {
@@ -491,6 +492,7 @@ impl AudioTag {
 
         let options = mongodb::options::FindOptions::builder()
             .limit(limit)
+            .skip(limit as u64 * (page-1))
             .build();
 
         let find_res = collection.find(None, options).await.unwrap();

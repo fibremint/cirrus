@@ -6,7 +6,7 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use cirrus_grpc::{
     api::{AudioMetaReq, AudioMetaRes, AudioDataReq, AudioDataRes, AudioLibraryReq, AudioTagRes},
-    common::{RequestAction, Response as Res},
+    common::{RequestAction, Response as Res, ListRequest},
 
     audio_data_svc_server::AudioDataSvc,
     audio_library_svc_server::AudioLibrarySvc,
@@ -155,16 +155,15 @@ impl AudioTagSvc for AudioTagSvcImpl {
 
     async fn list_audio_tags(
         &self,
-        request: tonic::Request<RequestAction>
+        request: tonic::Request<ListRequest>
     ) -> Result<Response<Self::ListAudioTagsStream>, Status> {
-        let tag_num = 20;
+        // let tag_num = 20;
+        let req_page = request.get_ref().page;
+        let req_items_per_page = request.get_ref().items_per_page;
 
-        let (mut tx, rx) = mpsc::channel(tag_num);
-        let res = logic::AudioTag::list_audio_tags(self.mongodb_client.clone(), tag_num).await.unwrap();
+        let (mut tx, rx) = mpsc::channel(req_items_per_page as usize);
+        let res = logic::AudioTag::list_audio_tags(self.mongodb_client.clone(), req_items_per_page, req_page).await.unwrap();
 
-        // for r in res.into_iter() {
-            
-        // }
 
         tokio::spawn(async move {
             for r in res.into_iter() {
