@@ -27,7 +27,7 @@
     Check out <a href="https://github.com/sveltejs/kit#readme">SvelteKit</a> for
     the officially supported framework, also powered by Vite!
   </p> -->
-  <link rel="stylesheet" href="node_modules/svelte-material-ui/bare.css" />
+  <!-- <link rel="stylesheet" href="node_modules/svelte-material-ui/bare.css" /> -->
 
 </main>
 
