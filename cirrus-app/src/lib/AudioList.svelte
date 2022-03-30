@@ -1,40 +1,65 @@
 <script lang="ts">
   import { invoke } from '@tauri-apps/api';
   import List, { Item, Text, PrimaryText, SecondaryText } from '@smui/list';
-  import {onMount} from 'svelte';
+  import { onMount } from 'svelte';
   import InfiniteScroll from 'svelte-infinite-scroll';
 
-  export let selectedAudioId: string = undefined;
-  
+  import type { AudioTag } from '../types';
+  import { audioTagsStore, selectedAudioTagStore } from '../state';
+
+  // export let audioTags: AudioTag[];
+  // export let selectedAudio: AudioTag = undefined;
+
+  let selectedAudioId: string = undefined;
   let selectedItemIdx: number | undefined = undefined;
+
+  let selectedAudioTag: AudioTag = undefined;
   let currentPage = 1;
   let itemsPerPage = 20;
 
-  type AudioTag = {
-    id: string,
-    artist: string,
-    genre: string,
-    title: string,
-  };
+  let isFetching = false;
+
+  // type AudioTag = {
+  //   id: string,
+  //   artist: string,
+  //   genre: string,
+  //   title: string,
+  // };
 
   let audioTags: AudioTag[] = [];
   let audioTagsFetch: AudioTag[] = [];
 
-  $: audioTags = [
-    ...audioTags,
-    ...audioTagsFetch,
-  ];
+  // $: audioTags = [
+  //   ...audioTags,
+  //   ...audioTagsFetch,
+  // ];
+
+  audioTagsStore.subscribe(value => {
+    audioTags = value;
+  })
+
+  selectedAudioTagStore.subscribe(value => {
+    selectedAudioTag = value;
+  })
+
+  // selectedAudioStore.subscribe(value => {
+    
+  // })
 
   onMount(() => {
     fetchAudioTags();
   })
 
   async function fetchAudioTags() {
+    isFetching = true;
     const response = await invoke('plugin:cirrus|get_audio_tags', { itemsPerPage, page: currentPage });
     if (Array.isArray(response)) {
       console.log("fetch new data: ", response);
       audioTagsFetch = response;
+      audioTagsStore.update(content => [...content, ...audioTagsFetch]);
+      // audioTags = [...audioTags, ...audioTagsFetch];
     }
+    isFetching = false;
   }
 </script>
 
@@ -49,8 +74,10 @@
     {#each audioTags as item}
       <Item
         on:SMUI:action={() => {
-          selectedAudioId = item.id; 
-          selectedItemIdx = audioTags.indexOf(item)}}
+          // selectedAudio = item;
+          selectedAudioTagStore.update(() => item);
+          selectedAudioId = item.id;
+          selectedItemIdx = audioTags.indexOf(selectedAudioTag)}}
         selected={selectedAudioId === item.id} 
       >
         <Text>
@@ -59,6 +86,11 @@
         </Text>
       </Item>
     {/each}
+    {#if isFetching}
+      <div>
+        <p>loading...</p>
+      </div>
+    {/if}
     <InfiniteScroll
       hasMore={audioTagsFetch.length > 0} 
       threshold={itemsPerPage}
