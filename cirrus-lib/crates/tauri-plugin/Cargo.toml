@@ -7,5 +7,7 @@ edition = "2021"
 
 [dependencies]
 cirrus-client-lib = { path = "../client" }
+cirrus-grpc = { path = "../grpc" }
 http = "0.2"
 tauri = { version = "1.0.0-rc.4", default-features = false, features = [] }
+# serde = "1"

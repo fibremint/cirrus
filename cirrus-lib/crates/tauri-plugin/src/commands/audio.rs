@@ -6,6 +6,9 @@ use tauri::{
     AppHandle, Manager, Runtime, State,
 };
 
+use cirrus_client_lib::request;
+use cirrus_grpc::api::AudioTagRes;
+
 use crate::state::AppState;
 
 // #[tauri::command]
@@ -53,4 +56,46 @@ pub async fn load_audio(
     // audio_player.await.write().add_audio(request.as_str());
 
     // state.audio_player.add_audio(request.as_str());
+}
+
+#[tauri::command]
+pub async fn get_audio_tags(
+    // state: State<'_, AppState>,
+    items_per_page: u64,
+    page: u32,
+) -> Result<Vec<AudioTagRes>, String> {
+    println!("got get-audio-tags commnad");
+
+    let audio_tags = request::get_audio_tags(items_per_page, page as u64).await.unwrap();
+
+    Ok(audio_tags)
+
+    // let mut audio_tags = state.audio_tags.lock().await;
+    // // let res: Vec<AudioTagRes> = Vec::new();
+
+    // match audio_tags.get(&page) {
+    //     Some(_) => (),
+    //     None => {
+    //         let response = request::get_audio_tags(items_per_page, page as u64).await.unwrap();
+    //         let response: Vec<_> = response
+    //             .into_iter()
+    //             // .filter_map(|item| item.ok())
+    //             .collect();
+
+    //         audio_tags.insert(page, response);
+    //     },
+    // }
+
+    // let res = audio_tags.get(&page).unwrap().clone();
+    // // let mut res: Vec<TagResponse> = Vec::new();
+    // // res.push(TagResponse {
+    // //     artist: String::from("foo"),
+    // //     genre: String::from("bar"),
+    // //     title: String::from("baz"),
+    // // });
+
+    // Ok(res)
+    // // Ok(audio_tags.get(&page).clone())
+
+    // // audio_tags.i
 }

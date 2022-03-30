@@ -40,6 +40,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("cirrus")
         .invoke_handler(tauri::generate_handler![
             commands::load_audio,
+            commands::get_audio_tags,
         ])
         .setup(|app_handle| {
             app_handle.manage(state::AppState::new());
