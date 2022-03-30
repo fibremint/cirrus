@@ -479,6 +479,33 @@ impl AudioTag {
         collection.insert_one(doc, None).await
     }
 
+    pub async fn get_all(
+        mongodb_client: mongodb::Client,
+        limit: i64,
+        page: u64,
+    ) -> Vec<document::AudioTag> {
+        let collection = Self::get_collection(mongodb_client.clone());
+        // let options = mongodb::options::FindOptions {
+        //     limit,
+        //     ..Default::default()
+        // };
+
+        let options = mongodb::options::FindOptions::builder()
+            .limit(limit)
+            .skip(limit as u64 * (page-1))
+            .build();
+
+        let find_res = collection.find(None, options).await.unwrap();
+        // let docs: Vec<_> = find_res.map(|item| item.unwrap()).collect();
+        // let docs: Vec<Result<document::AudioLibrary, mongodb::error::Error>> = find_res.collect().await;
+        // docs
+
+        find_res.try_collect().await.unwrap_or_else(|_| vec![])
+
+        // let doc_collect = find_res.collect::<document::AudioLibrary>();
+        // let doc_collect = find_res.collect::<Vec<Result<document::AudioLibrary, mongodb::error::Error>>>();
+    }
+
     pub async fn get_by_ids(
         mongodb_client: mongodb::Client,
         ids: Vec<ObjectId>,

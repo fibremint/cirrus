@@ -357,6 +357,8 @@ dependencies = [
  "anyhow",
  "cirrus-grpc",
  "cpal",
+ "futures",
+ "serde",
  "tokio",
  "tonic",
 ]
@@ -366,6 +368,7 @@ name = "cirrus-grpc"
 version = "0.1.0"
 dependencies = [
  "prost",
+ "serde",
  "tonic",
  "tonic-build",
 ]
@@ -375,6 +378,7 @@ name = "cirrus-tauri-plugin"
 version = "0.1.0"
 dependencies = [
  "cirrus-client-lib",
+ "cirrus-grpc",
  "http",
  "tauri",
 ]

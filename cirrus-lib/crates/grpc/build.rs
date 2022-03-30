@@ -12,6 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tonic_build::configure()
         .out_dir(proto_output_path)
+        .type_attribute(".cirrus.api.AudioTagRes", "#[derive(serde::Serialize, serde::Deserialize)]")
         .compile(
             &["proto/cirrus.proto"], 
             &["proto"])?;

@@ -1,8 +1,11 @@
-use tonic::{Request, Response};
+use futures::StreamExt;
+use tonic::{Request, Response, Status};
 
 use cirrus_grpc::{
-    api::{AudioDataReq, AudioDataRes, AudioMetaReq, AudioMetaRes},
+    api::{AudioDataReq, AudioDataRes, AudioMetaReq, AudioMetaRes, AudioTagRes},
+    common::ListRequest,
     audio_data_svc_client::AudioDataSvcClient,
+    audio_tag_svc_client::AudioTagSvcClient,
 };
 
 pub async fn get_audio_meta(filepath: &str) -> Result<Response<AudioMetaRes>, Box<dyn std::error::Error>> {
@@ -35,3 +38,35 @@ pub async fn get_audio_data(filepath: &str, sample_pos_start: u32, sample_pos_en
     Ok(response)
 }
 
+// pub async fn get_audio_tags(items_per_page: u64, page: u64) -> Result<Vec<Result<AudioTagRes, Status>>, Box<dyn std::error::Error>> {
+pub async fn get_audio_tags(items_per_page: u64, page: u64) -> Result<Vec<AudioTagRes>, Box<dyn std::error::Error>> {
+    let mut client = AudioTagSvcClient::connect("http://[::1]:50000").await?;
+
+    let request = Request::new( {
+        ListRequest {
+            items_per_page,
+            page,
+        }
+    });
+
+    let response = client.list_audio_tags(request).await.unwrap();
+    let mut res: Vec<_> = Vec::new();
+
+    let stream = response.into_inner();
+    let mut stream = stream.take(items_per_page as usize);
+
+    while let Some(item) = stream.next().await {
+        if let Ok(i) = item {
+            // res.push(data::AudioTag {
+            //     id: i.id.clone().to_owned(),
+            //     artist: i.artist.clone().to_owned(),
+            //     genre: i.genre.clone().to_owned(),
+            //     title: i.title.clone().to_owned(),
+            // })
+            res.push(i);
+        }
+        // res.push(item);
+    }
+
+    Ok(res)
+}

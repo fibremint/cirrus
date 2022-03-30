@@ -3,6 +3,7 @@ package cirrus;
 
 import "api/audio.proto";
 import "common/action.proto";
+import "common/list.proto";
 
 service AudioDataSvc {
     rpc GetMeta (cirrus.api.AudioMetaReq) returns (cirrus.api.AudioMetaRes) {}
@@ -14,4 +15,8 @@ service AudioLibrarySvc {
     rpc RemoveAudioLibrary (cirrus.api.AudioLibraryReq) returns (cirrus.common.Response) {}
     rpc AnalyzeAudioLibrary (cirrus.common.RequestAction) returns (cirrus.common.Response) {}
     rpc RefreshAudioLibrary (cirrus.common.RequestAction) returns (cirrus.common.Response) {}
+}
+
+service AudioTagSvc {
+    rpc ListAudioTags (cirrus.common.ListRequest) returns (stream cirrus.api.AudioTagRes) {}
 }

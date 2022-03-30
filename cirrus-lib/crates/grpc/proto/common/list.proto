@@ -1,0 +1,7 @@
+syntax = "proto3";
+package cirrus.common;
+
+message ListRequest {
+    uint64 items_per_page = 1;
+    uint64 page = 2;
+}

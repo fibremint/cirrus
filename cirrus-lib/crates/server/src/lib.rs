@@ -18,6 +18,7 @@ use tonic::transport::Server as TonicServer;
 use cirrus_grpc::{
     audio_data_svc_server::AudioDataSvcServer,
     audio_library_svc_server::AudioLibrarySvcServer,
+    audio_tag_svc_server::AudioTagSvcServer,
 };
 
 use crate::model::get_mongodb_client;
@@ -28,10 +29,12 @@ async fn grpc_server_task(addr: &str, mongodb_client: mongodb::Client) -> Result
 
     let audio_data_svc = service::AudioDataSvcImpl::default();
     let audio_library_svc = service::AudioLibrarySvcImpl::new(mongodb_client.clone());
+    let audio_tag_svc = service::AudioTagSvcImpl::new(mongodb_client.clone());
 
     TonicServer::builder()
         .add_service(AudioDataSvcServer::new(audio_data_svc))
         .add_service(AudioLibrarySvcServer::new(audio_library_svc))
+        .add_service(AudioTagSvcServer::new(audio_tag_svc))
         .serve(addr)
         .await?;
 

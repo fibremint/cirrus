@@ -2,16 +2,23 @@
   import logo from './assets/svelte.png'
   import Counter from './lib/Counter.svelte'
   import TestButton from './lib/TestButton.svelte';
+  import AudioList from './lib/AudioList.svelte';
+  import AudioPlayer from './lib/AudioPlayer.svelte';
+
+  export let selectedAudioId: string = undefined;
 </script>
 
 <main>
-  <img src={logo} alt="Svelte Logo" />
-  <h1>Hello Typescript!</h1>
+  <AudioList bind:selectedAudioId />
+  <AudioPlayer bind:selectedAudioId />
+  <!-- <TestButton /> -->
+  <!-- <img src={logo} alt="Svelte Logo" />
+  <h1>Hello Typescript!</h1> -->
 
-  <Counter />
-  <TestButton />
+  <!-- <Counter />
+  <TestButton /> -->
 
-  <p>
+  <!-- <p>
     Visit <a href="https://svelte.dev">svelte.dev</a> to learn how to build Svelte
     apps.
   </p>
@@ -19,7 +26,9 @@
   <p>
     Check out <a href="https://github.com/sveltejs/kit#readme">SvelteKit</a> for
     the officially supported framework, also powered by Vite!
-  </p>
+  </p> -->
+  <!-- <link rel="stylesheet" href="node_modules/svelte-material-ui/bare.css" /> -->
+
 </main>
 
 <style>
