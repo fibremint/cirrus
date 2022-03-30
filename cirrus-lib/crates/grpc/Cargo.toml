@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 tonic = { version = "0.6", features = ["codegen"] }
 prost = "0.9"
+serde = "1"
 
 [build-dependencies]
 tonic-build = "0.6"
