@@ -33,6 +33,7 @@ pub async fn load_audio(
 
     // let mut audio_player = state.audio_player.write();
     // audio_player.await;
+    // let mut audio_player = state.audio_player.lock().await;
     let mut audio_player = state.audio_player.write().await;
     audio_player.add_audio(audio_tag_id.as_str()).await.unwrap();
     audio_player.play();

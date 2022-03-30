@@ -3,18 +3,22 @@ use std::{
     sync::{
         Arc, 
         atomic::{AtomicUsize, Ordering},
-        RwLock,
-    },
+        RwLock, mpsc::{self, Sender}, Mutex,
+    }, thread,
 };
 
 use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
-use tokio::time::{sleep, Duration};
-
+// use futures::lock::MutexGuard;
+use tokio::{time::{sleep, Duration}, sync::MutexGuard};
+// use tokio::sync::mpsc::{Receiver, Sender};
+// use tokio::sync::
 use crate::request;
 
 pub struct AudioPlayer {
     ctx: AudioContext,
     streams: VecDeque<AudioStream>,
+    // tx: Arc<Mutex<mpsc::Sender<&'static str>>>,
+    // pub rx: Arc<Mutex<mpsc::Receiver<&'static str>>>,
     // streams: Arc<Mutex<VecDeque<AudioStream>>>,
     // streams: VecDeque<Arc<RwLock<AudioStream>>>,
     // streams: Arc<RwLock<VecDeque<AudioStream>>>,
@@ -24,11 +28,72 @@ impl AudioPlayer {
     pub fn new() -> Self {
         let ctx = AudioContext::new().unwrap();
 
+        // thread::spawn(|| {
+        //     println!("new thread");
+        // });
+
+        let (tx, rx) = mpsc::channel::<&'static str>();
+        let rx = Arc::new(Mutex::new(rx));
+        let tx = Arc::new(Mutex::new(tx));
+
+        let _rx = rx.clone();
+
+        // let audio_player = Self {
+        //     ctx,
+        //     streams: VecDeque::new(),
+        //     // tx,
+        //     // rx,
+        //     // tx: Arc::new(Mutex::new(tx)),
+        //     // rx: Arc::new(Mutex::new(rx)),
+        // };
+
+        // audio_player
+
         Self {
             ctx,
             streams: VecDeque::new(),
+            // tx,
+            // rx,
+            // tx: Arc::new(Mutex::new(tx)),
+            // rx: Arc::new(Mutex::new(rx)),
         }
+
+        // let _rx = Arc::new(Mutex::new(rx));
+        // let _self = Arc::new(Mutex::new(audio_player));
+
+        // thread::spawn(move || {
+        //     while let Ok(data) = _rx.lock().unwrap().recv() {
+        //         println!("received message: {:?}", data);
+        //         match data {
+        //             "stop" => _self.lock().unwrap().remove_audio(),
+        //             _ => (),
+        //         }
+        //     }
+        // });
+
+        // audio_player
     }
+
+    // pub fn init(mut audio_player: MutexGuard<'static, AudioPlayer>) {
+    //     println!("run audio player init function");
+    //     let rx = audio_player.rx.clone();
+    //     // tokio::spawn(async move {
+    //     //     while let Some(data) = rx.recv().await {
+    //     //         println!("received message: {:?}", data);
+    //     //     }
+    //     // });
+
+    //     thread::spawn(move || {
+    //         while let Ok(data) = rx.lock().unwrap().recv() {
+    //             println!("received message: {:?}", data);
+    //             match data {
+    //                 "stop" => audio_player.remove_audio(),
+    //                 // "stop" => println!("got message: {}", data),
+    //                 _ => (),
+    //             };
+    //         }
+    //     });
+    // }
 
     pub async fn add_audio(&mut self, audio_tag_id: &str) -> Result<(), anyhow::Error> {
         let audio_source = AudioSource::new(audio_tag_id).await.unwrap();
@@ -40,8 +105,8 @@ impl AudioPlayer {
         Ok(())
     }
 
-    pub fn remove_audio(&self) {
-        todo!()
+    pub fn remove_audio(&mut self) {
+        self.streams.remove(0).unwrap();
     }
 
     pub fn play(&self) {
@@ -133,6 +198,8 @@ impl AudioSample {
         let content_length = self.source.metadata.sample_frames as f32 / self.source.metadata.sample_rate as f32;
         println!("content length: {}", content_length);
 
+        // tx.lock().unwrap().send(String::from("")).unwrap();
+
         tokio::spawn(async move {
             loop {
                 let sample_buffer_len = self.sample_buffer.read().unwrap().len();
@@ -141,9 +208,10 @@ impl AudioSample {
                 let current_pos = current_sample_frame as f32 / self.source.metadata.sample_rate as f32;
 
                 println!(
-                    "current pos: {:.2}s\tplayed samples: {}\tremain sample buffer: {:.2}s",
+                    "current pos: {:.2}s\tplayed samples: {}/{}\tremain sample buffer: {:.2}s",
                     current_pos,
                     current_sample_frame,
+                    self.source.metadata.sample_frames,
                     remain_sample_buffer
                 );
 
@@ -159,8 +227,12 @@ impl AudioSample {
 
                     sleep(Duration::from_millis(100)).await;
 
-                } else {
+                } else if self.source.metadata.sample_frames <= current_sample_frame {
+                    println!("reach end of content");
+                    // tx.lock().unwrap().send("stop").unwrap();
                     break;
+                } else {
+                    // break;
                 }
             }
         });
