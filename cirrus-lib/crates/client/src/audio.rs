@@ -30,8 +30,8 @@ impl AudioPlayer {
         }
     }
 
-    pub async fn add_audio(&mut self, uri: &str) -> Result<(), anyhow::Error> {
-        let audio_source = AudioSource::new(uri).await.unwrap();
+    pub async fn add_audio(&mut self, audio_tag_id: &str) -> Result<(), anyhow::Error> {
+        let audio_source = AudioSource::new(audio_tag_id).await.unwrap();
         let audio_stream = AudioStream::new(&self.ctx, audio_source).await?;
 
         self.streams.push_back(audio_stream);
@@ -283,8 +283,8 @@ struct AudioSource {
 }
 
 impl AudioSource {
-    async fn new(uri: &str) -> Result<Self, anyhow::Error> {
-        let metadata_res = request::get_audio_meta(uri).await.unwrap().into_inner();
+    async fn new(audio_tag_id: &str) -> Result<Self, anyhow::Error> {
+        let metadata_res = request::get_audio_meta(audio_tag_id).await.unwrap().into_inner();
 
         let metadata = AudioSourceMetadata {
             bit_rate: metadata_res.bit_rate,
@@ -295,7 +295,7 @@ impl AudioSource {
         };
 
         Ok(Self {
-            id: uri.to_string(),
+            id: audio_tag_id.to_string(),
             metadata,
         })
     }

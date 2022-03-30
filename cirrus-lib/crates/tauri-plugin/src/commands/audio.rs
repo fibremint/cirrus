@@ -27,14 +27,14 @@ use crate::state::AppState;
 #[tauri::command]
 pub async fn load_audio(
     state: State<'_, AppState>,
-    request: String
+    audio_tag_id: String
 ) -> Result<String, String> {
-    println!("load audio fn, got: {}", request);
+    println!("load audio fn, got: {}", audio_tag_id);
 
     // let mut audio_player = state.audio_player.write();
     // audio_player.await;
     let mut audio_player = state.audio_player.write().await;
-    audio_player.add_audio(request.as_str()).await.unwrap();
+    audio_player.add_audio(audio_tag_id.as_str()).await.unwrap();
     audio_player.play();
 
     // state.audio_player.add_audio(request.as_str());
