@@ -31,7 +31,8 @@ message AudioLibraryReq {
 }
 
 message AudioTagRes {
-    string artist = 1;
-    string genre = 2;
-    string title = 3;
+    string id = 1;
+    string artist = 2;
+    string genre = 3;
+    string title = 4;
 }

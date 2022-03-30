@@ -546,6 +546,7 @@ impl AudioTag {
         let res: Vec<_> = get_all_res
             .iter()
             .map(|item| AudioTagRes {
+                id: item.id.as_ref().unwrap().to_string(),
                 artist: item.artist.as_ref().unwrap().to_string(),
                 genre: item.genre.as_ref().unwrap().to_string(),
                 title: item.title.as_ref().unwrap().to_string(),
