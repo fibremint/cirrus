@@ -3,40 +3,169 @@ use std::{
     sync::{
         Arc, 
         atomic::{AtomicUsize, Ordering},
-        RwLock, mpsc::{self, Sender}, Mutex,
+        RwLock,
     }, thread,
 };
 
 use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
 // use futures::lock::MutexGuard;
-use tokio::{time::{sleep, Duration}, sync::MutexGuard};
+use tokio::{time::{sleep, Duration}, sync::{MutexGuard, Mutex, mpsc}};
 // use tokio::sync::mpsc::{Receiver, Sender};
 // use tokio::sync::
 use crate::request;
+
+// pub fn run_thread_audio_player(audio_player: Arc<Mutex<AudioPlayer>>) {
+//     thread::spawn(move || {
+//         while let Ok(data) = audio_player.lock().unwrap().rx.lock().unwrap().recv() {
+//             println!("received message: {:?}", data);
+//             match data {
+//                 "stop" => _self.lock().unwrap().remove_audio(),
+//                 _ => (),
+//             }
+//         }
+//     });
+// }
+
+pub struct AudioPlayerWrapper {
+    pub audio_player: Arc<Mutex<AudioPlayer>>,
+    pub tx: Arc<Mutex<mpsc::Sender<&'static str>>>,
+    pub rx: Arc<Mutex<mpsc::Receiver<&'static str>>>,
+}
+
+// unsafe impl Send for AudioPlayerWrapper {}
+
+impl AudioPlayerWrapper {
+    pub fn new() -> Self {
+        let (tx, rx) = mpsc::channel::<&'static str>(64);
+        // let rx = Arc::new(Mutex::new(rx));
+        let tx = Arc::new(Mutex::new(tx));
+        // let tx = Arc::new(tx);
+
+        let audio_player = AudioPlayer::new(tx.clone());
+        let _audio_player = Arc::new(Mutex::new(audio_player));
+        let _audio_player2 = _audio_player.clone();
+
+        // thread::spawn(move || {
+        //     while let Ok(data) = rx.recv() {
+        //         println!("received message: {:?}", data);
+        //         match data {
+        //             "stop" => _audio_player2.lock().unwrap().remove_audio(),
+        //             _ => (),
+        //         }
+        //     }
+        // });
+
+        let rx = Arc::new(Mutex::new(rx));
+
+        // tokio::spawn(async move {
+        //     let _rx = rx.clone();
+
+        //     while let Ok(data) = _rx.lock().await.recv() {
+        //         println!("received message: {:?}", data);
+        //         match data {
+        //             // "stop" => _audio_player2.lock().await.remove_audio(),
+        //             _ => (),
+        //         }
+        //     }
+        // });
+
+        Self {
+            audio_player: _audio_player,
+            tx: tx,
+            rx: rx,
+        }
+    }
+
+    pub async fn init(&self) {
+        let rx = self.rx.clone();
+        let audio_player = self.audio_player.clone();
+
+        tokio::spawn(async move {
+            // let _rx = rx.clone();
+
+            while let Some(data) = rx.lock().await.recv().await {
+                println!("received message: {:?}", data);
+                match data {
+                    "stop" => audio_player.lock().await.remove_audio(),
+                    // "start_buffer_test" => audio_player.lock().await.start_buffer_test().await,
+                    _ => (),
+                }
+            }
+        });
+    }
+
+    pub async fn add_audio(&self, audio_tag_id: &str) -> Result<(), anyhow::Error> {
+        // let audio_source = AudioSource::new(audio_tag_id).await.unwrap();
+        // let audio_stream = AudioStream::new(&self.ctx, audio_source, self.tx.clone()).await?;
+
+        // self.streams.push_back(audio_stream);
+        // println!("done add audio");
+        
+        // self.audio_player.lock().await.add_audio(audio_tag_id).await.unwrap();
+        // let mut audio_player = self.audio_player.lock().unwrap();
+        // audio_player.add_audio(audio_tag_id).await;
+        // self.audio_player.lock().unwrap().add_audio(audio_tag_id).await.unwrap();
+        
+        // let res = audio_player.add_audio(audio_tag_id).await;
+        let mut audio_player = self.audio_player.lock().await;
+        audio_player.add_audio(audio_tag_id).await.unwrap();
+
+        Ok(())
+    }
+
+    // pub fn remove_audio(&mut self) {
+    //     self.streams.remove(0).unwrap();
+    // }
+
+    pub async fn play(&self) {
+        // println!("play audio");
+
+        // let current_stream = self.streams.front().unwrap();
+        // current_stream.stream.play().unwrap();
+        
+        // self.audio_player.lock().unwrap().play();
+        let audio_player = self.audio_player.lock().await;
+        audio_player.play();
+    }
+
+    pub fn pause(&self) {
+        // println!("pause audio");
+
+        // let current_stream = self.streams.front().unwrap();
+        // current_stream.stream.pause().unwrap();
+        
+        // self.audio_player.lock().unwrap().pause();
+    }
+}
 
 pub struct AudioPlayer {
     ctx: AudioContext,
     streams: VecDeque<AudioStream>,
     // tx: Arc<Mutex<mpsc::Sender<&'static str>>>,
+    tx: Arc<Mutex<mpsc::Sender<&'static str>>>,
     // pub rx: Arc<Mutex<mpsc::Receiver<&'static str>>>,
     // streams: Arc<Mutex<VecDeque<AudioStream>>>,
     // streams: VecDeque<Arc<RwLock<AudioStream>>>,
     // streams: Arc<RwLock<VecDeque<AudioStream>>>,
 }
 
+unsafe impl Send for AudioPlayer {}
+// unsafe impl Sync for AudioPlayer {}
+
 impl AudioPlayer {
-    pub fn new() -> Self {
+    // pub fn new(tx: Arc<Mutex<mpsc::Sender<&'static str>>>) -> Self {
+    pub fn new(tx: Arc<Mutex<mpsc::Sender<&'static str>>>) -> Self {
         let ctx = AudioContext::new().unwrap();
 
         // thread::spawn(|| {
         //     println!("new thread");
         // });
 
-        let (tx, rx) = mpsc::channel::<&'static str>();
-        let rx = Arc::new(Mutex::new(rx));
-        let tx = Arc::new(Mutex::new(tx));
+        // let (tx, rx) = mpsc::channel::<&'static str>();
+        // let rx = Arc::new(Mutex::new(rx));
+        // let tx = Arc::new(Mutex::new(tx));
 
-        let _rx = rx.clone();
+        // let _rx = rx.clone();
 
         // let audio_player = Self {
         //     ctx,
@@ -52,7 +181,7 @@ impl AudioPlayer {
         Self {
             ctx,
             streams: VecDeque::new(),
-            // tx,
+            tx,
             // rx,
             // tx: Arc::new(Mutex::new(tx)),
             // rx: Arc::new(Mutex::new(rx)),
@@ -95,9 +224,13 @@ impl AudioPlayer {
     //     });
     // }
 
+    // pub async fn start_buffer_test(&mut self) {
+    //     println!("run start buffer test method succesfully");
+    // }
+
     pub async fn add_audio(&mut self, audio_tag_id: &str) -> Result<(), anyhow::Error> {
         let audio_source = AudioSource::new(audio_tag_id).await.unwrap();
-        let audio_stream = AudioStream::new(&self.ctx, audio_source).await?;
+        let audio_stream = AudioStream::new(&self.ctx, audio_source, self.tx.clone()).await?;
 
         self.streams.push_back(audio_stream);
         println!("done add audio");
@@ -192,50 +325,97 @@ impl AudioSample {
         }
     }
 
-    pub fn run_buffer_thread(self: Arc<Self>) {
+    pub async fn run_buffer_thread(self: Arc<Self>, tx: Arc<Mutex<mpsc::Sender<&'static str>>>) {
         let buffer_margin: f32 = 20.;
         let fetch_buffer_sec: f32 = 50.;
         let content_length = self.source.metadata.sample_frames as f32 / self.source.metadata.sample_rate as f32;
         println!("content length: {}", content_length);
 
+        // tx.lock().await.send("msg: run buffer thread via sender").unwrap();
+        tx.lock().await.send("msg: run buffer thread via sender").await.unwrap();
+        // tx.lock().await.send("start_buffer_test").await.unwrap();
+
+        // tx.lock().unwrap().send("msg: run buffer thread via sender").unwrap();
+
         // tx.lock().unwrap().send(String::from("")).unwrap();
+        // // tx.send("run buffer thread via sender").unwrap();
 
-        tokio::spawn(async move {
-            loop {
-                let sample_buffer_len = self.sample_buffer.read().unwrap().len();
-                let remain_sample_buffer = sample_buffer_len as f32 / self.source.metadata.sample_rate as f32 / 2.0;
-                let current_sample_frame = self.current_sample_frame.load(Ordering::SeqCst);
-                let current_pos = current_sample_frame as f32 / self.source.metadata.sample_rate as f32;
+        // tokio::spawn(async move {
+        //     loop {
+        //         let sample_buffer_len = self.sample_buffer.read().unwrap().len();
+        //         let remain_sample_buffer = sample_buffer_len as f32 / self.source.metadata.sample_rate as f32 / 2.0;
+        //         let current_sample_frame = self.current_sample_frame.load(Ordering::SeqCst);
+        //         let current_pos = current_sample_frame as f32 / self.source.metadata.sample_rate as f32;
 
-                println!(
-                    "current pos: {:.2}s\tplayed samples: {}/{}\tremain sample buffer: {:.2}s",
-                    current_pos,
-                    current_sample_frame,
-                    self.source.metadata.sample_frames,
-                    remain_sample_buffer
-                );
+        //         println!(
+        //             "current pos: {:.2}s\tplayed samples: {}/{}\tremain sample buffer: {:.2}s",
+        //             current_pos,
+        //             current_sample_frame,
+        //             self.source.metadata.sample_frames,
+        //             remain_sample_buffer
+        //         );
 
-                if content_length - current_pos > buffer_margin {
-                    if buffer_margin > remain_sample_buffer {
-                        println!("fetch audio sample buffer");
-                        self.get_buffer_for(fetch_buffer_sec as u32 * 1000).await.unwrap();
-                    } else if sample_buffer_len == 0 {
-                        self.buffer_status.store(AudioSampleStatus::FillBuffer as usize, Ordering::SeqCst);
-                    } else {
-                        self.buffer_status.store(AudioSampleStatus::Play as usize, Ordering::SeqCst);
-                    }
+        //         if content_length - current_pos > buffer_margin {
+        //             if buffer_margin > remain_sample_buffer {
+        //                 println!("fetch audio sample buffer");
+        //                 self.get_buffer_for(fetch_buffer_sec as u32 * 1000).await.unwrap();
+        //             } else if sample_buffer_len == 0 {
+        //                 self.buffer_status.store(AudioSampleStatus::FillBuffer as usize, Ordering::SeqCst);
+        //             } else {
+        //                 self.buffer_status.store(AudioSampleStatus::Play as usize, Ordering::SeqCst);
+        //             }
 
-                    sleep(Duration::from_millis(100)).await;
+        //             sleep(Duration::from_millis(100)).await;
 
-                } else if self.source.metadata.sample_frames <= current_sample_frame {
-                    println!("reach end of content");
-                    // tx.lock().unwrap().send("stop").unwrap();
-                    break;
+        //         } else if self.source.metadata.sample_frames <= current_sample_frame {
+        //             println!("reach end of content");
+        //             // tx.lock().unwrap().send("stop").unwrap();
+        //             break;
+        //         } else {
+        //             // break;
+        //         }
+        //     }
+        // });
+
+        loop {
+            let sample_buffer_len = self.sample_buffer.read().unwrap().len();
+            let remain_sample_buffer = sample_buffer_len as f32 / self.source.metadata.sample_rate as f32 / 2.0;
+            let current_sample_frame = self.current_sample_frame.load(Ordering::SeqCst);
+            let current_pos = current_sample_frame as f32 / self.source.metadata.sample_rate as f32;
+
+            println!(
+                "current pos: {:.2}s\tplayed samples: {}/{}\tremain sample buffer: {:.2}s",
+                current_pos,
+                current_sample_frame,
+                self.source.metadata.sample_frames,
+                remain_sample_buffer
+            );
+
+            if content_length - current_pos > buffer_margin {
+                if buffer_margin > remain_sample_buffer {
+                    println!("fetch audio sample buffer");
+                    self.get_buffer_for(fetch_buffer_sec as u32 * 1000).await.unwrap();
+                } else if sample_buffer_len == 0 {
+                    self.buffer_status.store(AudioSampleStatus::FillBuffer as usize, Ordering::SeqCst);
                 } else {
-                    // break;
+                    self.buffer_status.store(AudioSampleStatus::Play as usize, Ordering::SeqCst);
                 }
+
+                sleep(Duration::from_millis(100)).await;
+
+            } else if self.source.metadata.sample_frames <= current_sample_frame {
+                println!("reach end of content");
+                // tx.lock().await.send("msg: reach end of content, stop this stream").unwrap();
+                // tx.lock().await.send("stop").unwrap();
+                tx.lock().await.send("stop").await.unwrap();
+
+                // tx.lock().unwrap().send("stop").unwrap();
+                break;
+            } else {
+                // break;
             }
-        });
+        }
+
     }
 
     pub async fn get_buffer_for(&self, ms: u32) -> Result<(), anyhow::Error> {
@@ -320,7 +500,7 @@ unsafe impl Send for AudioStream {}
 unsafe impl Sync for AudioStream {}
 
 impl AudioStream {
-    pub async fn new(ctx: &AudioContext, source: AudioSource) -> Result<Self, anyhow::Error> {
+    pub async fn new(ctx: &AudioContext, source: AudioSource, tx: Arc<Mutex<mpsc::Sender<&'static str>>>) -> Result<Self, anyhow::Error> {
         // let sample = ctx.stream_config.sample_rate.0 as f32;
         // let channels = ctx.stream_config.channels as usize;
         let audio_sample = Arc::new(AudioSample::new(source));
@@ -340,7 +520,11 @@ impl AudioStream {
         )?;
 
         let _audio_sample2 = audio_sample.clone();
-        _audio_sample2.run_buffer_thread();
+        // _audio_sample2.run_buffer_thread(tx.clone());
+
+        tokio::spawn(async move {
+            _audio_sample2.run_buffer_thread(tx.clone()).await;
+        });
 
         Ok(Self {
             stream,
