@@ -2,6 +2,9 @@
   // import logo from './assets/svelte.png'
   // import Counter from './lib/Counter.svelte'
   // import TestButton from './lib/TestButton.svelte';
+  import { invoke } from '@tauri-apps/api';
+  import { onMount } from 'svelte';
+
   import AudioList from './lib/AudioList.svelte';
   import AudioPlayer from './lib/AudioPlayer.svelte';
 
@@ -10,6 +13,11 @@
   // export let selectedAudioId: string = undefined;
   // export let audioTags: AudioTag[] = [];
   // export let selectedAudio: AudioTag = undefined;
+
+  onMount(() => {
+    console.log("invoke init audio player");
+    invoke('plugin:cirrus|init_audio_player');
+  })
 
 </script>
 
