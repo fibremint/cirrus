@@ -7,7 +7,7 @@ This repository provides:
 * cirrus-app: desktop application
 * cirrus-server: manage audio library and serve audio data
 
-At now, supported audio format is restricted as `AIFF`.
+At now, supported audio format is restricted as `AIFF` and `16-bit, 2-channel`.
 
 ## Quickstart
 
@@ -56,16 +56,31 @@ TODO: add service logic diagram
 
 ## Q&A
 
-### How audio player works?
+### How is the audio player composed?
 
-* data
+An audio player is composed of user interface and Cirrus audio core library (CACL). An UI interacts with CACL by register Cirrus Tauri plugin (CTP), which has an audio player interface and interactable via Tauri command to Tauri application for integrate on it. The CTP does initialize audio player instance from CACL and store this one within the Tauri State.
 
-* command
+And an audio core library implements audio play that initializes audio output device, play audio from data (sample) and fetch audio data and fill to audio playback buffer. 
 
-### What core audio player does?
+For example, if user clicks audio item from UI to play, UI (frontend) invokes audio load command (`plugin:cirrus|load_audio`) and plugin handles dispatched command by calling audio player instance's load audio method.
 
-### How audio library 
+### How audio player plays audio?
+
+An client creates audio playback object (`cpal::Stream`) with configuration (e.g. sample rate) and calls `play` method that run audio output thread. An audio play process is take audio samples from audio data buffer and give them to mutable array to output an audio, and is registered as audio play callback at stream creation.
+
+And an audio buffer is filled by audio buffer thread that fetch data, process and fill to audio buffer queue. The audio data is part of PCM from audio file and is responsed from server as `u8` array. To read audio data, pre-process is required. As a case of the 16-bit audio, read as a step size 2 for each, convert to `i16` and divide by sample rate.
+
+### How server reads and manages audio files?
+
+In most cases, an audio directory has sub-directories that contain audio files. And Cirrus reads audio files from audio directories. Cirrus thinks that there is root (`library-root`) of sub-directories and sub-directory contains metadata of audio contents (`library`) such as timestamp of directory that used for check modification of directory at library refresh. An audio file metadata (`audio`) has field filename and path of audio sub-directory to point the actual path of audio file, and timestamp for check update of this one. And audio has tags such as title, artist, genre and so on. This information is stored at (`audio-tags`) collection.
+
+A Cirrus server manages audio libraries with these behaviors:
+* `add_audio_library`: insert `library-root` and `library` document to database
+* `remove_audio_library`: remove documents of audio `library-root`, `library` and related audio data (`audio`) from database
+* `analyze_audio_library`: create `audio-tags` document from `audio` and insert to database 
+* `refesh_audio_library`: update `library`, `audio`, `audio-tags` documents.
 
 ### Why MongoDB is used for DB?
 
 ### Why gRPC is used for API than REST?
+
