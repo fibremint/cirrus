@@ -28,8 +28,7 @@ At now, supported audio format is restricted as `AIFF` and `16-bit, 2-channel`.
 ## Architecture
 
 ### Overview
-
-TODO: add service logic diagram
+![architecture](assets/architecture-overview.png)
 
 ### Project Strucutre
 
@@ -79,8 +78,3 @@ A Cirrus server manages audio libraries with these behaviors:
 * `remove_audio_library`: remove documents of audio `library-root`, `library` and related audio data (`audio`) from database
 * `analyze_audio_library`: create `audio-tags` document from `audio` and insert to database 
 * `refesh_audio_library`: update `library`, `audio`, `audio-tags` documents.
-
-### Why MongoDB is used for DB?
-
-### Why gRPC is used for API than REST?
-
