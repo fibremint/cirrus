@@ -39,6 +39,7 @@ pub mod commands;
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("cirrus")
         .invoke_handler(tauri::generate_handler![
+            commands::init_audio_player,
             commands::load_audio,
             commands::get_audio_tags,
         ])

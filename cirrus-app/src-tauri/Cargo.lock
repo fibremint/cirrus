@@ -381,6 +381,7 @@ dependencies = [
  "cirrus-grpc",
  "http",
  "tauri",
+ "tokio",
 ]
 
 [[package]]

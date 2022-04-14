@@ -332,6 +332,21 @@ impl AudioFile {
         Ok(insert_res)
     }
 
+    pub async fn find_by_audio_tag_id(
+        mongodb_client: mongodb::Client,
+        audio_tag_id: ObjectId
+    ) -> Result<Option<document::AudioFile>, mongodb::error::Error> {
+        let collection = Self::get_collection(mongodb_client.clone());
+
+        let filter = doc! {
+            "audio_tag_refer": audio_tag_id
+        };
+
+        let find_res = collection.find_one(filter, None).await?;
+
+        Ok(find_res)
+    }
+
     pub async fn get_self_by_library_path(
         mongodb_client: mongodb::Client,
         path: &Path,

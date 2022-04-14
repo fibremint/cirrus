@@ -1,8 +1,12 @@
 syntax = "proto3";
 package cirrus.api;
 
+// message AudioFileReq {
+//     string audio_tag_id = 1;
+// }
+
 message AudioMetaReq {
-    string filename = 1;
+    string audio_tag_id = 1;
 }
 
 message AudioMetaRes {
@@ -17,7 +21,8 @@ message AudioMetaRes {
 }
 
 message AudioDataReq {
-    string filename = 1;
+    // string filename = 1;
+    string audio_tag_id = 1;
     uint32 byte_start = 2;
     uint32 byte_end = 3;
 }

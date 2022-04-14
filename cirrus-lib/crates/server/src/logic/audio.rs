@@ -22,11 +22,22 @@ use crate::{
 pub struct AudioFile {}
 
 impl AudioFile {
-    pub fn read_meta(
-        filepath: &str
+    pub async fn read_meta(
+        mongodb_client: mongodb::Client,
+        audio_tag_id: &str
     ) -> Result<AudioMetaRes, String> {
         // let file = File::open(filepath)?;
-        let file = match File::open(filepath) {
+        let audio_tag_id = ObjectId::parse_str(audio_tag_id).unwrap();
+        let audio_file = model::AudioFile::find_by_audio_tag_id(mongodb_client.clone(), audio_tag_id).await.unwrap();
+
+        let audio_file = match audio_file {
+            Some(audio_file) => audio_file,
+            None => return Err(String::from("failed to retrieve audio file information")),
+        };
+
+        // let audio_file_path = util::path::materialized_to_path(audio_file.get_path())
+
+        let file = match File::open(audio_file.get_path()) {
             Ok(file) => file,
             Err(err) => return Err(String::from("failed to load file")),
         };
@@ -50,7 +61,7 @@ impl AudioFile {
         Ok(AudioMetaRes {
             bit_rate: common.bit_rate as u32,
             block_size: sound.block_size,
-            channels: sound.block_size,
+            channels: common.num_channels as u32,
             offset: sound.offset,
             sample_frames: common.num_sample_frames,
             sample_rate: common.sample_rate as u32,
@@ -58,13 +69,22 @@ impl AudioFile {
         })
     }
 
-    pub fn read_data(
-        filepath: &str, 
+    pub async fn read_data(
+        mongodb_client: mongodb::Client,
+        audio_tag_id: &str,
         byte_start: usize, 
         byte_end: usize
     ) -> Result<AudioDataRes, String> {
         // let file = File::open(filepath)?;
-        let file = match File::open(filepath) {
+        let audio_tag_id = ObjectId::parse_str(audio_tag_id).unwrap();
+        let audio_file = model::AudioFile::find_by_audio_tag_id(mongodb_client.clone(), audio_tag_id).await.unwrap();
+
+        let audio_file = match audio_file {
+            Some(audio_file) => audio_file,
+            None => return Err(String::from("failed to retrieve audio file information")),
+        };
+
+        let file = match File::open(audio_file.get_path()) {
             Ok(file) => file,
             Err(err) => return Err(String::from("failed to load file")),
         };

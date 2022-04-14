@@ -1,16 +1,33 @@
 <script lang="ts">
-  import logo from './assets/svelte.png'
-  import Counter from './lib/Counter.svelte'
-  import TestButton from './lib/TestButton.svelte';
+  // import logo from './assets/svelte.png'
+  // import Counter from './lib/Counter.svelte'
+  // import TestButton from './lib/TestButton.svelte';
+  import { invoke } from '@tauri-apps/api';
+  import { onMount } from 'svelte';
+
   import AudioList from './lib/AudioList.svelte';
   import AudioPlayer from './lib/AudioPlayer.svelte';
 
-  export let selectedAudioId: string = undefined;
+  // import type { AudioTag } from './types';
+
+  // export let selectedAudioId: string = undefined;
+  // export let audioTags: AudioTag[] = [];
+  // export let selectedAudio: AudioTag = undefined;
+
+  onMount(() => {
+    console.log("invoke init audio player");
+    invoke('plugin:cirrus|init_audio_player');
+  })
+
 </script>
 
 <main>
-  <AudioList bind:selectedAudioId />
-  <AudioPlayer bind:selectedAudioId />
+  <AudioList />
+  <!-- <AudioList audioTags={audioTags} bind:selectedAudio /> -->
+  <!-- <AudioList bind:selectedAudio /> -->
+
+  <AudioPlayer />
+  <!-- <AudioPlayer audioTags={audioTags} selectedAudio={selectedAudio} /> -->
   <!-- <TestButton /> -->
   <!-- <img src={logo} alt="Svelte Logo" />
   <h1>Hello Typescript!</h1> -->
@@ -30,7 +47,7 @@
   <!-- <link rel="stylesheet" href="node_modules/svelte-material-ui/bare.css" /> -->
 
 </main>
-
+<!-- 
 <style>
   :root {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
@@ -73,4 +90,4 @@
       max-width: none;
     }
   }
-</style>
+</style> -->
