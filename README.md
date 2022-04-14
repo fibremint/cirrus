@@ -78,3 +78,6 @@ A Cirrus server manages audio libraries with these behaviors:
 * `remove_audio_library`: remove documents of audio `library-root`, `library` and related audio data (`audio`) from database
 * `analyze_audio_library`: create `audio-tags` document from `audio` and insert to database 
 * `refesh_audio_library`: update `library`, `audio`, `audio-tags` documents.
+
+## License
+This project is licensed under the terms of the MIT license.
