@@ -1,6 +1,6 @@
 # Cirrus
 
-Cirrus is an audio service that plays audio file remotly from server.
+Cirrus is an audio player that reads audio file from remote server.
 
 This repository provides:
 
