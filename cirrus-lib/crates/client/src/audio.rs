@@ -353,7 +353,8 @@ impl AudioSample {
             sample_buffer.push(VecDeque::new());
         }
 
-        let resampled_sample_frames = (source.metadata.sample_frames as f32 * (source.metadata.sample_rate as f32 / host_sample_rate as f32)).floor() as usize;
+        // let resampled_sample_frames = (source.metadata.sample_frames as f32 * (source.metadata.sample_rate as f32 / host_sample_rate as f32)).floor() as usize;
+        let resampled_sample_frames = (source.metadata.sample_frames as f32 * (host_sample_rate as f32 / source.metadata.sample_rate as f32)).floor() as usize;
 
         Self {
             source,
