@@ -281,7 +281,10 @@ impl AudioContext {
         
         println!("Output device: {}", device.name()?);
     
-        let config = device.default_output_config()?.into();
+        let config: cpal::StreamConfig = device.default_output_config()?.into();
+
+        println!("Output stream properties: sample_rate: {}, channel(s): {}", 
+                 config.sample_rate.0, config.channels);
         // let config = cpal::StreamConfig {
         //     buffer_size: cpal::BufferSize::Default,
         //     channels: cpal::ChannelCount::from(2u16),
@@ -327,20 +330,30 @@ struct AudioSample {
     resampler: Arc<RwLock<rubato::FftFixedInOut<f32>>>,
     resampler_frames: usize,
     remain_sample_raw: Arc<RwLock<Vec<u8>>>,
+    resampled_sample_frames: usize,
+    host_sample_rate: u32,
     // resampler: rubato::FftFixedInOut<f32>
 }
 
 // unsafe impl Send for AudioSample {}
 
 impl AudioSample {
-    pub fn new(source: AudioSource) -> Self {
-        let resampler = rubato::FftFixedInOut::new(44100, 44100, 1024, 2).unwrap();
+    pub fn new(source: AudioSource, host_sample_rate: u32) -> Self {
+        let resampler = rubato::FftFixedInOut::new(
+            source.metadata.sample_rate as usize, 
+            host_sample_rate as usize, 
+            1024, 
+            2
+        ).unwrap();
+
         let resampler_frames = resampler.input_frames_next();
         let mut sample_buffer: Vec<VecDeque<f32>> = Vec::with_capacity(2);
 
         for _ in 0..2 {
             sample_buffer.push(VecDeque::new());
         }
+
+        let resampled_sample_frames = (source.metadata.sample_frames as f32 * (source.metadata.sample_rate as f32 / host_sample_rate as f32)).floor() as usize;
 
         Self {
             source,
@@ -357,6 +370,8 @@ impl AudioSample {
             ),
             resampler_frames,
             remain_sample_raw: Arc::new(RwLock::new(Vec::new())),
+            resampled_sample_frames,
+            host_sample_rate,
             // resampler: rubato::FftFixedInOut::new(44100, 48000, 1024, 2).unwrap()
         }
     }
@@ -364,7 +379,8 @@ impl AudioSample {
     pub async fn run_buffer_thread(self: Arc<Self>, tx: Arc<Mutex<mpsc::Sender<&'static str>>>) {
         let buffer_margin: f32 = 20.;
         let fetch_buffer_sec: f32 = 50.;
-        let content_length = self.source.metadata.sample_frames as f32 / self.source.metadata.sample_rate as f32;
+        // let content_length = self.source.metadata.sample_frames as f32 / self.source.metadata.sample_rate as f32;
+        let content_length = self.resampled_sample_frames as f32 / self.host_sample_rate as f32;
         println!("content length: {}", content_length);
 
         // tx.lock().await.send("msg: run buffer thread via sender").unwrap();
@@ -417,15 +433,18 @@ impl AudioSample {
             // let sample_buffer_len = self.sample_buffer.read().unwrap().len();
             let sample_buffer_len = self.sample_buffer.read().unwrap()[0].len();            
             // let remain_sample_buffer = sample_buffer_len as f32 / self.source.metadata.sample_rate as f32 / 2.0;
-            let remain_sample_buffer = sample_buffer_len as f32 / self.source.metadata.sample_rate as f32;
+            // let remain_sample_buffer = sample_buffer_len as f32 / self.source.metadata.sample_rate as f32;
+            let remain_sample_buffer = sample_buffer_len as f32 / self.host_sample_rate as f32;
             let current_sample_frame = self.current_sample_frame.load(Ordering::SeqCst);
-            let current_pos = current_sample_frame as f32 / self.source.metadata.sample_rate as f32;
+            // let current_pos = current_sample_frame as f32 / self.source.metadata.sample_rate as f32;
+            let current_pos = current_sample_frame as f32 / self.host_sample_rate as f32;
 
             println!(
                 "current pos: {:.2}s\tplayed samples: {}/{}\tremain sample buffer: {:.2}s",
                 current_pos,
                 current_sample_frame,
-                self.source.metadata.sample_frames,
+                // self.source.metadata.sample_frames,
+                self.resampled_sample_frames,
                 remain_sample_buffer
             );
 
@@ -441,7 +460,8 @@ impl AudioSample {
 
                 sleep(Duration::from_millis(100)).await;
 
-            } else if self.source.metadata.sample_frames <= current_sample_frame {
+            // } else if self.source.metadata.sample_frames <= current_sample_frame {
+            } else if self.resampled_sample_frames <= current_sample_frame {
                 println!("reach end of content");
                 // tx.lock().await.send("msg: reach end of content, stop this stream").unwrap();
                 // tx.lock().await.send("stop").unwrap();
@@ -457,8 +477,9 @@ impl AudioSample {
     }
 
     pub async fn get_buffer_for(&self, ms: u32) -> Result<(), anyhow::Error> {
-        let sample_rate = self.source.metadata.sample_rate;
+        // let sample_rate = self.source.metadata.sample_rate;
         let req_samples = ms * self.source.metadata.sample_rate / 1000;
+        // let req_samples = ms * self.host_sample_rate as u32 / 1000;
         
         println!("request audio data part");
         let buffer_status = AudioSampleStatus::from(self.buffer_status.load(Ordering::SeqCst));
@@ -536,7 +557,7 @@ impl AudioSample {
 
             let sample_items = chunk_items
                 .chunks(2)
-                .map(|item| i16::from_be_bytes(item.try_into().unwrap()) as f32 / 44100 as f32)
+                .map(|item| i16::from_be_bytes(item.try_into().unwrap()) as f32 / self.resampled_sample_frames as f32)
                 .collect::<Vec<f32>>();
 
             for sample_item in sample_items.chunks(2) {
@@ -715,10 +736,15 @@ impl AudioSample {
             let mut sample_buffer = self.sample_buffer.write().unwrap();
 
             if sample_buffer.is_empty() {
-                for (channel_idx, output_channel_frame) in output.chunks_mut(2).enumerate() {
-                    // let channel_sample = sample_buffer[channel_idx].pop_front().unwrap();
-                    output_channel_frame[channel_idx] = 0.0;
-                }                
+                for output_channel_frame in output.chunks_mut(2) {
+                    for channel_idx in 0..2 {
+                        output_channel_frame[channel_idx] = 0.0;
+                    }
+                }
+                // for (channel_idx, output_channel_frame) in output.chunks_mut(2).enumerate() {
+                //     // let channel_sample = sample_buffer[channel_idx].pop_front().unwrap();
+                //     output_channel_frame[channel_idx] = 0.0;
+                // }                
             } else {
                 for output_channel_frame in output.chunks_mut(2) {
                     for channel_idx in 0..2 {
@@ -774,7 +800,8 @@ impl AudioStream {
     pub async fn new(ctx: &AudioContext, source: AudioSource, tx: Arc<Mutex<mpsc::Sender<&'static str>>>) -> Result<Self, anyhow::Error> {
         // let sample = ctx.stream_config.sample_rate.0 as f32;
         // let channels = ctx.stream_config.channels as usize;
-        let audio_sample = Arc::new(AudioSample::new(source));
+        let host_output_sample_rate = ctx.stream_config.sample_rate.0;
+        let audio_sample = Arc::new(AudioSample::new(source, host_output_sample_rate));
 
         let sample_play_err_fn = |err: cpal::StreamError| {
             println!("an error occured on stream: {}", err);
