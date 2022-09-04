@@ -30,6 +30,17 @@ pub async fn load_audio(
 }
 
 #[tauri::command]
+pub async fn stop_audio(
+    state: State<'_, AppState>
+) -> Result<String, String> {
+    println!("got request stop_audio");
+
+    state.audio_player.stop().await;
+
+    Ok(String::from("ok"))
+}
+
+#[tauri::command]
 pub async fn get_audio_tags(
     items_per_page: u64,
     page: u32,

@@ -42,6 +42,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::init_audio_player,
             commands::load_audio,
             commands::get_audio_tags,
+            commands::stop_audio,
         ])
         .setup(|app_handle| {
             app_handle.manage(state::AppState::new());

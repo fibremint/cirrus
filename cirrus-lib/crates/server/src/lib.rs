@@ -76,9 +76,9 @@ fn run_fs_notify() -> Result<(), ()> {
 // }
 
 pub async fn run_server(addr: &str) -> Result<(), Box<dyn std::error::Error>> {
-    std::thread::spawn(|| {
-        run_fs_notify()
-    });
+    // std::thread::spawn(|| {
+    //     run_fs_notify()
+    // });
 
     let mongodb_client = get_mongodb_client().await?;
 

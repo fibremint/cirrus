@@ -8,8 +8,11 @@ use std::{
 };
 
 use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
+use ndarray::s;
+use rubato::Resampler;
 // use futures::lock::MutexGuard;
 use tokio::{time::{sleep, Duration}, sync::{MutexGuard, Mutex, mpsc}};
+use ndarray::ShapeBuilder;
 // use tokio::sync::mpsc::{Receiver, Sender};
 // use tokio::sync::
 use crate::request;
@@ -126,6 +129,11 @@ impl AudioPlayerWrapper {
         // self.audio_player.lock().unwrap().play();
         let audio_player = self.audio_player.lock().await;
         audio_player.play();
+    }
+
+    pub async fn stop(&self) {
+        let mut audio_player = self.audio_player.lock().await;
+        audio_player.remove_audio();
     }
 
     pub fn pause(&self) {
@@ -274,7 +282,12 @@ impl AudioContext {
         println!("Output device: {}", device.name()?);
     
         let config = device.default_output_config()?.into();
-        println!("Default output config: {:?}", config);
+        // let config = cpal::StreamConfig {
+        //     buffer_size: cpal::BufferSize::Default,
+        //     channels: cpal::ChannelCount::from(2u16),
+        //     sample_rate: cpal::SampleRate(44100)
+        // };
+        // println!("Default output config: {:?}", config);
 
         Ok(Self {
             // host,
@@ -306,22 +319,45 @@ impl From<usize> for AudioSampleStatus {
 
 struct AudioSample {
     source: AudioSource,
-    sample_buffer: Arc<RwLock<VecDeque<f32>>>,
+    // sample_buffer: Arc<RwLock<VecDeque<f32>>>,
+    sample_buffer: Arc<RwLock<Vec<VecDeque<f32>>>>,
     current_sample_frame: Arc<AtomicUsize>,
     buffer_status: Arc<AtomicUsize>,
     last_buf_req_pos: Arc<AtomicUsize>,
+    resampler: Arc<RwLock<rubato::FftFixedInOut<f32>>>,
+    resampler_frames: usize,
+    remain_sample_raw: Arc<RwLock<Vec<u8>>>,
+    // resampler: rubato::FftFixedInOut<f32>
 }
 
 // unsafe impl Send for AudioSample {}
 
 impl AudioSample {
     pub fn new(source: AudioSource) -> Self {
+        let resampler = rubato::FftFixedInOut::new(44100, 44100, 1024, 2).unwrap();
+        let resampler_frames = resampler.input_frames_next();
+        let mut sample_buffer: Vec<VecDeque<f32>> = Vec::with_capacity(2);
+
+        for _ in 0..2 {
+            sample_buffer.push(VecDeque::new());
+        }
+
         Self {
             source,
-            sample_buffer: Arc::new(RwLock::new(VecDeque::new())),
+            // sample_buffer: Arc::new(RwLock::new(VecDeque::new())),
+            // sample_buffer: Arc::new(RwLock::new(VecDeque::with_capacity(2))),
+            sample_buffer: Arc::new(RwLock::new(sample_buffer)),
             current_sample_frame: Arc::new(AtomicUsize::new(0)),
             buffer_status: Arc::new(AtomicUsize::new(AudioSampleStatus::Init as usize)),
             last_buf_req_pos: Arc::new(AtomicUsize::new(0)),
+            resampler: Arc::new(
+                RwLock::new(
+                    resampler
+                )
+            ),
+            resampler_frames,
+            remain_sample_raw: Arc::new(RwLock::new(Vec::new())),
+            // resampler: rubato::FftFixedInOut::new(44100, 48000, 1024, 2).unwrap()
         }
     }
 
@@ -378,8 +414,10 @@ impl AudioSample {
         // });
 
         loop {
-            let sample_buffer_len = self.sample_buffer.read().unwrap().len();
-            let remain_sample_buffer = sample_buffer_len as f32 / self.source.metadata.sample_rate as f32 / 2.0;
+            // let sample_buffer_len = self.sample_buffer.read().unwrap().len();
+            let sample_buffer_len = self.sample_buffer.read().unwrap()[0].len();            
+            // let remain_sample_buffer = sample_buffer_len as f32 / self.source.metadata.sample_rate as f32 / 2.0;
+            let remain_sample_buffer = sample_buffer_len as f32 / self.source.metadata.sample_rate as f32;
             let current_sample_frame = self.current_sample_frame.load(Ordering::SeqCst);
             let current_pos = current_sample_frame as f32 / self.source.metadata.sample_rate as f32;
 
@@ -452,15 +490,219 @@ impl AudioSample {
 
         println!("parse audio data response as audio sample");
         // ref: https://users.rust-lang.org/t/convert-slice-u8-to-u8-4/63836
-        let sample_res = sample_res.into_inner().content
-            .chunks(2)
-            .map(|chunks| i16::from_be_bytes(chunks.try_into().unwrap()) as f32 / sample_rate as f32)
-            .collect::<Vec<f32>>();
+        // let sample_res = sample_res.into_inner().content
+        //     .chunks(2)
+        //     .map(|chunks| i16::from_be_bytes(chunks.try_into().unwrap()) as f32 / 44100 as f32)
+        //     .collect::<Vec<f32>>();
+        // let sample_res2 = sample_res
+        //     .chunks(2)
+        //     .collect::<Vec<_>>();
 
-        let mut sample_buffer = self.sample_buffer.write().unwrap();
+        // sample.reserve(2);
+        // let mut sample = vec![vec]
 
-        sample_buffer.extend(sample_res);
-        println!("done fetch audio sample buffer");
+        let sample_res = sample_res.into_inner();
+        let chunks_per_channel = 2;
+        let channel = 2;
+
+        let sample_len_per_channel = sample_res.content.len() / (chunks_per_channel * channel);
+
+        let mut remain_sample_raw = self.remain_sample_raw.write().unwrap();
+        
+        let mut p_samples: Vec<u8> = remain_sample_raw.drain(..).collect();
+        p_samples.extend_from_slice(&sample_res.content);
+        
+        // let mut channel_samples = vec![vec![0.; sample_len_per_channel]; channel];
+        // let mut channel_samples: Vec<Vec<f32>> = vec![Vec::new(); 2];
+        // let mut chunks_items_iter = sample_res.content.chunks(chunks_per_channel * channel * self.resampler_frames);
+        // let mut chunks_items_iter = sample_res.content.chunks_exact(chunks_per_channel * channel * self.resampler_frames);
+        let mut chunks_items_iter = p_samples.chunks_exact(chunks_per_channel * channel * self.resampler_frames);
+
+        // let mut sample_idx = 0;
+
+        while let Some(chunk_items) = chunks_items_iter.next() {
+            // println!("chunks: {:?}", chunk_items);
+            let mut input_buf: Vec<Vec<f32>> = Vec::with_capacity(2);
+
+            for _ in 0..channel {
+                input_buf.push(Vec::with_capacity(self.resampler_frames));
+            }
+
+            // let sample_items = chunk_items
+            //     .chunks(channel)
+            //     .map(|item| i16::from_be_bytes(item.try_into().unwrap()) as f32 / 44100 as f32)
+            //     .collect::<Vec<f32>>();
+
+
+            let sample_items = chunk_items
+                .chunks(2)
+                .map(|item| i16::from_be_bytes(item.try_into().unwrap()) as f32 / 44100 as f32)
+                .collect::<Vec<f32>>();
+
+            for sample_item in sample_items.chunks(2) {
+                for channel_idx in 0..channel {
+                    input_buf[channel_idx].push(sample_item[channel_idx]);
+                }
+            }
+
+            let mut resampler = self.resampler.write().unwrap();
+            let resampled_wave = resampler.process(input_buf.as_ref(), None).unwrap();
+
+            let mut sample_buffer = self.sample_buffer.write().unwrap();
+            // sample_buffer.extend(resampled_wave);
+
+            for (ch_idx, channel_sample_buffer) in sample_buffer.iter_mut().enumerate() {
+                channel_sample_buffer.extend(resampled_wave.get(ch_idx).unwrap());
+            }
+            // println!("foo");
+
+            // for channel_idx in 0..2 {
+            //     // channel_samples[channel_idx].push(sample_items[channel_idx]);
+            //     channel_samples[channel_idx][sample_idx] = sample_items[channel_idx];
+            // }
+
+            // sample_idx += 1;
+        }
+
+        // let mut remain_sample_raw = self.remain_sample_raw.write().unwrap();
+        // chunks_items_iter.remainder();
+        let remain_samples = chunks_items_iter.remainder();
+        remain_sample_raw.extend(remain_samples);
+        // remain_sample_raw.extend(chunks_items_iter.remainder());
+
+        println!("done resampling wave data");
+        // while let Some(chunk_items) = chunks_items_iter.next() {
+        //     // println!("chunks: {:?}", chunks);
+        //     let sample_items = chunk_items
+        //         .chunks(2)
+        //         .map(|item| i16::from_be_bytes(item.try_into().unwrap()) as f32 / 44100 as f32)
+        //         .collect::<Vec<f32>>();
+
+        //     let mut resampler = self.resampler.write().unwrap();
+        //     let res = resampler.process(sample_items.as_ref(), None).unwrap();
+        //     // for channel_idx in 0..2 {
+        //     //     // channel_samples[channel_idx].push(sample_items[channel_idx]);
+        //     //     channel_samples[channel_idx][sample_idx] = sample_items[channel_idx];
+        //     // }
+
+        //     sample_idx += 1;
+        // }
+
+        // loop {
+        //     for channel_idx in 0..2 {
+        //         let sample_val = i16::from_be_bytes(sample_item.try_into().unwrap()) as f32 / 44100 as f32;
+        //         sample[channel_idx].push(sample_val);
+        //         // sample[channel_idx].append(sample_val);
+        //     }        
+        // }
+
+        // for sample_item in sample_res.into_inner().content.chunks(2) {
+        //     for channel_idx in 0..2 {
+        //         let sample_val = i16::from_be_bytes(sample_item.try_into().unwrap()) as f32 / 44100 as f32;
+        //         sample[channel_idx].push(sample_val);
+        //         // sample[channel_idx].append(sample_val);
+        //     }
+        // }
+        // for sample_item in sample_res.into_inner().content.chunks(2) {
+        //     for channel_idx in 0..2 {
+        //         let sample_val = i16::from_be_bytes(sample_item.try_into().unwrap()) as f32 / 44100 as f32;
+        //         sample[channel_idx].push(sample_val);
+        //         // sample[channel_idx].append(sample_val);
+        //     }
+        // }
+
+        // let sample_res = sample_res.into_inner().content
+        //     .chunks(2)
+        //     .map(|chunks| i16::from_be_bytes(chunks.try_into().unwrap()) as f32 / 44100 as f32)
+        //     .into_iter()
+        //     .collect::<Vec<_>>();
+        // let sample_res2 = (0..2)
+        //     .map(|_| {
+        //         sample_res
+        //             .iter_mut()
+        //             .map(|n| n)
+        //     })
+            // .collect::<Vec<f32>>()
+        //     .chunks(2)
+        //     .collect::<Vec<_>>();
+        // let sample_res = sample_res.into_inner().content
+        //     .chunks(2)
+        //     .map(|chunks| i16::from_be_bytes(chunks.try_into().unwrap()) as f32 / 44100 as f32)
+        //     .collect::<Vec<f32>>()
+        //     .chunks(2)
+        //     .collect::<Vec<_>>();
+
+        // let sample_res = sample_res.into_inner().content
+        //     .chunks(2)
+        //     .map(|chunks| i16::from_be_bytes(chunks.try_into().unwrap()) as f32 / 44100 as f32)
+        //     .collect::<Vec<f32>>();
+        // let sample_res = sample_res
+        //     .chunks(2)
+        //     .collect::<Vec<_>>();
+        // let sample_res: ndarray::Array2<f32> = sample_res
+        //     .chunks(2)
+        //     .map(|item| item.to_owned())
+        //     .collect::<Vec<_>>()
+        //     .into();
+        
+
+        // let b = Array::from_shape_vec((2, 2).strides((1, 2)),
+        //                       vec![1., 2., 3., 4.]).unwrap();
+        // let sample_reshaped = ndarray::Array::from_shape_vec(
+        //     (2, sample_res.len() / 2).strides((1, 2)), 
+        //     sample_res
+        // ).unwrap();
+
+        // println!("{}", sample_reshaped[[0, 0]]);
+        // println!("{}", sample_reshaped[[1, 0]]);
+
+        // println!("{}", sample_reshaped[[0, 1]]);
+        // println!("{}", sample_reshaped[[1, 1]]);
+
+        // println!("{}", sample_reshaped[[0, 2]]);
+        // println!("{}", sample_reshaped[[1, 2]]);
+
+        // let test = sample_reshaped.as_slice().unwrap();
+
+        // for i in sample_reshaped.iter() {
+        //     println!("{}", i);
+        // }
+        // let view = sample_reshaped.view();
+        // let a = view.as_slice_memory_order();
+
+
+        // sample_reshaped.
+        // let test = sample_reshaped.as_slice().unwrap();
+
+        // println!("sample_res len: {}", sample_res.len());
+
+        // let sample_res = sample_res.into_inner().content
+        //     .chunks(2)
+        //     .map(|chunks| i16::from_be_bytes(chunks.try_into().unwrap()) as f32 / 44100 as f32)
+        //     .collect::<Vec<f32>>()
+        //     .chunks(2)
+        //     .map(move|item| item.to_vec())
+        //     .collect::<Vec<_>>();
+
+            // .collect::<Vec<Vec<f32>>>();
+        // let sample_res2 = sample_res
+        //     .chunks(2)
+        //     .collect::<Vec<_>>();
+
+        // let sample_reshaped = ndarray::Array::from_shape_vec((2, sample_res.len() / 2 as usize), sample_res).unwrap();
+        // let sample_reshaped = sample_reshaped.to_vec();
+        // self.resampler.b
+
+        // // let r = sample_res[0].as_ref();
+        // let mut resampler = self.resampler.write().unwrap();
+        // let res = resampler.process(channel_samples.as_ref(), None).unwrap();
+
+        // // let res = resampler.process(sample_res.as_ref(), None).unwrap();
+
+        // let mut sample_buffer = self.sample_buffer.write().unwrap();
+        
+        // // sample_buffer.extend(sample_res);
+        // println!("done fetch audio sample buffer");
 
         Ok(())
     }
@@ -471,18 +713,47 @@ impl AudioSample {
 
         if buffer_status != AudioSampleStatus::Init {
             let mut sample_buffer = self.sample_buffer.write().unwrap();
-            
-            for frame in output.chunks_mut(2) {
-                for point in 0..2 as usize {
-                    match sample_buffer.pop_front() {
-                        Some(sample) => frame[point] = sample,
-                        None => break,
-                    }
-                }
 
-                let current_sample_frame = self.current_sample_frame.load(Ordering::SeqCst);
-                self.current_sample_frame.store(current_sample_frame + 1, Ordering::SeqCst);
+            if sample_buffer.is_empty() {
+                for (channel_idx, output_channel_frame) in output.chunks_mut(2).enumerate() {
+                    // let channel_sample = sample_buffer[channel_idx].pop_front().unwrap();
+                    output_channel_frame[channel_idx] = 0.0;
+                }                
+            } else {
+                for output_channel_frame in output.chunks_mut(2) {
+                    for channel_idx in 0..2 {
+                        let channel_sample = sample_buffer[channel_idx].pop_front().unwrap();
+                        output_channel_frame[channel_idx] = channel_sample;
+                    }
+
+                    let current_sample_frame = self.current_sample_frame.load(Ordering::SeqCst);
+                    self.current_sample_frame.store(current_sample_frame + 1, Ordering::SeqCst);
+                }
+                // for (channel_idx, output_channel_frame) in output.chunks_mut(2).enumerate() {
+                //     let channel_sample = sample_buffer[channel_idx].pop_front().unwrap();
+                //     output_channel_frame[channel_idx] = channel_sample;
+                // }
             }
+            // match sample_buffer.pop_front() {
+            //     Some(sample) => {
+            //         println!("play sample")
+            //     },
+            //     None => {
+            //         println!("play nothing")
+            //     }
+            // }
+            
+            // for frame in output.chunks_mut(2) {
+            //     for point in 0..2 as usize {
+            //         match sample_buffer.pop_front() {
+            //             Some(sample) => frame[point] = sample,
+            //             None => break,
+            //         }
+            //     }
+
+            //     let current_sample_frame = self.current_sample_frame.load(Ordering::SeqCst);
+            //     self.current_sample_frame.store(current_sample_frame + 1, Ordering::SeqCst);
+            // }
         }
     }
 }
@@ -510,6 +781,17 @@ impl AudioStream {
         };
 
         let _audio_sample = audio_sample.clone();
+        // let stream = ctx.device.build_output_stream(
+        //     &cpal::StreamConfig {
+        //         buffer_size: cpal::BufferSize::Default,
+        //         channels: cpal::ChannelCount::from(2u16),
+        //         sample_rate: cpal::SampleRate(44100)
+        //     }, 
+        //     move |output: &mut [f32], _: &cpal::OutputCallbackInfo| {
+        //         _audio_sample.play_for(output)
+        //     }, 
+        //     sample_play_err_fn
+        // )?;
 
         let stream = ctx.device.build_output_stream(
             &ctx.stream_config,
