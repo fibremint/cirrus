@@ -557,7 +557,7 @@ impl AudioSample {
 
             let sample_items = chunk_items
                 .chunks(2)
-                .map(|item| i16::from_be_bytes(item.try_into().unwrap()) as f32 / self.resampled_sample_frames as f32)
+                .map(|item| i16::from_be_bytes(item.try_into().unwrap()) as f32 / self.host_sample_rate as f32)
                 .collect::<Vec<f32>>();
 
             for sample_item in sample_items.chunks(2) {
