@@ -14,10 +14,10 @@
   // export let audioTags: AudioTag[] = [];
   // export let selectedAudio: AudioTag = undefined;
 
-  onMount(() => {
-    console.log("invoke init audio player");
-    invoke('plugin:cirrus|init_audio_player');
-  })
+  //onMount(() => {
+  //  console.log("invoke init audio player");
+  //  invoke('plugin:cirrus|init_audio_player');
+  //})
 
 </script>
 

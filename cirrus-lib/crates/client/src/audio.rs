@@ -29,24 +29,73 @@ use crate::request;
 //     });
 // }
 
-pub struct AudioPlayerWrapper {
-    pub audio_player: Arc<Mutex<AudioPlayer>>,
-    pub tx: Arc<Mutex<mpsc::Sender<&'static str>>>,
-    pub rx: Arc<Mutex<mpsc::Receiver<&'static str>>>,
+pub struct AudioPlayer {
+    // inner: Arc<Mutex<AudioPlayer>>,
+    // inner: AudioPlayerInner,
+    // inner: Arc<AudioPlayerInner>,
+    inner: Arc<Mutex<AudioPlayerInner>>,
+    // tx: Arc<Mutex<mpsc::Sender<&'static str>>>,
+    // rx: Arc<Mutex<mpsc::Receiver<&'static str>>>,
+    thread_handles: Vec<JoinHandle<()>>,
+    // tx: mpsc::Sender<&'static str>,
+    // rx: mpsc::Receiver<&'static str>,
 }
 
 // unsafe impl Send for AudioPlayerWrapper {}
 
-impl AudioPlayerWrapper {
-    pub fn new() -> Self {
-        let (tx, rx) = mpsc::channel::<&'static str>(64);
+impl AudioPlayer {
+    pub async fn new() -> Self {
+        let (tx, mut rx) = mpsc::channel::<&'static str>(64);
         // let rx = Arc::new(Mutex::new(rx));
-        let tx = Arc::new(Mutex::new(tx));
+        // let tx = Arc::new(Mutex::new(tx));
         // let tx = Arc::new(tx);
 
-        let audio_player = AudioPlayer::new(tx.clone());
-        let _audio_player = Arc::new(Mutex::new(audio_player));
-        let _audio_player2 = _audio_player.clone();
+        // let inner = AudioPlayerInner::new(
+        //     // Arc::new(Mutex::new(tx)),
+        //     // Arc::new(Mutex::new(rx))
+        //     tx.clone(),
+        // );
+
+        let inner = Arc::new(
+            Mutex::new(
+                AudioPlayerInner::new(tx.clone())
+            )
+        );
+
+        // let _inner_1 = Arc::new(Mutex::new(inner));
+        let mut thread_handles: Vec<JoinHandle<()>> = Vec::new();
+
+        let _inner_1 = inner.clone();
+        let message_handler_thread = tokio::spawn(async move {
+            while let Some(data) = rx.recv().await {
+                println!("received message: {:?}", data);
+                match data {
+                    "stop" => _inner_1.lock().await.remove_audio(),
+                    _ => (),
+                }
+            }
+        });
+        thread_handles.push(message_handler_thread);
+
+        // thread::spawn(move || {
+        //     while let Some(data) = rx.recv() {
+        //         println!("received message: {:?}", data);
+        //         match data {
+        //             "stop" => _inner_1.lock().remove_audio(),
+        //             _ => (),
+        //         }
+        //     }
+        // });
+
+        // let inner = AudioPlayerInner::new();
+        // let inner = Arc::new(Mutex::new(inner));
+        // let inner = Arc::new(inner);
+        // let inner = Arc::new(Mutex::new(inner));
+
+        // let inner = AudioPlayerInner::new(tx.clone());
+        // let audio_player = AudioPlayerInner::new(tx.clone());
+        // let _audio_player = Arc::new(Mutex::new(audio_player));
+        // let _audio_player2 = _audio_player.clone();
 
         // thread::spawn(move || {
         //     while let Ok(data) = rx.recv() {
@@ -58,7 +107,7 @@ impl AudioPlayerWrapper {
         //     }
         // });
 
-        let rx = Arc::new(Mutex::new(rx));
+        // let rx = Arc::new(Mutex::new(rx));
 
         // tokio::spawn(async move {
         //     let _rx = rx.clone();
@@ -72,30 +121,52 @@ impl AudioPlayerWrapper {
         //     }
         // });
 
+        // let mut thread_handles: Vec<JoinHandle<()>> = Vec::new();
+
+        // let _inner = std::rc::Rc::new(inner);
+        // let _inner_1 = inner.clone();
+        // let manage_message_thread = tokio::spawn(async move {
+        //     // _inner_1.manage_message().await;
+        //     // _inner_1.lock().await.
+
+        //     println!("audio: start thread message manager");
+        //     _inner_1.lock().await.manage_message().await;
+        //     // let mut _inner = _inner_1.lock().await;
+        //     // _inner.manage_message().await;
+        // });
+        // thread_handles.push(manage_message_thread);
+        // let manage_message_thread = thread::spawn(move || {
+        //     _inner_1.lock().a
+        // })
+
         Self {
-            audio_player: _audio_player,
-            tx: tx,
-            rx: rx,
+            // inner: _audio_player,
+            inner,
+            // tx,
+            // rx,
+            thread_handles,
+            // tx,
+            // rx,
         }
     }
 
-    pub async fn init(&self) {
-        let rx = self.rx.clone();
-        let audio_player = self.audio_player.clone();
+    // pub async fn init(&self) {
+    //     let rx = self.rx.clone();
+    //     let audio_player = self.audio_player.clone();
 
-        tokio::spawn(async move {
-            // let _rx = rx.clone();
+    //     tokio::spawn(async move {
+    //         // let _rx = rx.clone();
 
-            while let Some(data) = rx.lock().await.recv().await {
-                println!("received message: {:?}", data);
-                match data {
-                    "stop" => audio_player.lock().await.remove_audio(),
-                    // "start_buffer_test" => audio_player.lock().await.start_buffer_test().await,
-                    _ => (),
-                }
-            }
-        });
-    }
+    //         while let Some(data) = rx.lock().await.recv().await {
+    //             println!("received message: {:?}", data);
+    //             match data {
+    //                 "stop" => audio_player.lock().await.remove_audio(),
+    //                 // "start_buffer_test" => audio_player.lock().await.start_buffer_test().await,
+    //                 _ => (),
+    //             }
+    //         }
+    //     });
+    // }
 
     pub async fn add_audio(&self, audio_tag_id: &str) -> Result<(), anyhow::Error> {
         // let audio_source = AudioSource::new(audio_tag_id).await.unwrap();
@@ -110,10 +181,14 @@ impl AudioPlayerWrapper {
         // self.audio_player.lock().unwrap().add_audio(audio_tag_id).await.unwrap();
         
         // let res = audio_player.add_audio(audio_tag_id).await;
-        let mut audio_player = self.audio_player.lock().await;
-        audio_player.add_audio(audio_tag_id).await.unwrap();
+        // let mut audio_player = self.audio_player.lock().await;
+        // audio_player.add_audio(audio_tag_id).await.unwrap();
+        let mut _inner = self.inner.lock().await;
+        _inner.add_audio(audio_tag_id).await
 
-        Ok(())
+        // self.inner.add_audio(audio_tag_id).await
+
+        // Ok(())
     }
 
     // pub fn remove_audio(&mut self) {
@@ -127,42 +202,76 @@ impl AudioPlayerWrapper {
         // current_stream.stream.play().unwrap();
         
         // self.audio_player.lock().unwrap().play();
-        let audio_player = self.audio_player.lock().await;
-        audio_player.play();
+        // let audio_player = self.audio_player.lock().await;
+        // audio_player.play();
+        // self.inner.try_int
+        let _inner = self.inner.lock().await;
+        _inner.play();
+        // self.inner.play();
     }
 
     pub async fn stop(&self) {
-        let mut audio_player = self.audio_player.lock().await;
-        audio_player.remove_audio();
+        // let mut audio_player = self.audio_player.lock().await;
+        // audio_player.remove_audio();
+        let mut _inner = self.inner.lock().await;
+        _inner.remove_audio();
+        // self.inner.remove_audio();
     }
 
-    pub fn pause(&self) {
+    pub async fn pause(&self) {
         // println!("pause audio");
 
         // let current_stream = self.streams.front().unwrap();
         // current_stream.stream.pause().unwrap();
         
         // self.audio_player.lock().unwrap().pause();
+        let _inner = self.inner.lock().await;
+        _inner.pause();
+        // self.inner.pause();
     }
 }
 
-pub struct AudioPlayer {
+impl Drop for AudioPlayer {
+    fn drop(&mut self) {
+        for thread_handle in &self.thread_handles {
+            thread_handle.abort();
+        }
+    }
+}
+
+pub struct AudioPlayerInner {
     ctx: AudioContext,
     streams: VecDeque<AudioStream>,
     // tx: Arc<Mutex<mpsc::Sender<&'static str>>>,
-    tx: Arc<Mutex<mpsc::Sender<&'static str>>>,
+    // tx: Arc<Mutex<mpsc::Sender<&'static str>>>,
+    // tx: Arc<Mutex<mpsc::Sender<&'static str>>>,
+    // rx: Arc<Mutex<mpsc::Receiver<&'static str>>>,
+    tx: mpsc::Sender<&'static str>,
+    // rx: mpsc::Receiver<&'static str>,
     // pub rx: Arc<Mutex<mpsc::Receiver<&'static str>>>,
     // streams: Arc<Mutex<VecDeque<AudioStream>>>,
     // streams: VecDeque<Arc<RwLock<AudioStream>>>,
     // streams: Arc<RwLock<VecDeque<AudioStream>>>,
 }
 
-unsafe impl Send for AudioPlayer {}
+unsafe impl Send for AudioPlayerInner {}
 // unsafe impl Sync for AudioPlayer {}
 
-impl AudioPlayer {
+impl AudioPlayerInner {
     // pub fn new(tx: Arc<Mutex<mpsc::Sender<&'static str>>>) -> Self {
-    pub fn new(tx: Arc<Mutex<mpsc::Sender<&'static str>>>) -> Self {
+    // pub fn new(
+    //     tx: Arc<Mutex<mpsc::Sender<&'static str>>>,
+    //     rx: Arc<Mutex<mpsc::Receiver<&'static str>>>
+    // ) -> Self {
+    pub fn new(
+        tx: mpsc::Sender<&'static str>,
+        // rx: mpsc::Receiver<&'static str>
+    ) -> Self {
+    // pub fn new() -> Self {
+        // let (tx, rx) = mpsc::channel::<&'static str>(64);
+        // let rx = Arc::new(Mutex::new(rx));
+        // let tx = Arc::new(Mutex::new(tx));
+
         let ctx = AudioContext::new().unwrap();
 
         // thread::spawn(|| {
@@ -236,9 +345,68 @@ impl AudioPlayer {
     //     println!("run start buffer test method succesfully");
     // }
 
+    // async fn manage_message(self: Arc<Self>) {
+    //     // while let Ok(data) = self.rx.lock().unwrap().recv() {
+    //     while let Some(data) = self.rx.lock().await.recv().await {
+    //         println!("received message: {:?}", data);
+    //         match data {
+    //             // "stop" => _self.lock().unwrap().remove_audio(),
+    //             "stop" => self.remove_audio(),
+    //             _ => (),
+    //         }
+    //     }
+    // }
+
+    // async fn manage_message(&mut self) {
+    //     // while let Ok(data) = self.rx.lock().unwrap().recv() {
+    //     // let _rx = self.rx.clone();
+
+    //     // while let Some(data) = self.rx.lock().await.recv().await {
+    //     // while let Some(data) = _rx.lock().await.recv().await {
+    //     while let Some(data) = self.rx.recv().await {
+    //         println!("received message: {:?}", data);
+    //         match data {
+    //             // "stop" => _self.lock().unwrap().remove_audio(),
+    //             "stop" => self.remove_audio(),
+    //             _ => (),
+    //         }
+    //     }
+    // }
+
+    // async fn manage_message(&mut self) {
+    //     // while let Some(data) = self.rx.recv().await {
+    //     //     println!("received message: {:?}", data);
+    //     //     match data {
+    //     //         // "stop" => _self.lock().unwrap().remove_audio(),
+    //     //         "stop" => self.remove_audio(),
+    //     //         _ => (),
+    //     //     }
+    //     // }
+    // }
+
+    // async fn run_manage_message(&self) {
+    //     let mut _self = Arc::new(Mutex::new(self));
+
+    //     tokio::spawn(async move {
+    //         while let Some(data) = _self.rx.recv().await {
+    //             println!("received message: {:?}", data);
+    //             match data {
+    //                 // "stop" => audio_player.remove_audio(),
+    //                 // "stop" => _self.lock().await.remove_audio(),
+    //                 // "stop" => println!("got message: {}", data),
+    //                 _ => (),
+    //             };
+    //         }
+    //     });
+    // }
+
     pub async fn add_audio(&mut self, audio_tag_id: &str) -> Result<(), anyhow::Error> {
         let audio_source = AudioSource::new(audio_tag_id).await.unwrap();
-        let audio_stream = AudioStream::new(&self.ctx, audio_source, self.tx.clone())?;
+        let audio_stream = AudioStream::new(
+            &self.ctx, 
+            audio_source, 
+            self.tx.clone()
+        )?;
 
         self.streams.push_back(audio_stream);
         println!("done add audio");
@@ -394,7 +562,11 @@ impl AudioSample {
         sample_len as f32 / self.host_sample_rate as f32
     }
 
-    pub async fn run_buffer_thread(self: Arc<Self>, tx: Arc<Mutex<mpsc::Sender<&'static str>>>) {
+    pub async fn run_buffer_thread(
+        self: Arc<Self>, 
+        // tx: Arc<Mutex<mpsc::Sender<&'static str>>>
+        tx: mpsc::Sender<&'static str>,
+    ) {
         let buffer_margin: f32 = 20.;
         let fetch_buffer_sec: f32 = 50.;
         // let content_length = self.source.metadata.sample_frames as f32 / self.source.metadata.sample_rate as f32;
@@ -402,7 +574,8 @@ impl AudioSample {
         // println!("content length: {}", self.content_length);
 
         // tx.lock().await.send("msg: run buffer thread via sender").unwrap();
-        tx.lock().await.send("msg: run buffer thread via sender").await.unwrap();
+        // tx.lock().await.send("msg: run buffer thread via sender").await.unwrap();
+        tx.send("msg: run buffer thread via sender").await.unwrap();
         // tx.lock().await.send("start_buffer_test").await.unwrap();
 
         // tx.lock().unwrap().send("msg: run buffer thread via sender").unwrap();
@@ -834,7 +1007,12 @@ struct AudioStream {
 }
 
 impl AudioStream {
-    pub fn new(ctx: &AudioContext, source: AudioSource, tx: Arc<Mutex<mpsc::Sender<&'static str>>>) -> Result<Self, anyhow::Error> {
+    pub fn new(
+        ctx: &AudioContext, 
+        source: AudioSource, 
+        // tx: Arc<Mutex<mpsc::Sender<&'static str>>>
+        tx: mpsc::Sender<&'static str>
+    ) -> Result<Self, anyhow::Error> {
         let inner = AudioStreamInner::new(
             ctx, 
             source, 
@@ -892,7 +1070,8 @@ struct AudioStreamInner {
     // stream: Box<cpal::Stream>,
     stream: cpal::Stream,
     audio_sample: Arc<AudioSample>,
-    tx: Arc<Mutex<mpsc::Sender<&'static str>>>,
+    // tx: Arc<Mutex<mpsc::Sender<&'static str>>>,
+    tx: mpsc::Sender<&'static str>,
     // rx: Arc<Mutex<mpsc::Receiver<&'static str>>>,
     // thread_handles: Vec<JoinHandle<()>>,
 }
@@ -902,7 +1081,12 @@ unsafe impl Sync for AudioStreamInner {}
 
 impl AudioStreamInner {
     // pub async fn new(ctx: &AudioContext, source: AudioSource, tx: Arc<Mutex<mpsc::Sender<&'static str>>>) -> Result<Self, anyhow::Error> {
-    pub fn new(ctx: &AudioContext, source: AudioSource, tx: Arc<Mutex<mpsc::Sender<&'static str>>>) -> Result<Self, anyhow::Error> {
+    pub fn new(
+        ctx: &AudioContext, 
+        source: AudioSource, 
+        // tx: Arc<Mutex<mpsc::Sender<&'static str>>>
+        tx: mpsc::Sender<&'static str>
+    ) -> Result<Self, anyhow::Error> {
         // let sample = ctx.stream_config.sample_rate.0 as f32;
         // let channels = ctx.stream_config.channels as usize;
         let host_output_sample_rate = ctx.stream_config.sample_rate.0;
@@ -980,7 +1164,11 @@ impl AudioStreamInner {
         // })
     }
 
-    async fn manage_playback(self: Arc<Self>, tx: Arc<Mutex<mpsc::Sender<&'static str>>>) {
+    async fn manage_playback(
+        self: Arc<Self>, 
+        // tx: Arc<Mutex<mpsc::Sender<&'static str>>>
+        tx: mpsc::Sender<&'static str>,
+    ) {
         loop {
             let current_sample_frame = self.audio_sample.get_current_sample_frame();
             let current_pos = self.audio_sample.get_sample_length_as_sec(current_sample_frame);
@@ -1006,7 +1194,8 @@ impl AudioStreamInner {
                     println!("reach end of content");
                     // tx.lock().await.send("msg: reach end of content, stop this stream").unwrap();
                     // tx.lock().await.send("stop").unwrap();
-                    tx.lock().await.send("stop").await.unwrap();
+                    // tx.lock().await.send("stop").await.unwrap();
+                    tx.send("stop").await.unwrap();
     
                     // tx.lock().unwrap().send("stop").unwrap();
                     break;
