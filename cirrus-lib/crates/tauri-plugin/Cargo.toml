@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anyhow = "1"
 cirrus-client-lib = { path = "../client" }
 cirrus-grpc = { path = "../grpc" }
 http = "0.2"

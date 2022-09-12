@@ -2,7 +2,7 @@ use tauri::{
     Runtime,
     plugin::{TauriPlugin, Builder}, 
     Invoke, 
-    AppHandle, Manager
+    AppHandle, Manager, Window,
 };
 
 pub mod state;
@@ -14,14 +14,12 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::load_audio,
             commands::get_audio_tags,
             commands::stop_audio,
+            // commands::send_playback_position,
         ])
         .setup(|app_handle| {
-            // ref: https://rfdonnelly.github.io/post/tauri-async-rust-process/
-            let app_handle = app_handle.app_handle();
-            let state = tauri::async_runtime::block_on(async move {
-                state::AppState::new().await
-            });
+            let state = state::AppState::new();
             app_handle.manage(state);
+            
             Ok(())
         })
         .build()

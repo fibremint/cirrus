@@ -1,4 +1,3 @@
-// use cirrus_client_lib::audio::{AudioPlayer, AudioPlayerWrapper};
 use cirrus_client_lib::audio::AudioPlayer;
 
 pub struct AppState {
@@ -6,9 +5,9 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub async fn new() -> Self {       
+    pub fn new() -> Self {  
         Self {
-            audio_player: AudioPlayer::new().await,
+            audio_player: AudioPlayer::new(),
         }
     }
 }

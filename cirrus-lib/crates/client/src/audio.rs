@@ -2,25 +2,33 @@ use std::{
     collections::VecDeque,
     sync::{
         Arc, 
-        atomic::{AtomicUsize, Ordering},
-        RwLock,
+        atomic::{AtomicUsize, Ordering, AtomicBool},
+        RwLock, 
+        // Mutex, 
+        // mpsc,
     },
+    thread,
 };
 
+use anyhow::anyhow;
 use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
 use rubato::Resampler;
-use tokio::{time::{sleep, Duration}, sync::{MutexGuard, Mutex, mpsc}, task::JoinHandle};
-use ndarray::ShapeBuilder;
+use tokio::{
+    time::{sleep, Duration}, 
+    sync::{mpsc, Mutex}, 
+    task::{self, JoinHandle},
+    runtime::Handle,
+};
 
 use crate::request;
 
 pub struct AudioPlayer {
     inner: Arc<Mutex<AudioPlayerInner>>,
-    thread_handles: Vec<JoinHandle<()>>,
+    thread_run_states: Vec<Arc<AtomicBool>>,
 }
 
 impl AudioPlayer {
-    pub async fn new() -> Self {
+    pub fn new() -> Self {
         let (tx, mut rx) = mpsc::channel::<&'static str>(64);
 
         let inner = Arc::new(
@@ -29,51 +37,92 @@ impl AudioPlayer {
             )
         );
 
-        let mut thread_handles: Vec<JoinHandle<()>> = Vec::new();
+        let mut thread_run_states: Vec<Arc<AtomicBool>> = Vec::new();
 
         let _inner_1 = inner.clone();
-        let message_handler_thread = tokio::spawn(async move {
-            while let Some(data) = rx.recv().await {
+
+        // ref: https://www.reddit.com/r/rust/comments/nwbtsz/help_understanding_how_to_start_and_stop_threads/
+        let receiver_run_state = Arc::new(AtomicBool::new(true));
+        let _receiver_run_state = receiver_run_state.clone();
+        thread::spawn(move || loop {
+            println!("start receiver");
+            if !_receiver_run_state.load(Ordering::Relaxed) {
+                println!("terminate receiver");
+                break;
+            }
+
+            while let Some(data) = rx.blocking_recv() {
                 println!("received message: {:?}", data);
                 match data {
-                    "stop" => _inner_1.lock().await.remove_audio(),
+                    "stop" => _inner_1.blocking_lock().remove_audio(),
                     _ => (),
                 }
             }
         });
-        thread_handles.push(message_handler_thread);
+        
+        thread_run_states.push(receiver_run_state);
 
         Self {
             inner,
-            thread_handles,
+            thread_run_states
         }
     }
 
-    pub async fn add_audio(&self, audio_tag_id: &str) -> Result<(), anyhow::Error> {
-        let mut _inner = self.inner.lock().await;
-        _inner.add_audio(audio_tag_id).await
+    pub async fn add_audio(&self, audio_tag_id: &str) -> Result<f32, anyhow::Error> {
+        self.inner.lock().await.add_audio(audio_tag_id).await
     }
 
-    pub async fn play(&self) {
-        let _inner = self.inner.lock().await;
-        _inner.play();
+    pub async fn play(&self) -> Result<(), anyhow::Error> {
+        self.inner.lock().await.play()
     }
 
     pub async fn stop(&self) {
-        let mut _inner = self.inner.lock().await;
-        _inner.remove_audio();
+        self.inner.lock().await.remove_audio()
     }
 
-    pub async fn pause(&self) {
-        let _inner = self.inner.lock().await;
-        _inner.pause();
+    pub async fn pause(&self) -> Result<(), anyhow::Error> {
+        self.inner.lock().await.pause()
+    }
+
+    pub async fn get_playback_position(&self) -> Result<f32, anyhow::Error> {
+        self.inner.lock().await.get_playback_position()
+    }
+
+    pub fn set_playback_position(&self) -> Result<(), anyhow::Error> {
+        todo!()
+    }
+
+    pub async fn get_status(&self) -> AudioPlayerStatus {
+        self.inner.lock().await.status
     }
 }
 
 impl Drop for AudioPlayer {
     fn drop(&mut self) {
-        for thread_handle in &self.thread_handles {
-            thread_handle.abort();
+        for thread_run_state in &self.thread_run_states {
+            thread_run_state.store(false, Ordering::Relaxed);
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub enum AudioPlayerStatus {
+    Play,
+    Pause,
+    Stop,
+    Error,
+}
+
+impl From<usize> for AudioPlayerStatus {
+    //ref: https://gist.github.com/polypus74/eabc7bb00873e6b90abe230f9e632989
+    fn from(value: usize) -> Self {
+        use self::AudioPlayerStatus::*;
+        match value {
+            0 => Play,
+            1 => Pause,
+            2 => Stop,
+            3 => Error,
+            _ => unreachable!(),
         }
     }
 }
@@ -82,9 +131,8 @@ pub struct AudioPlayerInner {
     ctx: AudioContext,
     streams: VecDeque<AudioStream>,
     tx: mpsc::Sender<&'static str>,
+    status: AudioPlayerStatus,
 }
-
-unsafe impl Send for AudioPlayerInner {}
 
 impl AudioPlayerInner {
     pub fn new(
@@ -96,39 +144,79 @@ impl AudioPlayerInner {
             ctx,
             streams: VecDeque::new(),
             tx,
+            status: AudioPlayerStatus::Stop,
         }
     }
 
-    pub async fn add_audio(&mut self, audio_tag_id: &str) -> Result<(), anyhow::Error> {
-        let audio_source = AudioSource::new(audio_tag_id).await.unwrap();
+    pub async fn add_audio(&mut self, audio_tag_id: &str) -> Result<f32, anyhow::Error> {
+        let audio_source = AudioSource::new(audio_tag_id).await?;
         let audio_stream = AudioStream::new(
             &self.ctx, 
             audio_source, 
             self.tx.clone()
         )?;
 
+        let content_length = audio_stream.inner.audio_sample.content_length;
+
         self.streams.push_back(audio_stream);
         println!("done add audio");
 
-        Ok(())
+        Ok(content_length)
     }
 
     pub fn remove_audio(&mut self) {
         self.streams.remove(0).unwrap();
     }
 
-    pub fn play(&self) {
+    pub fn play(&mut self) -> Result<(), anyhow::Error> {
         println!("play audio");
 
         let current_stream = self.streams.front().unwrap();
-        current_stream.play().unwrap();
+        // current_stream.play()?;
+
+        match current_stream.play() {
+            Ok(_) => self.status = AudioPlayerStatus::Play,
+            Err(e) => {
+                self.status = AudioPlayerStatus::Error;
+
+                return Err(anyhow!(e))
+            }
+        }
+
+        Ok(())
     }
 
-    pub fn pause(&self) {
+    pub fn pause(&mut self) -> Result<(), anyhow::Error> {
         println!("pause audio");
 
         let current_stream = self.streams.front().unwrap();
-        current_stream.pause().unwrap();
+        // current_stream.pause()?;
+        match current_stream.pause() {
+            Ok(_) => self.status = AudioPlayerStatus::Pause,
+            Err(e) => {
+                self.status = AudioPlayerStatus::Error;
+
+                return Err(anyhow!(e))
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn get_playback_position(&self) -> Result<f32, anyhow::Error> {
+        let current_stream = self.streams.front().unwrap();
+        
+        Ok(current_stream.inner.audio_sample.get_current_playback_position_sec())
+    }
+
+    pub fn get_sample_buffer_length(&self) -> Result<f32, anyhow::Error> {
+        let current_stream = self.streams.front().unwrap();
+
+        Ok(current_stream.inner.audio_sample.get_remain_sample_buffer_sec())
+    }
+
+    pub fn set_playback_position(&self, position_sec: f32) -> Result<(), anyhow::Error> {
+        todo!()
     }
 }
 
@@ -233,16 +321,24 @@ impl AudioSample {
         }
     }
 
-    pub fn get_sample_buffer_length(&self) -> usize {
+    pub fn get_remain_sample_buffer_len(&self) -> usize {
         self.sample_buffer.read().unwrap()[0].len()
     }
 
-    pub fn get_current_sample_frame(&self) -> usize {
+    pub fn get_current_sample_idx(&self) -> usize {
         self.current_sample_frame.load(Ordering::SeqCst)
     }
 
-    pub fn get_sample_length_as_sec(&self, sample_len: usize) -> f32 {
+    pub fn get_sec_from_sample_len(&self, sample_len: usize) -> f32 {
         sample_len as f32 / self.host_sample_rate as f32
+    }
+
+    pub fn get_current_playback_position_sec(&self) -> f32 {
+        self.get_sec_from_sample_len(self.get_current_sample_idx())
+    }
+
+    pub fn get_remain_sample_buffer_sec(&self) -> f32 {
+        self.get_sec_from_sample_len(self.get_remain_sample_buffer_len())   
     }
 
     pub async fn run_buffer_thread(
@@ -255,16 +351,16 @@ impl AudioSample {
         tx.send("msg: run buffer thread via sender").await.unwrap();
 
         loop {
-            let current_sample_frame = self.get_current_sample_frame();
-            let current_pos = self.get_sample_length_as_sec(current_sample_frame);
-            let remain_sample_buffer = self.get_sample_buffer_length();
-            let remain_sample_buffer_sec = self.get_sample_length_as_sec(remain_sample_buffer);
+            // let current_sample_frame = self.get_current_sample_idx();
+            // let current_pos = self.get_sec_from_sample_len(current_sample_frame);
+            // let remain_sample_buffer = self.get_remain_sample_buffer_len();
+            // let remain_sample_buffer_sec = self.get_sec_from_sample_len(remain_sample_buffer);
 
-            if self.content_length - current_pos > buffer_margin {
-                if buffer_margin > remain_sample_buffer_sec {
+            if self.content_length - self.get_current_playback_position_sec() > buffer_margin {
+                if buffer_margin > self.get_remain_sample_buffer_sec() {
                     println!("fetch audio sample buffer");
                     self.get_buffer_for(fetch_buffer_sec as u32 * 1000).await.unwrap();
-                } else if remain_sample_buffer == 0 {
+                } else if self.get_remain_sample_buffer_len() == 0 {
                     self.buffer_status.store(AudioSampleStatus::FillBuffer as usize, Ordering::SeqCst);
                 } else {
                     self.buffer_status.store(AudioSampleStatus::Play as usize, Ordering::SeqCst);
@@ -496,26 +592,26 @@ impl AudioStreamInner {
         tx: mpsc::Sender<&'static str>,
     ) {
         loop {
-            let current_sample_frame = self.audio_sample.get_current_sample_frame();
-            let current_pos = self.audio_sample.get_sample_length_as_sec(current_sample_frame);
-            let remain_sample_buffer = self.audio_sample.get_sample_buffer_length();
-            let remain_sample_buffer_sec = self.audio_sample.get_sample_length_as_sec(remain_sample_buffer);
+            // let current_sample_frame = self.audio_sample.get_current_sample_idx();
+            // let current_pos = self.audio_sample.get_sec_from_sample_len(current_sample_frame);
+            // let remain_sample_buffer = self.audio_sample.get_remain_sample_buffer_len();
+            // let remain_sample_buffer_sec = self.audio_sample.get_sec_from_sample_len(remain_sample_buffer);
 
             println!(
                 "current pos: {:.2}s\tplayed samples: {}/{}\tremain sample buffer: {:.2}s",
-                current_pos,
-                current_sample_frame,
+                self.audio_sample.get_current_playback_position_sec(),
+                self.audio_sample.get_current_sample_idx(),
                 self.audio_sample.resampled_sample_frames,
-                remain_sample_buffer_sec
+                self.audio_sample.get_remain_sample_buffer_sec()
             );
 
-            let sample_buffer_length = self.audio_sample.get_sample_buffer_length();
-            let sample_buffer_sec = self.audio_sample.get_sample_length_as_sec(sample_buffer_length);
+            // let sample_buffer_length = self.audio_sample.get_remain_sample_buffer_len();
+            // let sample_buffer_sec = self.audio_sample.get_sec_from_sample_len(sample_buffer_length);
 
-            if sample_buffer_sec < 0.01 {
+            if self.audio_sample.get_remain_sample_buffer_sec() < 0.01 {
                 self.stream.pause().unwrap();
 
-                if self.audio_sample.content_length - current_pos <= 0.5  {
+                if self.audio_sample.content_length - self.audio_sample.get_current_playback_position_sec() <= 0.5  {
                     println!("reach end of content");
                     tx.send("stop").await.unwrap();
 

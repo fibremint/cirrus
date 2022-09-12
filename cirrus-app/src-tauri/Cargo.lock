@@ -379,6 +379,7 @@ dependencies = [
 name = "cirrus-tauri-plugin"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "cirrus-client-lib",
  "cirrus-grpc",
  "http",
