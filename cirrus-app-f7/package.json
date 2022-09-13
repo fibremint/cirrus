@@ -9,7 +9,8 @@
     "start": "npm run dev",
     "dev": "cross-env NODE_ENV=development vite",
     "build": "cross-env NODE_ENV=production vite build && npx workbox generateSW workbox-config.js",
-    "postinstall": "cpy --flat ./node_modules/framework7-icons/fonts/*.* ./src/fonts/ && cpy --flat ./node_modules/material-icons/iconfont/*.* ./src/fonts/"
+    "postinstall": "cpy --flat ./node_modules/framework7-icons/fonts/*.* ./src/fonts/ && cpy --flat ./node_modules/material-icons/iconfont/*.* ./src/fonts/",
+    "tauri": "tauri"
   },
   "browserslist": [
     "IOS >= 13",
@@ -19,6 +20,8 @@
     "Samsung >= 12"
   ],
   "dependencies": {
+    "@tauri-apps/api": "^1.0.0-rc.7",
+    "@tauri-apps/cli": "^1.0.0-rc.7",
     "dom7": "^4.0.4",
     "framework7": "^7.0.7",
     "framework7-icons": "^5.0.5",
