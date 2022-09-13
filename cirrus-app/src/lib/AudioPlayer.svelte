@@ -4,6 +4,7 @@
   import { event, invoke } from '@tauri-apps/api';
   import { emit, listen } from '@tauri-apps/api/event'
   import { appWindow, WebviewWindow } from '@tauri-apps/api/window';
+  import Slider from '@smui/slider';
 
   import type { AudioTag, AudioPlayerContext, PlaybackPayload } from '../types';
   import { audioTagsStore, selectedAudioTagStore } from '../state';
@@ -94,8 +95,13 @@
   {/if}
 
   {#if isPlaying}
+    <Slider 
+      style="flex-grow: 1;"
+      bind:value={audioPlayerContext.playbackPosition} 
+      max={audioPlayerContext.contentLength} 
+    />
     <p>content length: {audioPlayerContext.contentLength}</p>
-    <p>position: {audioPlayerContext.playbackPosition}</p>
-    <p>buf: {audioPlayerContext.remainBuf}</p>
+    <!-- <p>position: {audioPlayerContext.playbackPosition}</p>
+    <p>buf: {audioPlayerContext.remainBuf}</p> -->
   {/if}
 <!-- </div> -->
