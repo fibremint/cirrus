@@ -72,28 +72,32 @@ impl AudioPlayer {
         self.inner.lock().await.add_audio(audio_tag_id).await
     }
 
-    pub async fn play(&self) -> Result<(), anyhow::Error> {
-        self.inner.lock().await.play()
+    pub fn play(&self) -> Result<(), anyhow::Error> {
+        self.inner.blocking_lock().play()
     }
 
-    pub async fn stop(&self) {
-        self.inner.lock().await.remove_audio()
+    pub fn stop(&self) {
+        self.inner.blocking_lock().remove_audio()
     }
 
-    pub async fn pause(&self) -> Result<(), anyhow::Error> {
-        self.inner.lock().await.pause()
+    pub fn pause(&self) -> Result<(), anyhow::Error> {
+        self.inner.blocking_lock().pause()
     }
 
-    pub async fn get_playback_position(&self) -> Result<f32, anyhow::Error> {
-        self.inner.lock().await.get_playback_position()
+    pub fn get_playback_position(&self) -> f32 {
+        self.inner.blocking_lock().get_playback_position()
     }
 
     pub fn set_playback_position(&self) -> Result<(), anyhow::Error> {
         todo!()
     }
 
-    pub async fn get_status(&self) -> AudioPlayerStatus {
-        self.inner.lock().await.status
+    pub fn get_remain_sample_buffer_sec(&self) -> f32 {
+        self.inner.blocking_lock().get_remain_sample_buffer_sec()
+    }
+
+    pub fn get_status(&self) -> AudioPlayerStatus {
+        self.inner.blocking_lock().status
     }
 }
 
@@ -165,7 +169,11 @@ impl AudioPlayerInner {
     }
 
     pub fn remove_audio(&mut self) {
-        self.streams.remove(0).unwrap();
+        // self.streams.remove(0).unwrap();
+        match self.streams.remove(0) {
+            Some(_) => (),
+            None => (),
+        }
     }
 
     pub fn play(&mut self) -> Result<(), anyhow::Error> {
@@ -203,16 +211,24 @@ impl AudioPlayerInner {
         Ok(())
     }
 
-    pub fn get_playback_position(&self) -> Result<f32, anyhow::Error> {
-        let current_stream = self.streams.front().unwrap();
+    pub fn get_playback_position(&self) -> f32 {
+        match self.streams.front() {
+            Some(stream) => return stream.inner.audio_sample.get_current_playback_position_sec(),
+            None => return 0.0,
+        }
+        // let current_stream = self.streams.front().unwrap();
         
-        Ok(current_stream.inner.audio_sample.get_current_playback_position_sec())
+        // Ok(current_stream.inner.audio_sample.get_current_playback_position_sec())
     }
 
-    pub fn get_sample_buffer_length(&self) -> Result<f32, anyhow::Error> {
-        let current_stream = self.streams.front().unwrap();
+    pub fn get_remain_sample_buffer_sec(&self) -> f32 {
+        match self.streams.front() {
+            Some(stream) => return stream.inner.audio_sample.get_remain_sample_buffer_sec(),
+            None => return 0.0,
+        }
+        // let current_stream = self.streams.front().unwrap();
 
-        Ok(current_stream.inner.audio_sample.get_remain_sample_buffer_sec())
+        // Ok(current_stream.inner.audio_sample.get_remain_sample_buffer_sec())
     }
 
     pub fn set_playback_position(&self, position_sec: f32) -> Result<(), anyhow::Error> {
@@ -597,13 +613,13 @@ impl AudioStreamInner {
             // let remain_sample_buffer = self.audio_sample.get_remain_sample_buffer_len();
             // let remain_sample_buffer_sec = self.audio_sample.get_sec_from_sample_len(remain_sample_buffer);
 
-            println!(
-                "current pos: {:.2}s\tplayed samples: {}/{}\tremain sample buffer: {:.2}s",
-                self.audio_sample.get_current_playback_position_sec(),
-                self.audio_sample.get_current_sample_idx(),
-                self.audio_sample.resampled_sample_frames,
-                self.audio_sample.get_remain_sample_buffer_sec()
-            );
+            // println!(
+            //     "current pos: {:.2}s\tplayed samples: {}/{}\tremain sample buffer: {:.2}s",
+            //     self.audio_sample.get_current_playback_position_sec(),
+            //     self.audio_sample.get_current_sample_idx(),
+            //     self.audio_sample.resampled_sample_frames,
+            //     self.audio_sample.get_remain_sample_buffer_sec()
+            // );
 
             // let sample_buffer_length = self.audio_sample.get_remain_sample_buffer_len();
             // let sample_buffer_sec = self.audio_sample.get_sec_from_sample_len(sample_buffer_length);

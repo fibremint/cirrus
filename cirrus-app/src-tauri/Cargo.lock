@@ -383,6 +383,7 @@ dependencies = [
  "cirrus-client-lib",
  "cirrus-grpc",
  "http",
+ "serde",
  "tauri",
  "tokio",
 ]

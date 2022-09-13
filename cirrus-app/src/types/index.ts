@@ -4,3 +4,14 @@ export type AudioTag = {
   genre: string,
   title: string,
 };
+
+export type AudioPlayerContext = {
+  contentLength: number,
+  playbackPosition: number,
+  remainBuf: number,
+}
+
+export type PlaybackPayload = {
+  pos: number,
+  remainBuf: number,
+}

@@ -1,13 +1,22 @@
 <script lang="ts">
-  import { invoke } from '@tauri-apps/api';
-  
-  import type { AudioTag } from '../types';
+  import { onMount, onDestroy } from 'svelte';
+
+  import { event, invoke } from '@tauri-apps/api';
+  import { emit, listen } from '@tauri-apps/api/event'
+  import { appWindow, WebviewWindow } from '@tauri-apps/api/window';
+
+  import type { AudioTag, AudioPlayerContext, PlaybackPayload } from '../types';
   import { audioTagsStore, selectedAudioTagStore } from '../state';
 
   export let audioTags: AudioTag[] = [];
   export let selectedAudioTag: AudioTag = undefined;
 
   let prevAudioTag: AudioTag = undefined;
+  let audioPlayerContext: AudioPlayerContext = {
+    contentLength: 0.0,
+    playbackPosition: 0.0,
+    remainBuf: 0.0,
+  };
 
   audioTagsStore.subscribe(value => {
     audioTags = value;
@@ -19,8 +28,28 @@
 
   let isPlaying: boolean = false;
 
-  function playAudio() {
-    // TODO: if audio is playing and selects another audio, stop previous audio and play selected audio
+  let updatePlaybackPosEventUnlisten = undefined;
+  // const audioPlayerWebView = new WebviewWindow('audio-player');
+  // const audioPlayerWebView = new appWindow;
+
+  onMount(async () => {
+    const unlisten = await listen<PlaybackPayload>('update-playback-pos', event => {
+      const payload: PlaybackPayload = event.payload;
+      // console.log("pos: %f, remain_buf: %f", payload.pos, payload.remainBuf);
+      audioPlayerContext.playbackPosition = payload.pos;
+      audioPlayerContext.remainBuf = payload.remainBuf;
+    })
+
+    updatePlaybackPosEventUnlisten = unlisten;
+
+    await invoke('plugin:cirrus|send_playback_position');
+  });
+
+  onDestroy(() => {
+    updatePlaybackPosEventUnlisten();
+  });
+  
+  async function playAudio() {
     if (selectedAudioTag == undefined) {
       return;
     }
@@ -30,32 +59,25 @@
       
       if (isPlaying) {
         console.log('call stop audio');
-        invoke('plugin:cirrus|stop_audio');
+        await invoke('plugin:cirrus|stop_audio');
       }
 
-      console.log('call play audio: ', selectedAudioTag.title);
-      invoke('plugin:cirrus|load_audio', { audioTagId: selectedAudioTag.id });
-      isPlaying = true;
-      
-      prevAudioTag = selectedAudioTag;
+      try {
+        console.log('call play audio: ', selectedAudioTag.title);
+        const contentLength: number = await invoke('plugin:cirrus|load_audio', { audioTagId: selectedAudioTag.id });
+        await invoke('plugin:cirrus|start_audio');
+        audioPlayerContext.contentLength = contentLength;
+
+        isPlaying = true;
+        prevAudioTag = selectedAudioTag;
+      } catch (e) {
+        console.log(e);
+
+        isPlaying = false;
+      }
     } else {
       console.log("selected same audio");
-
     }
-    // if (selectedAudioTag != undefined) {
-    //   // console.log("sat: ", selectedAudioTag);
-    //   // prevAudioTag = selectedAudioTag;
-
-    //   console.log('call play audio: ', selectedAudioTag.title);
-    //   invoke('plugin:cirrus|load_audio', { audioTagId: selectedAudioTag.id });
-    // } 
-
-    // if (selectedAudioTag != prevAudioTag) {
-    //   console.log("selected another audio");
-    // }
-    // else {
-    //   console.log("selected another audio")
-    // }
   }
 
   $: selectedAudioTag, playAudio();
@@ -69,5 +91,11 @@
 
   {:else}
     <p>select an audio</p>
+  {/if}
+
+  {#if isPlaying}
+    <p>content length: {audioPlayerContext.contentLength}</p>
+    <p>position: {audioPlayerContext.playbackPosition}</p>
+    <p>buf: {audioPlayerContext.remainBuf}</p>
   {/if}
 <!-- </div> -->

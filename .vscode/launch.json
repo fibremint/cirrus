@@ -15,6 +15,9 @@
             "--no-default-features"
           ]
         },
+        "env": {
+          "RUST_BACKTRACE": "1"
+        },
         // task for the `beforeDevCommand` if used, must be configured in `.vscode/tasks.json`
         "preLaunchTask": "ui:dev"
       },
