@@ -99,7 +99,7 @@
 
 
   import routes from '../js/routes';
-  import store from '../js/store';
+  // import store from '../js/store';
 
 
   // Framework7 Parameters
@@ -107,10 +107,8 @@
     name: 'Cirrus', // App name
     theme: 'auto', // Automatic theme detection
 
-
-
     // App store
-    store: store,
+    // store: store,
     // App routes
     routes: routes,
     // Register service worker (only on production build)

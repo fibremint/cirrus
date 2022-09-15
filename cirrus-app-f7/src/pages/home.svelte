@@ -5,16 +5,16 @@
       <Link iconIos="f7:menu" iconAurora="f7:menu" iconMd="material:menu" panelOpen="left" />
     </NavLeft>
     <NavTitle sliding>Cirrus</NavTitle>
-    <NavRight>
+    <!-- <NavRight>
       <Link iconIos="f7:menu" iconAurora="f7:menu" iconMd="material:menu" panelOpen="right" />
-    </NavRight>
+    </NavRight> -->
     <NavTitleLarge>Cirrus</NavTitleLarge>
   </Navbar>
   <!-- Toolbar -->
-  <Toolbar bottom>
+  <!-- <Toolbar bottom>
     <Link>Left Link</Link>
     <Link>Right Link</Link>
-  </Toolbar>
+  </Toolbar> -->
   <!-- Page content -->
   <Block strong>
     <p>Here is your blank Framework7 app. Let's see what we have here.</p>
@@ -24,6 +24,7 @@
   <List>
     <ListItem link="/about/" title="About"/>
     <ListItem link="/form/" title="Form"/>
+    <ListItem link='/audio-list/' title="Audio list"/>
   </List>
 
   <BlockTitle>Modals</BlockTitle>
