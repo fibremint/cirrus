@@ -20,6 +20,7 @@ import { update_await_block_branch } from 'svelte/internal';
   let isHidePlayer = false;
   let audioIsPlay = false;
   let playerIcon = 'play';
+  let latestFetchDatetime = 0;
 
   // const audioIsPlayStore = writable(false);
 
@@ -37,28 +38,32 @@ import { update_await_block_branch } from 'svelte/internal';
   });
 
   async function fetchAudioTags() {
-      if (!allowInfinite) return;
-      console.log("fetch audio tags")
+    const currentDateTime = Date.now();
+    const isCalledWithinIdleTime = currentDateTime - latestFetchDatetime < 1000;
+    latestFetchDatetime = currentDateTime;
 
-      // isFetchItems = true;
-      allowInfinite = false;
-      showPreloader = true;
+    if (!allowInfinite || isCalledWithinIdleTime) return;
+    console.log("fetch audio tags")
 
-      const response = await invoke('plugin:cirrus|get_audio_tags', { itemsPerPage, page: currentPage });
-      
-      if (!Array.isArray(response)) {
-          console.log("failed to get audio tags");
-          showPreloader = false;
-          allowInfinite = true;
-          return;
-      }
+    // isFetchItems = true;
+    allowInfinite = false;
+    showPreloader = true;
 
-      audioTags = [...audioTags, ...response];
+    const response = await invoke('plugin:cirrus|get_audio_tags', { itemsPerPage, page: currentPage });
+    
+    if (!Array.isArray(response)) {
+        console.log("failed to get audio tags");
+        showPreloader = false;
+        allowInfinite = true;
+        return;
+    }
 
-      currentPage++;
+    audioTags = [...audioTags, ...response];
 
-      allowInfinite = true;
-      showPreloader = false;
+    currentPage++;
+
+    allowInfinite = true;
+    showPreloader = false;
   }
 
   async function pauseAudio() {
