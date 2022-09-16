@@ -71,7 +71,7 @@
   </LoginScreen>
 </App>
 <script>
-  import { onMount } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
 
   import {
     f7,
@@ -97,6 +97,7 @@
     BlockFooter
   } from 'framework7-svelte';
 
+  import { invoke } from '@tauri-apps/api';
 
   import routes from '../js/routes';
   // import store from '../js/store';
@@ -132,4 +133,9 @@
       // Call F7 APIs here
     });
   })
+
+  // onDestroy(() => {
+  //   console.log('destroy');
+  //   invoke('plugin:cirrus|stop_audio');
+  // })
 </script>

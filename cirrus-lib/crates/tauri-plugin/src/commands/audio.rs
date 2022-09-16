@@ -74,6 +74,8 @@ pub fn stop_audio(
     state: State<'_, AppState>
 ) -> Result<(), &'static str> {
 
+    println!("got stop audio command");
+
     state.audio_player.stop();
 
     Ok(())
@@ -83,6 +85,8 @@ pub fn stop_audio(
 pub fn pause_audio(
     state: State<'_, AppState>
 ) -> Result<(), &'static str> {
+    println!("got pause audio commnad");
+
 
     match state.audio_player.pause() {
         Ok(_) => Ok(()),

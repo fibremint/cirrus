@@ -8,6 +8,9 @@ import DynamicRoutePage from '../pages/dynamic-route.svelte';
 import RequestAndLoad from '../pages/request-and-load.svelte';
 import NotFoundPage from '../pages/404.svelte';
 
+import AudioListPage from '../pages/audio-list.svelte';
+// import AudioListPage from '../components/audio-list.svelte'
+
 var routes = [
   {
     path: '/',
@@ -20,6 +23,10 @@ var routes = [
   {
     path: '/form/',
     component: FormPage,
+  },
+  {
+    path: '/audio-list/',
+    component: AudioListPage,
   },
 
 

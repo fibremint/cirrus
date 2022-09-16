@@ -66,6 +66,7 @@
     />
   </List>
 </Page>
+
 <script>
   import {
     Page,
@@ -84,4 +85,12 @@
     Col,
     Button
   } from 'framework7-svelte';
+
+  // import { onDestroy } from 'svelte';
+  // import { invoke } from '@tauri-apps/api'
+
+  // onDestroy(() => {
+  //   console.log('destroy');
+  //   invoke('plugin:cirrus|stop_audio');
+  // })
 </script>

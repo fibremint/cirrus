@@ -96,9 +96,9 @@ impl AudioPlayer {
         self.inner.blocking_lock().get_remain_sample_buffer_sec()
     }
 
-    pub fn get_status(&self) -> AudioPlayerStatus {
-        self.inner.blocking_lock().status
-    }
+    // pub fn get_status(&self) -> AudioPlayerStatus {
+    //     self.inner.blocking_lock().status
+    // }
 }
 
 impl Drop for AudioPlayer {
@@ -135,7 +135,8 @@ pub struct AudioPlayerInner {
     ctx: AudioContext,
     streams: VecDeque<AudioStream>,
     tx: mpsc::Sender<&'static str>,
-    status: AudioPlayerStatus,
+    // status: AudioPlayerStatus,
+    status: Arc<AtomicUsize>
 }
 
 impl AudioPlayerInner {
@@ -148,7 +149,8 @@ impl AudioPlayerInner {
             ctx,
             streams: VecDeque::new(),
             tx,
-            status: AudioPlayerStatus::Stop,
+            // status: AudioPlayerStatus::Stop,
+            status: Arc::new(AtomicUsize::new(AudioPlayerStatus::Stop as usize))
         }
     }
 
@@ -157,7 +159,8 @@ impl AudioPlayerInner {
         let audio_stream = AudioStream::new(
             &self.ctx, 
             audio_source, 
-            self.tx.clone()
+            self.tx.clone(),
+            self.status.clone()
         )?;
 
         let content_length = audio_stream.inner.audio_sample.content_length;
@@ -183,9 +186,11 @@ impl AudioPlayerInner {
         // current_stream.play()?;
 
         match current_stream.play() {
-            Ok(_) => self.status = AudioPlayerStatus::Play,
+            // Ok(_) => self.status = AudioPlayerStatus::Play,
+            Ok(_) => self.status.store(AudioPlayerStatus::Play as usize, Ordering::SeqCst),
             Err(e) => {
-                self.status = AudioPlayerStatus::Error;
+                // self.status = AudioPlayerStatus::Error;
+                self.status.store(AudioPlayerStatus::Error as usize, Ordering::SeqCst);
 
                 return Err(anyhow!(e))
             }
@@ -200,9 +205,11 @@ impl AudioPlayerInner {
         let current_stream = self.streams.front().unwrap();
         // current_stream.pause()?;
         match current_stream.pause() {
-            Ok(_) => self.status = AudioPlayerStatus::Pause,
+            // Ok(_) => self.status = AudioPlayerStatus::Pause,
+            Ok(_) => self.status.store(AudioPlayerStatus::Pause as usize, Ordering::SeqCst),
             Err(e) => {
-                self.status = AudioPlayerStatus::Error;
+                // self.status = AudioPlayerStatus::Error;
+                self.status.store(AudioPlayerStatus::Error as usize, Ordering::SeqCst);
 
                 return Err(anyhow!(e))
             }
@@ -504,12 +511,14 @@ impl AudioStream {
     pub fn new(
         ctx: &AudioContext, 
         source: AudioSource, 
-        tx: mpsc::Sender<&'static str>
+        tx: mpsc::Sender<&'static str>,
+        audio_player_status: Arc<AtomicUsize>
     ) -> Result<Self, anyhow::Error> {
         let inner = AudioStreamInner::new(
             ctx, 
             source, 
-            tx
+            tx,
+            audio_player_status
         )?;
         let inner = Arc::new(inner);
 
@@ -557,6 +566,7 @@ struct AudioStreamInner {
     stream: cpal::Stream,
     audio_sample: Arc<AudioSample>,
     tx: mpsc::Sender<&'static str>,
+    audio_player_status: Arc<AtomicUsize>
 }
 
 unsafe impl Send for AudioStreamInner {}
@@ -566,7 +576,8 @@ impl AudioStreamInner {
     pub fn new(
         ctx: &AudioContext, 
         source: AudioSource, 
-        tx: mpsc::Sender<&'static str>
+        tx: mpsc::Sender<&'static str>,
+        audio_player_status: Arc<AtomicUsize>
     ) -> Result<Self, anyhow::Error> {
         let host_output_sample_rate = ctx.stream_config.sample_rate.0;
         let host_output_channels = ctx.stream_config.channels;
@@ -598,6 +609,7 @@ impl AudioStreamInner {
             stream,
             audio_sample,
             tx,
+            audio_player_status
         };
 
         Ok(audio_stream)
@@ -623,6 +635,20 @@ impl AudioStreamInner {
 
             // let sample_buffer_length = self.audio_sample.get_remain_sample_buffer_len();
             // let sample_buffer_sec = self.audio_sample.get_sec_from_sample_len(sample_buffer_length);
+
+            match AudioPlayerStatus::from(self.audio_player_status.load(Ordering::SeqCst)) {
+                AudioPlayerStatus::Play => {
+                    // if remain buffer is insufficient
+                    
+                },
+                AudioPlayerStatus::Pause => {
+
+                },
+                // AudioPlayerStatus::Stop => todo!(),
+                // AudioPlayerStatus::Error => todo!(),
+                _ => (),
+
+            }
 
             if self.audio_sample.get_remain_sample_buffer_sec() < 0.01 {
                 self.stream.pause().unwrap();
