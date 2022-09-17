@@ -23,7 +23,7 @@
   let audioLength = 0;
   let currentPos = 0;
   let remainBuf = 0;
-  let audioPlayerStatus = 'Pause';
+  let audioPlayerStatus = 'Stop';
   
   let updatePlaybackPosEventUnlisten = undefined;
   // let sliderProps = null;
@@ -42,14 +42,16 @@
 
     const unlisten = await listen('update-playback-pos', event => {
       const payload = event.payload;
-      console.log(payload);
+      // console.log(payload);
+
+      if (audioPlayerStatus === 'Play' && payload.status === 'Stop') {
+        audioLength = 0;
+        updateAudioButton(false);
+      }
+
       currentPos = payload.pos;
       remainBuf = payload.remainBuf;
       audioPlayerStatus = payload.status;
-      
-      if (audioPlayerStatus === 'Stop') {
-        audioLength = 0;
-      }
     });
 
     updatePlaybackPosEventUnlisten = unlisten;
@@ -157,16 +159,11 @@
             iconF7={isAudioPlay === true ? 'pause_fill' : 'play_fill'} 
             on:click={(e) => {
               if (isAudioPlay) {
-                // pause audio if audio is playing
-                console.log('click pause btn');
                 pauseAudio();
               } else {
-                // play audio if audio is paused
-                console.log('click play btn');
                 playAudio();
               }
 
-              // isAudioPlay = !isAudioPlay;
               updateAudioButton(!isAudioPlay);
             }} />
         </ListItemCell>
