@@ -4,10 +4,8 @@
 
   import { Navbar, Page, BlockTitle, List, ListItem, Sheet, Toolbar, Link, PageContent, Block, View, Icon, ListItemCell, Range, Button, Segmented } from 'framework7-svelte';
   import { invoke } from '@tauri-apps/api';
-
+  import { listen } from '@tauri-apps/api/event';
   import { audioStore } from '../js/store';
-import { children, update_await_block_branch } from 'svelte/internal';
-  
 
   let allowInfinite = true;
   let showPreloader = true;
@@ -22,18 +20,40 @@ import { children, update_await_block_branch } from 'svelte/internal';
   let playerIcon = 'play';
   let latestFetchDatetime = 0;
 
+  let audioLength = 0;
+  let currentPos = 0;
+  let remainBuf = 0;
+  
+  let updatePlaybackPosEventUnlisten = undefined;
+  // let sliderProps = null;
+  let sliderProps = {
+    max: 0
+  };
+
   // const audioIsPlayStore = writable(false);
 
   // audioIsPlayStore.subscribe(value => {
   //   audioIsPlay = value;
   // });
 
-  onMount(() => {
+  onMount(async() => {
     fetchAudioTags();
+
+    const unlisten = await listen('update-playback-pos', event => {
+      const payload = event.payload;
+      currentPos = payload.pos;
+      remainBuf = payload.remainBuf;
+      console.log(currentPos);
+    })
+
+    updatePlaybackPosEventUnlisten = unlisten;
+
+    await invoke('plugin:cirrus|send_playback_position');
   });
 
   onDestroy(() => {
     console.log('destroy');
+    updatePlaybackPosEventUnlisten();
     invoke('plugin:cirrus|stop_audio');
   });
 
@@ -86,10 +106,15 @@ import { children, update_await_block_branch } from 'svelte/internal';
     isAudioPlay = playStatus;
   }
 
+  function convertSecToMMSS(seconds) {
+    // ref: https://stackoverflow.com/a/1322771
+    return new Date(seconds * 1000).toISOString().substring(14, 19)
+  }
+
   // $: playerIconProp = isPlay ? 'pause_fill' : 'play_fill';
+
 </script>
-<!-- <Page> -->
-<Page  
+<Page
   infinite
   infiniteDistance={itemsPerPage}
   infinitePreloader={showPreloader}
@@ -104,25 +129,13 @@ import { children, update_await_block_branch } from 'svelte/internal';
         footer={item.artist}
         link='#'
         on:click={async(e) => {
-          // audioStore.dispatch('setSelectedAudioTag', {
-          //   selectedAudioTag: item
-          // });
-
-          // audioStore.dispatch('setIsHidePlayer', false);
-          // audioStore.dispatch('setIsHidePlayer', {
-          //   isHidePlayer: false
-          // });
-          // isHidePlayer = false;
-        
-          // selectedItemIdx = index;
-
-          // console.log(selectedItemIdx);
-
           const contentLength = await invoke('plugin:cirrus|load_audio', { audioTagId: item.id });
           console.log(contentLength);
+          audioLength = contentLength;
 
           await invoke('plugin:cirrus|start_audio');
 
+          // isAudioPlay = !isAudioPlay;
           updateAudioButton(!isAudioPlay);
         }}
       />
@@ -133,9 +146,6 @@ import { children, update_await_block_branch } from 'svelte/internal';
     <List simpleList style='width:100%'>
       <ListItem>
         <ListItemCell class="width-auto flex-shrink-0">
-          <!-- <a class="button" href="#" f7>
-            <i clsas="icon f7-icons">{audioIsPlay === true ? 'pause_fill' : 'play_fill'}</i>
-          </a> -->
           <Button 
             id="play-pause-btn" 
             iconF7={isAudioPlay === true ? 'pause_fill' : 'play_fill'} 
@@ -150,18 +160,24 @@ import { children, update_await_block_branch } from 'svelte/internal';
                 playAudio();
               }
 
+              // isAudioPlay = !isAudioPlay;
               updateAudioButton(!isAudioPlay);
-            }} >
-          </Button>
-          <!-- <Icon ios="f7:speaker_fill" aurora="f7:speaker_fill" md="material:volume_mute"></Icon> -->
+            }} />
+        </ListItemCell>
+        <ListItemCell class="width-auto flex-shrink-0">
+          <p>{convertSecToMMSS(currentPos)}</p>
         </ListItemCell>
         <ListItemCell class="flex-shrink-3">
-          <Range
-            min={0}
-            max={100}
-            step={1}
-            value={10}
-          ></Range>
+          <!-- recreate range component if 'audioLength' is changed -->
+          {#key audioLength}
+            <Range
+              max={audioLength}
+              step=1
+              value={Math.floor(currentPos)} />
+          {/key}
+        </ListItemCell>
+        <ListItemCell class="width-auto flex-shrink-0">
+          <p>{convertSecToMMSS(audioLength)}</p>
         </ListItemCell>
         <ListItemCell class="width-auto flex-shrink-0">
           <Icon ios="f7:speaker_3_fill" aurora="f7:speaker_3_fill" md="material:volume_up"></Icon>
