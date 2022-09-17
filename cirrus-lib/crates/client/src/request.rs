@@ -8,7 +8,7 @@ use cirrus_grpc::{
     audio_tag_svc_client::AudioTagSvcClient,
 };
 
-pub async fn get_audio_meta(audio_tag_id: &str) -> Result<Response<AudioMetaRes>, Box<dyn std::error::Error>> {
+pub async fn get_audio_meta(audio_tag_id: &str) -> Result<Response<AudioMetaRes>, anyhow::Error> {
     let mut client = AudioDataSvcClient::connect("http://[::1]:50000").await?;
 
     let request = Request::new({
@@ -22,7 +22,7 @@ pub async fn get_audio_meta(audio_tag_id: &str) -> Result<Response<AudioMetaRes>
     Ok(response)
 }
 
-pub async fn get_audio_data(audio_tag_id: &str, sample_pos_start: u32, sample_pos_end: u32) -> Result<Response<AudioDataRes>, Box<dyn std::error::Error>> {
+pub async fn get_audio_data(audio_tag_id: &str, sample_pos_start: u32, sample_pos_end: u32) -> Result<Response<AudioDataRes>, anyhow::Error> {
     let mut client = AudioDataSvcClient::connect("http://[::1]:50000").await?;
 
     let request = Request::new({

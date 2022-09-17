@@ -393,7 +393,7 @@ impl AudioSample {
                 let resp = request::get_audio_data(
                     &self.source.id, 
                     0, 
-                    req_samples).await.unwrap();
+                    req_samples).await?;
 
                 self.last_buf_req_pos.store(req_samples as usize, Ordering::SeqCst);
 
@@ -404,7 +404,7 @@ impl AudioSample {
                 let resp = request::get_audio_data(
                     &self.source.id,
                     std::cmp::min(last_buf_req_pos as u32 + 1, self.source.metadata.sample_frames as u32),
-                    std::cmp::min(last_buf_req_pos as u32 + req_samples, self.source.metadata.sample_frames as u32)).await.unwrap();
+                    std::cmp::min(last_buf_req_pos as u32 + req_samples, self.source.metadata.sample_frames as u32)).await?;
 
                 self.last_buf_req_pos.store(req_samples as usize + last_buf_req_pos, Ordering::SeqCst);
 
@@ -675,7 +675,7 @@ impl AudioStreamInner {
                     self.stream_playback_status == PlaybackStatus::Play {
                     // remain buffer is insufficient
 
-                    println!("remain buffer is insufficient, buf: {}", self.audio_sample.get_remain_sample_buffer_sec());
+                    println!("remain buffer is insufficient for playing audio, buf: {}", self.audio_sample.get_remain_sample_buffer_sec());
 
                     self.set_stream_playback(PlaybackStatus::Pause)?;
                 } else if self.audio_sample.get_remain_sample_buffer_sec() > 0.1 && 
@@ -683,12 +683,10 @@ impl AudioStreamInner {
                     // remain buffer is enough for playing (check sufficient of a buffer at above code)
                     // and play stream if is paused
 
-                    println!("remain buffer is enough, buf: {}", self.audio_sample.get_remain_sample_buffer_sec());
+                    println!("remain buffer is enough for playing audio, buf: {}", self.audio_sample.get_remain_sample_buffer_sec());
 
                     self.set_stream_playback(PlaybackStatus::Play)?;
                 }
-
-
             },
             PlaybackStatus::Pause => {
                 if self.stream_playback_status == PlaybackStatus::Play {
@@ -709,7 +707,6 @@ impl Drop for AudioStreamInner {
     }
 }
 
-#[derive(Clone)]
 struct AudioSource {
     id: String,
     metadata: AudioSourceMetadata,
@@ -734,7 +731,6 @@ impl AudioSource {
     }
 }
 
-#[derive(Copy, Clone)]
 struct AudioSourceMetadata {
     bit_rate: u32,
     sample_rate: u32,
