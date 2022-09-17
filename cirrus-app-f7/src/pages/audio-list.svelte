@@ -6,7 +6,7 @@
   import { invoke } from '@tauri-apps/api';
 
   import { audioStore } from '../js/store';
-import { update_await_block_branch } from 'svelte/internal';
+import { children, update_await_block_branch } from 'svelte/internal';
   
 
   let allowInfinite = true;
@@ -18,7 +18,7 @@ import { update_await_block_branch } from 'svelte/internal';
   let audioTags = [];
   let selectedItemIdx = -1;
   let isHidePlayer = false;
-  let audioIsPlay = false;
+  let isAudioPlay = false;
   let playerIcon = 'play';
   let latestFetchDatetime = 0;
 
@@ -66,14 +66,25 @@ import { update_await_block_branch } from 'svelte/internal';
     showPreloader = false;
   }
 
+  async function playAudio() {
+    await invoke('plugin:cirrus|start_audio');
+  }
+
   async function pauseAudio() {
     await invoke('plugin:cirrus|pause_audio');
   }
 
-  // async function playAudio(audioId) {
-  //   const contentLength = await invoke('plugin:cirrus|load_audio', { audioTagId: audioId });
-  //   await invoke('plugin:cirrus|start_audio');   
-  // }
+  function updateAudioButton(playStatus) {
+    // ref: https://stackoverflow.com/questions/57874892/how-to-check-if-an-htmlcollection-contains-an-element-with-a-given-class-name-us
+    const childrenNodeArr = Array.from(document.getElementById('play-pause-btn').children);
+    const foundButtonInner = childrenNodeArr.find(e => e.classList.contains('icon'));
+
+    if (foundButtonInner) {
+      foundButtonInner.innerText = playStatus === true ? 'pause_fill' : 'play_fill';
+    }
+
+    isAudioPlay = playStatus;
+  }
 
   // $: playerIconProp = isPlay ? 'pause_fill' : 'play_fill';
 </script>
@@ -86,70 +97,6 @@ import { update_await_block_branch } from 'svelte/internal';
 
   <Navbar title="Audio list" backLink="Back" />
 
-  <!-- <Toolbar bottom style='heigth: auto'> -->
-    <!-- <List> -->
-      <!-- <ListItem>
-        <ListItemCell class='width:auto flex-shrink-0'>
-          {#if isPlay}
-            <Icon f7="pause" />
-          {:else}
-            <Icon f7="play" />
-          {/if}
-        </ListItemCell>
-        <ListItemCell class='flex-shrink-3'>
-          <Range min={0} max={100}></Range>
-        </ListItemCell>
-        <ListItemCell class='widht:auto flex-shrink-0'>
-          <Icon f7='close' />
-        </ListItemCell>
-      </ListItem> -->
-
-      <!-- <ListItem style='width:100%'>
-        <ListItemCell class="width-auto flex-shrink-0">
-          <Icon ios="f7:speaker_fill" aurora="f7:speaker_fill" md="material:volume_mute"></Icon>
-        </ListItemCell>
-        <ListItemCell class="flex-shrink-3" style="width: 600px">
-          <Range
-            min={0}
-            max={100}
-            step={1}
-            value={10}
-          ></Range>
-        </ListItemCell>
-        <ListItemCell class="width-auto flex-shrink-0">
-          <Icon ios="f7:speaker_3_fill" aurora="f7:speaker_3_fill" md="material:volume_up"></Icon>
-        </ListItemCell>
-      </ListItem>
-
-    </List> -->
-    <!-- <Icon f7=${playerIcon} />
-     -->
-    <!-- ${selectedItemIdx} -->
-    <!-- {isPlay ? "playing" : "paused"} -->
-  <!-- </Toolbar> -->
-
-  <!-- <Sheet> -->
-
-    <!-- <List simpleList>
-      <ListItem> 
-        <ListItemCell class='width:auto flex-shrink-0'>
-          {#if isPlay}
-            <Icon f7="pause" />
-          {:else}
-            <Icon f7="play" />
-          {/if}
-        </ListItemCell>
-        <ListItemCell class='flex-shrink-3'>
-          <Range min={0} max={100}></Range>
-        </ListItemCell>
-        <ListItemCell class='widht:auto flex-shrink-0'>
-          <Icon f7='close' />
-        </ListItemCell>
-      </ListItem>
-
-    </List> -->
-  <!-- </Sheet> -->
-
   <List mediaList noHairlines>
     {#each audioTags as item, index (index)}
       <ListItem 
@@ -157,33 +104,26 @@ import { update_await_block_branch } from 'svelte/internal';
         footer={item.artist}
         link='#'
         on:click={async(e) => {
-          audioStore.dispatch('setSelectedAudioTag', {
-            selectedAudioTag: item
-          });
+          // audioStore.dispatch('setSelectedAudioTag', {
+          //   selectedAudioTag: item
+          // });
 
           // audioStore.dispatch('setIsHidePlayer', false);
-          audioStore.dispatch('setIsHidePlayer', {
-            isHidePlayer: false
-          });
-          isHidePlayer = false;
+          // audioStore.dispatch('setIsHidePlayer', {
+          //   isHidePlayer: false
+          // });
+          // isHidePlayer = false;
         
-          selectedItemIdx = index;
+          // selectedItemIdx = index;
 
-          console.log(selectedItemIdx);
+          // console.log(selectedItemIdx);
 
-          audioIsPlay = true;
-          playerIcon = 'pause';
-
-          const playPauseBtn = document.getElementById('play-pause-btn');
-          const innerContent = playPauseBtn.children[0];
-          innerContent.innerText = audioIsPlay === true ? 'pause_fill' : 'play_fill';
-          // audioIsPlayStore.update(value => value = true);
-          
-          // audioPropStore.store('pause_fill')
-
-          // playAudio(item.id);
           const contentLength = await invoke('plugin:cirrus|load_audio', { audioTagId: item.id });
-          await invoke('plugin:cirrus|start_audio');       
+          console.log(contentLength);
+
+          await invoke('plugin:cirrus|start_audio');
+
+          updateAudioButton(!isAudioPlay);
         }}
       />
     {/each}
@@ -198,10 +138,19 @@ import { update_await_block_branch } from 'svelte/internal';
           </a> -->
           <Button 
             id="play-pause-btn" 
-            iconF7={audioIsPlay === true ? 'pause_fill' : 'play_fill'} 
+            iconF7={isAudioPlay === true ? 'pause_fill' : 'play_fill'} 
             on:click={(e) => {
-              console.log('click play pause btn');
-              pauseAudio();
+              if (isAudioPlay) {
+                // pause audio if audio is playing
+                console.log('click pause btn');
+                pauseAudio();
+              } else {
+                // play audio if audio is paused
+                console.log('click play btn');
+                playAudio();
+              }
+
+              updateAudioButton(!isAudioPlay);
             }} >
           </Button>
           <!-- <Icon ios="f7:speaker_fill" aurora="f7:speaker_fill" md="material:volume_mute"></Icon> -->
