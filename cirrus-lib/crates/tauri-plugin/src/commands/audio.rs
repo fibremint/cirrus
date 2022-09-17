@@ -2,10 +2,15 @@ use std::sync::Arc;
 
 use tauri::{State, Window, Runtime, Manager};
 
-use cirrus_client_lib::request;
+use cirrus_client_lib::{
+    request,
+    state::PlaybackStatus
+};
 use cirrus_grpc::api::AudioTagRes;
 
 use crate::state::{AppState, self};
+
+
 
 // #[tauri::command]
 // pub fn set_action_emit_playback_position(
@@ -18,15 +23,24 @@ use crate::state::{AppState, self};
 //     }
 // }
 
+// #[derive(Copy, Clone, Debug, PartialEq, serde::Serialize)]
+// pub enum PlaybackStatus {
+//     Play,
+//     Pause,
+//     Stop,
+//     Error,
+// }
+
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 struct PlaybackPayload {
+    status: PlaybackStatus,
     pos: f32,
     remain_buf: f32,
 }
 
 #[tauri::command]
-pub fn send_playback_position<R: Runtime>(
+pub fn send_audio_player_status<R: Runtime>(
     window: Window<R>,
     state: State<'_, AppState>,
 ) {
@@ -34,6 +48,7 @@ pub fn send_playback_position<R: Runtime>(
 
     std::thread::spawn(move || loop {
         let playback_payload = PlaybackPayload {
+            status: audio_player.get_status(),
             pos: audio_player.get_playback_position(),
             remain_buf: audio_player.get_remain_sample_buffer_sec(),
         };

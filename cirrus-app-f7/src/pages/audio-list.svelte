@@ -23,6 +23,7 @@
   let audioLength = 0;
   let currentPos = 0;
   let remainBuf = 0;
+  let audioPlayerStatus = 'Pause';
   
   let updatePlaybackPosEventUnlisten = undefined;
   // let sliderProps = null;
@@ -41,14 +42,19 @@
 
     const unlisten = await listen('update-playback-pos', event => {
       const payload = event.payload;
+      console.log(payload);
       currentPos = payload.pos;
       remainBuf = payload.remainBuf;
-      console.log(currentPos);
-    })
+      audioPlayerStatus = payload.status;
+      
+      if (audioPlayerStatus === 'Stop') {
+        audioLength = 0;
+      }
+    });
 
     updatePlaybackPosEventUnlisten = unlisten;
 
-    await invoke('plugin:cirrus|send_playback_position');
+    await invoke('plugin:cirrus|send_audio_player_status');
   });
 
   onDestroy(() => {

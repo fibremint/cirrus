@@ -20,6 +20,29 @@ use tokio::{
 };
 
 use crate::request;
+use crate::state::PlaybackStatus;
+
+// #[derive(Copy, Clone, Debug, PartialEq)]
+// pub enum PlaybackStatus {
+//     Play,
+//     Pause,
+//     Stop,
+//     Error,
+// }
+
+// impl From<usize> for PlaybackStatus {
+//     //ref: https://gist.github.com/polypus74/eabc7bb00873e6b90abe230f9e632989
+//     fn from(value: usize) -> Self {
+//         use self::PlaybackStatus::*;
+//         match value {
+//             0 => Play,
+//             1 => Pause,
+//             2 => Stop,
+//             3 => Error,
+//             _ => unreachable!(),
+//         }
+//     }
+// }
 
 pub struct AudioPlayer {
     inner: Arc<Mutex<AudioPlayerInner>>,
@@ -97,37 +120,16 @@ impl AudioPlayer {
         self.inner.blocking_lock().get_remain_sample_buffer_sec()
     }
 
-    // pub fn get_status(&self) -> AudioPlayerStatus {
-    //     self.inner.blocking_lock().status
-    // }
+    pub fn get_status(&self) -> PlaybackStatus {
+        self.inner.blocking_lock().get_status()
+        // self.inner.blocking_lock().status.load(Ordering::Relaxed)
+    }
 }
 
 impl Drop for AudioPlayer {
     fn drop(&mut self) {
         for thread_run_state in &self.thread_run_states {
             thread_run_state.store(false, Ordering::Relaxed);
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, PartialEq)]
-pub enum PlaybackStatus {
-    Play,
-    Pause,
-    Stop,
-    Error,
-}
-
-impl From<usize> for PlaybackStatus {
-    //ref: https://gist.github.com/polypus74/eabc7bb00873e6b90abe230f9e632989
-    fn from(value: usize) -> Self {
-        use self::PlaybackStatus::*;
-        match value {
-            0 => Play,
-            1 => Pause,
-            2 => Stop,
-            3 => Error,
-            _ => unreachable!(),
         }
     }
 }
@@ -183,7 +185,7 @@ impl AudioPlayerInner {
     pub fn remove_audio(&mut self) {
         // self.streams.remove(0).unwrap();
         match self.streams.remove(0) {
-            Some(_) => (),
+            Some(_) => self.status.store(PlaybackStatus::Stop as usize, Ordering::SeqCst),
             None => (),
         }
     }
@@ -238,6 +240,10 @@ impl AudioPlayerInner {
 
     pub fn set_playback_position(&self, position_sec: f32) -> Result<(), anyhow::Error> {
         todo!()
+    }
+
+    pub fn get_status(&self) -> PlaybackStatus {
+        PlaybackStatus::from(self.status.load(Ordering::Relaxed))
     }
 }
 
@@ -543,7 +549,7 @@ impl AudioStream {
 
             let mut inner_guard = inner_1_clone.blocking_lock();
             match inner_guard.update_stream_playback() {
-                Ok("stop") => break,
+                Ok("stop") => thread_run_state_2_clone.store(false, Ordering::Relaxed),
                 Ok(&_) => (),
                 Err(e) => println!("error at manage playback: {}, source id: {}", e, source_id_2),
             }
