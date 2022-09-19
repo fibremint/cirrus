@@ -21,6 +21,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::stop_audio,
             commands::pause_audio,
             commands::send_audio_player_status,
+            commands::set_playback_position,
         ])
         .setup(|app_handle| {
             let state = state::AppState::new();

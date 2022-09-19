@@ -112,8 +112,8 @@ impl AudioPlayer {
         self.inner.blocking_lock().get_playback_position()
     }
 
-    pub fn set_playback_position(&self) -> Result<(), anyhow::Error> {
-        todo!()
+    pub fn set_playback_position(&self, position_sec: f32) -> Result<(), anyhow::Error> {
+        self.inner.blocking_lock().set_playback_position(position_sec)
     }
 
     pub fn get_remain_sample_buffer_sec(&self) -> f32 {
@@ -239,7 +239,12 @@ impl AudioPlayerInner {
     }
 
     pub fn set_playback_position(&self, position_sec: f32) -> Result<(), anyhow::Error> {
-        todo!()
+        match self.streams.front() {
+            Some(stream) => stream.inner.blocking_lock().set_playback_position(position_sec)?,
+            None => todo!(),
+        }
+
+        Ok(())
     }
 
     pub fn get_status(&self) -> PlaybackStatus {
@@ -279,6 +284,7 @@ enum AudioSampleStatus {
     Init,
     FillBuffer,
     Play,
+    StopFillBuffer,
 }
 
 impl From<usize> for AudioSampleStatus {
@@ -289,6 +295,7 @@ impl From<usize> for AudioSampleStatus {
             0 => Init,
             1 => FillBuffer,
             2 => Play,
+            3 => StopFillBuffer,
             _ => unreachable!(),
         }
     }
@@ -301,7 +308,8 @@ struct AudioSample {
     buffer_status: Arc<AtomicUsize>,
     last_buf_req_pos: Arc<AtomicUsize>,
     resampler: Arc<RwLock<rubato::FftFixedInOut<f32>>>,
-    resampler_frames: usize,
+    resampler_frames_intput_next: usize,
+    resampler_frames_output_next: usize,
     remain_sample_raw: Arc<RwLock<Vec<u8>>>,
     resampled_sample_frames: usize,
     host_sample_rate: u32,
@@ -318,7 +326,9 @@ impl AudioSample {
             2
         ).unwrap();
 
-        let resampler_frames = resampler.input_frames_next();
+        let resampler_frames_intput_next = resampler.input_frames_next();
+        let resampler_frames_output_next = resampler.output_frames_next();
+
         let mut sample_buffer: Vec<VecDeque<f32>> = Vec::with_capacity(2);
 
         for _ in 0..host_output_channels {
@@ -339,7 +349,8 @@ impl AudioSample {
                     resampler
                 )
             ),
-            resampler_frames,
+            resampler_frames_intput_next,
+            resampler_frames_output_next,
             remain_sample_raw: Arc::new(RwLock::new(Vec::new())),
             resampled_sample_frames,
             host_sample_rate,
@@ -360,12 +371,30 @@ impl AudioSample {
         sample_len as f32 / self.host_sample_rate as f32
     }
 
+    pub fn get_sample_idx_from_sec(&self, sec: f32) -> usize {
+        (sec * self.host_sample_rate as f32).floor() as usize
+    }
+
     pub fn get_current_playback_position_sec(&self) -> f32 {
         self.get_sec_from_sample_len(self.get_current_sample_idx())
     }
 
     pub fn get_remain_sample_buffer_sec(&self) -> f32 {
         self.get_sec_from_sample_len(self.get_remain_sample_buffer_len())   
+    }
+
+    pub fn set_current_sample_frame_idx(&self, sample_frame_idx: usize) {
+        self.current_sample_frame.store(sample_frame_idx, Ordering::SeqCst);
+    }
+
+    pub fn drain_sample_buffer(&self, drain_len: usize) {
+        let mut sample_buffer = self.sample_buffer.write().unwrap();
+
+        for ch_sample_buffer in sample_buffer.iter_mut() {
+            ch_sample_buffer.drain(..drain_len);
+        }
+
+        println!("drained");
     }
 
     pub async fn fetch_buffer(
@@ -391,32 +420,41 @@ impl AudioSample {
         let req_samples = ms * self.source.metadata.sample_rate / 1000;
         
         println!("request audio data part");
-        let buffer_status = AudioSampleStatus::from(self.buffer_status.load(Ordering::SeqCst));
+        // let buffer_status = AudioSampleStatus::from(self.buffer_status.load(Ordering::SeqCst));
         let last_buf_req_pos = self.last_buf_req_pos.load(Ordering::SeqCst);
+        println!("last buf req pos: {}@get_buffer_for", last_buf_req_pos);
 
-        let sample_res = match buffer_status {
-            AudioSampleStatus::Init => {
-                let resp = request::get_audio_data(
-                    &self.source.id, 
-                    0, 
-                    req_samples).await?;
+        let sample_res = request::get_audio_data(
+            &self.source.id,
+            std::cmp::min(last_buf_req_pos as u32, self.source.metadata.sample_frames as u32),
+            std::cmp::min(last_buf_req_pos as u32 + req_samples, self.source.metadata.sample_frames as u32)).await?;
 
-                self.last_buf_req_pos.store(req_samples as usize, Ordering::SeqCst);
+        self.last_buf_req_pos.store(req_samples as usize + last_buf_req_pos, Ordering::SeqCst);
 
-                resp
-            },
+        // let sample_res = match buffer_status {
+        //     AudioSampleStatus::Init => {
+        //         let resp = request::get_audio_data(
+        //             &self.source.id, 
+        //             0, 
+        //             req_samples).await?;
 
-            AudioSampleStatus::FillBuffer | AudioSampleStatus::Play => {
-                let resp = request::get_audio_data(
-                    &self.source.id,
-                    std::cmp::min(last_buf_req_pos as u32 + 1, self.source.metadata.sample_frames as u32),
-                    std::cmp::min(last_buf_req_pos as u32 + req_samples, self.source.metadata.sample_frames as u32)).await?;
+        //         self.last_buf_req_pos.store(req_samples as usize, Ordering::SeqCst);
+        //         self.buffer_status.store(AudioSampleStatus::FillBuffer as usize, Ordering::SeqCst);
 
-                self.last_buf_req_pos.store(req_samples as usize + last_buf_req_pos, Ordering::SeqCst);
+        //         resp
+        //     },
 
-                resp
-            },
-        };
+        //     AudioSampleStatus::FillBuffer | AudioSampleStatus::Play => {
+        //         let resp = request::get_audio_data(
+        //             &self.source.id,
+        //             // std::cmp::min(last_buf_req_pos as u32 + 1, self.source.metadata.sample_frames as u32),
+        //             std::cmp::min(last_buf_req_pos as u32 + req_samples, self.source.metadata.sample_frames as u32)).await?;
+
+        //         self.last_buf_req_pos.store(req_samples as usize + last_buf_req_pos, Ordering::SeqCst);
+
+        //         resp
+        //     },
+        // };
 
         println!("parse audio data response as audio sample");
         // ref: https://users.rust-lang.org/t/convert-slice-u8-to-u8-4/63836
@@ -429,13 +467,13 @@ impl AudioSample {
         let mut p_samples: Vec<u8> = remain_sample_raw.drain(..).collect();
         p_samples.extend_from_slice(&sample_res.content);
         
-        let mut chunks_items_iter = p_samples.chunks_exact(chunks_per_channel * channel * self.resampler_frames);
+        let mut chunks_items_iter = p_samples.chunks_exact(chunks_per_channel * channel * self.resampler_frames_intput_next);
 
         while let Some(chunk_items) = chunks_items_iter.next() {
             let mut input_buf: Vec<Vec<f32>> = Vec::with_capacity(channel);
 
             for _ in 0..channel {
-                input_buf.push(Vec::with_capacity(self.resampler_frames));
+                input_buf.push(Vec::with_capacity(self.resampler_frames_intput_next));
             }
 
             let sample_items = chunk_items
@@ -453,6 +491,14 @@ impl AudioSample {
             let resampled_wave = resampler.process(input_buf.as_ref(), None).unwrap();
 
             let mut sample_buffer = self.sample_buffer.write().unwrap();
+
+            if  AudioSampleStatus::StopFillBuffer == AudioSampleStatus::from(self.buffer_status.load(Ordering::Acquire)) {
+                println!("stop fill buffer");
+
+                remain_sample_raw.drain(..);
+
+                return Ok(());
+            }
 
             for (ch_idx, channel_sample_buffer) in sample_buffer.iter_mut().enumerate() {
                 channel_sample_buffer.extend(resampled_wave.get(ch_idx).unwrap());
@@ -479,7 +525,7 @@ impl AudioSample {
                     channel_sample_read += 1;
                 } else {
                     output_channel_frame[channel_idx] = 0.0;
-                    break;
+                    // break;
                 }
             }
 
@@ -576,6 +622,10 @@ impl AudioStream {
         self.inner.blocking_lock().set_stream_playback(PlaybackStatus::Pause)
     }
 
+    // pub fn set_playback_position(&self, position_sec: f32) -> Result<(), anyhow::Error> {
+    //     self.inner.blocking_lock().set_playback_position(position_sec)
+    // }
+
     // pub fn get_content_length(&self) -> f32 {
     //     self.inner.blocking_lock().get_content_length()
     // }
@@ -650,6 +700,72 @@ impl AudioStreamInner {
         self.audio_sample.content_length
     }
 
+    pub fn set_playback_position(&mut self, position_sec: f32) -> Result<(), anyhow::Error> {
+        println!("set stream playback position: {}", position_sec);
+
+        self.audio_sample.buffer_status.store(AudioSampleStatus::StopFillBuffer as usize, Ordering::Release);
+        self.audio_player_status.store(PlaybackStatus::Pause as usize, Ordering::Relaxed);
+        self.set_stream_playback(PlaybackStatus::Pause)?;
+
+        let position_sample_idx = self.audio_sample.get_sample_idx_from_sec(position_sec);
+        // let position_delta = position_sec - self.audio_sample.get_current_playback_position_sec();
+        // let position_sample_idx_delta = position_sample_idx - self.audio_sample.get_current_sample_idx();
+        // let remian_audio_sample_buffer_sec = self.audio_sample.get_remain_sample_buffer_sec();
+        let remain_audio_sample_buffer_len = self.audio_sample.get_remain_sample_buffer_len();
+
+        if position_sec - self.audio_sample.get_current_playback_position_sec() > 0.0 {
+            // move position forward
+            // drains audio sample buffer as length of a position delta sample
+            // let position_delta_sample_len = self.audio_sample.get_sample_idx_from_sec(position_delta);
+            // let remain_audio_sample_buffer_len = self.audio_sample.get_remain_sample_buffer_len();
+            let position_sample_idx_delta = position_sample_idx - self.audio_sample.get_current_sample_idx();
+
+            let drain_buffer_len = std::cmp::min(
+                // self.audio_sample.get_remain_sample_buffer_len(),
+                remain_audio_sample_buffer_len, 
+                position_sample_idx_delta
+            );
+
+            self.audio_sample.drain_sample_buffer(drain_buffer_len);
+            // let remain_audio_sample_buffer_sec = self.audio_sample.get_remain_sample_buffer_sec();
+            // let remain_audio_sample_buffer_len = self.audio_sample.get_remain_sample_buffer_len();
+            let remain_audio_sample_buffer_len = (
+                self.audio_sample.get_remain_sample_buffer_len() as f32 * (
+                    self.audio_sample.resampler_frames_intput_next as f32 / self.audio_sample.resampler_frames_output_next as f32
+                )
+            ).floor() as usize;
+            // let remain_audio_sample_buffer_div = remain_audio_sample_buffer_len / self.audio_sample.resampler_frames_output_next;
+            // let remain_audio_sample_buffer_mod = remain_audio_sample_buffer_len % self.audio_sample.resampler_frames_output_next;
+            // let remain_audio_sample_buffer_len = remain_audio_sample_buffer_div * self.audio_sample.resampler_frames_intput_next + remain_audio_sample_buffer_mod;
+            let source_sample_req_pos = (position_sec * self.audio_sample.source.metadata.sample_rate as f32).floor() as usize + remain_audio_sample_buffer_len;
+
+            self.audio_sample.set_current_sample_frame_idx(position_sample_idx);
+            
+
+            // let source_sample_req_pos = (
+            //     (position_sec + remain_audio_sample_buffer_sec) * self.audio_sample.source.metadata.sample_rate as f32
+            // ).floor() as usize;
+            // println!("source sample req sec: {}, remain buf sec: {}", position_sec + remain_audio_sample_buffer_sec, remain_audio_sample_buffer_sec);
+            println!("source sample req pos: {}", source_sample_req_pos);
+            self.audio_sample.last_buf_req_pos.store(source_sample_req_pos, Ordering::SeqCst);
+            println!("last buf req pos: {}@set_playback_position", self.audio_sample.last_buf_req_pos.load(Ordering::SeqCst));
+
+        } else {
+            // move position backward
+            self.audio_sample.drain_sample_buffer(self.audio_sample.get_remain_sample_buffer_len());
+            let source_sample_req_pos = (position_sec * self.audio_sample.source.metadata.sample_rate as f32).floor() as usize;
+            self.audio_sample.set_current_sample_frame_idx(position_sample_idx);
+            self.audio_sample.last_buf_req_pos.store(source_sample_req_pos, Ordering::SeqCst);
+
+        }
+        
+        self.audio_sample.buffer_status.store(AudioSampleStatus::Play as usize, Ordering::SeqCst);
+        self.audio_player_status.store(PlaybackStatus::Play as usize, Ordering::Relaxed);
+        self.set_stream_playback(PlaybackStatus::Play)?;
+
+        Ok(())
+    }
+
     pub fn set_stream_playback(&mut self, status: PlaybackStatus) -> Result<(), anyhow::Error> {
         match status {
             PlaybackStatus::Play => self.stream.play()?,
@@ -677,14 +793,14 @@ impl AudioStreamInner {
                     return Ok("stop");
                 }
                 
-                if self.audio_sample.get_remain_sample_buffer_sec() < 0.1 && 
+                if self.audio_sample.get_remain_sample_buffer_sec() < 0.01 && 
                     self.stream_playback_status == PlaybackStatus::Play {
                     // remain buffer is insufficient
 
                     println!("remain buffer is insufficient for playing audio, buf: {}", self.audio_sample.get_remain_sample_buffer_sec());
 
                     self.set_stream_playback(PlaybackStatus::Pause)?;
-                } else if self.audio_sample.get_remain_sample_buffer_sec() > 0.1 && 
+                } else if self.audio_sample.get_remain_sample_buffer_sec() > 0.01 && 
                     self.stream_playback_status == PlaybackStatus::Pause {
                     // remain buffer is enough for playing (check sufficient of a buffer at above code)
                     // and play stream if is paused

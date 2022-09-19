@@ -31,6 +31,18 @@
     max: 0
   };
 
+  let audioRangeBarProps = {
+    audioLength: 0,
+    position: 0,
+    isUserModifyPlaybackPos: false,
+  }
+
+  let sliderPos = 0;
+  let isUserModifyPlaybackPos = false;
+  let userSetPos = 0;
+
+  // let isAudioRangeBar
+
   // const audioIsPlayStore = writable(false);
 
   // audioIsPlayStore.subscribe(value => {
@@ -49,7 +61,12 @@
         updateAudioButton(false);
       }
 
-      currentPos = payload.pos;
+      currentPos = Math.floor(payload.pos);
+
+      if (!isUserModifyPlaybackPos) {
+        sliderPos = currentPos;
+      }
+
       remainBuf = payload.remainBuf;
       audioPlayerStatus = payload.status;
     });
@@ -102,6 +119,11 @@
     await invoke('plugin:cirrus|pause_audio');
   }
 
+  async function setPlaybackPosition(positionSec) {
+    console.log(positionSec);
+    await invoke('plugin:cirrus|set_playback_position', {playbackPos: positionSec});
+  }
+
   function updateAudioButton(playStatus) {
     // ref: https://stackoverflow.com/questions/57874892/how-to-check-if-an-htmlcollection-contains-an-element-with-a-given-class-name-us
     const childrenNodeArr = Array.from(document.getElementById('play-pause-btn').children);
@@ -120,6 +142,26 @@
   }
 
   // $: playerIconProp = isPlay ? 'pause_fill' : 'play_fill';
+
+  function onAudioRangeChange(sliderValue) {
+    // console.log(`curretPos: ${currentPos}, sliderValue: ${sliderValue}`)
+    if (currentPos !== sliderValue) {
+      userSetPos = sliderValue;
+      isUserModifyPlaybackPos = true;
+    } else {
+      isUserModifyPlaybackPos = false;
+    }
+  }
+
+  function onAudioRangeChanged(sliderValue) {
+    if (currentPos !== sliderValue) {
+      console.log(`user change done, modified value: ${sliderValue}`);
+      setPlaybackPosition(sliderValue);
+    }
+
+    isUserModifyPlaybackPos = false;
+    userSetPos = 0;
+  }
 
 </script>
 <Page
@@ -168,7 +210,12 @@
             }} />
         </ListItemCell>
         <ListItemCell class="width-auto flex-shrink-0">
-          <p>{convertSecToMMSS(currentPos)}</p>
+          <!-- <p>{convertSecToMMSS(sliderPos)}</p> -->
+          {#if isUserModifyPlaybackPos}
+            <p>{convertSecToMMSS(userSetPos)}</p>
+          {:else }
+            <p>{convertSecToMMSS(currentPos)}</p>
+          {/if}
         </ListItemCell>
         <ListItemCell class="flex-shrink-3">
           <!-- recreate range component if 'audioLength' is changed -->
@@ -176,7 +223,9 @@
             <Range
               max={audioLength}
               step=1
-              value={Math.floor(currentPos)} />
+              value={sliderPos}
+              onRangeChange={value => onAudioRangeChange(value)} 
+              onRangeChanged={value => onAudioRangeChanged(value)} />
           {/key}
         </ListItemCell>
         <ListItemCell class="width-auto flex-shrink-0">

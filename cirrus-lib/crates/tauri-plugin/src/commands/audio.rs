@@ -40,6 +40,20 @@ struct PlaybackPayload {
 }
 
 #[tauri::command]
+pub fn set_playback_position(
+    state: State<'_, AppState>,
+    playback_pos: f32
+) -> Result<(), &'static str> {
+
+    println!("got set playback position command");
+
+    match state.audio_player.set_playback_position(playback_pos) {
+        Ok(content_length) => return Ok(content_length),
+        Err(_) => return Err("tauri-plugin: failed to add audio"),
+    }
+}
+
+#[tauri::command]
 pub fn send_audio_player_status<R: Runtime>(
     window: Window<R>,
     state: State<'_, AppState>,
