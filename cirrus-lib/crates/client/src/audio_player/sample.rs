@@ -123,6 +123,10 @@ impl AudioSample {
                 break;
             }
 
+            if self.get_current_playback_position_sec() + self.get_remain_sample_buffer_sec() + 0.1 > self.content_length {
+                break;
+            }
+
             let fetched_sample_cnt = self.get_buffer_for(fetch_buffer_sec as u32 * 1000).await?;
             if fetched_sample_cnt == 0 {
                 break;
@@ -200,7 +204,7 @@ impl AudioSample {
 
         // println!("done resampling wave data");
         self.last_buf_req_pos.store(last_buf_req_pos + req_samples as usize, Ordering::SeqCst);
-
+        
         Ok(channel_sample_buf_extend_cnt)
     }
     

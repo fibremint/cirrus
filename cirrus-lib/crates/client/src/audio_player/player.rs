@@ -294,7 +294,7 @@ impl AudioStream {
                     println!("failed to fetch buffer: {}", e);
                 }
 
-                sleep(Duration::from_millis(5000)).await;
+                sleep(Duration::from_millis(500)).await;
             }
         });
         thread_run_states.push(thread_run_state_1);
