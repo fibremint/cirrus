@@ -128,21 +128,7 @@ impl AudioSample {
                 break;
             }
         }
-
-        // while self.get_remain_sample_buffer_sec() < buffer_margin && 
-        //     self.get_current_playback_position_sec() + fetch_buffer_sec < self.content_length &&
-        //     AudioSampleStatus::FillBuffer == AudioSampleStatus::from(self.buffer_status.load(Ordering::Relaxed)) {
-
-        //     // self.get_current_playback_position_sec() + fetch_buffer_sec 
-
-        //     self.get_buffer_for(fetch_buffer_sec as u32 * 1000).await?;
-        // }
-
-        // if self.get_remain_sample_buffer_sec() < buffer_margin {
-        //     println!("fetch audio sample buffer");
-        //     self.get_buffer_for(fetch_buffer_sec as u32 * 1000).await?;
-        // }
-
+        
         Ok(())
     }
 

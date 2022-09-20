@@ -507,6 +507,7 @@ impl AudioStreamInner {
 
 impl Drop for AudioStreamInner {
     fn drop(&mut self) {
+        self.audio_sample.buffer_status.store(AudioSampleStatus::StopFillBuffer as usize, Ordering::Relaxed);
         self.set_stream_playback(PlaybackStatus::Stop).unwrap();
     }
 }
