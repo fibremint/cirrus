@@ -118,24 +118,38 @@ impl AudioSample {
                 self.buffer_status.store(AudioSampleStatus::FillBuffer as usize, Ordering::Relaxed);
             }
 
+        while AudioSampleStatus::FillBuffer == AudioSampleStatus::from(self.buffer_status.load(Ordering::Relaxed)) {
+            if self.get_remain_sample_buffer_sec() > buffer_margin {
+                break;
+            }
+
+            let fetched_sample_cnt = self.get_buffer_for(fetch_buffer_sec as u32 * 1000).await?;
+            if fetched_sample_cnt == 0 {
+                break;
+            }
+        }
+
         // while self.get_remain_sample_buffer_sec() < buffer_margin && 
+        //     self.get_current_playback_position_sec() + fetch_buffer_sec < self.content_length &&
         //     AudioSampleStatus::FillBuffer == AudioSampleStatus::from(self.buffer_status.load(Ordering::Relaxed)) {
+
+        //     // self.get_current_playback_position_sec() + fetch_buffer_sec 
 
         //     self.get_buffer_for(fetch_buffer_sec as u32 * 1000).await?;
         // }
 
-        if self.get_remain_sample_buffer_sec() < buffer_margin {
-            println!("fetch audio sample buffer");
-            self.get_buffer_for(fetch_buffer_sec as u32 * 1000).await?;
-        }
+        // if self.get_remain_sample_buffer_sec() < buffer_margin {
+        //     println!("fetch audio sample buffer");
+        //     self.get_buffer_for(fetch_buffer_sec as u32 * 1000).await?;
+        // }
 
         Ok(())
     }
 
-    pub async fn get_buffer_for(&self, ms: u32) -> Result<(), anyhow::Error> {
+    pub async fn get_buffer_for(&self, ms: u32) -> Result<usize, anyhow::Error> {
         let req_samples = ms * self.source.metadata.sample_rate / 1000;
         
-        println!("request audio data part");
+        // println!("request audio data part");
         let last_buf_req_pos = self.last_buf_req_pos.load(Ordering::SeqCst);
 
         let sample_res = request::get_audio_data(
@@ -144,7 +158,7 @@ impl AudioSample {
             std::cmp::min(last_buf_req_pos as u32 + req_samples, self.source.metadata.sample_frames as u32)
         ).await?;
 
-        println!("parse audio data response as audio sample");
+        // println!("parse audio data response as audio sample");
         // ref: https://users.rust-lang.org/t/convert-slice-u8-to-u8-4/63836
         let sample_res = sample_res.into_inner();
         let chunks_per_channel = 2;
@@ -184,7 +198,7 @@ impl AudioSample {
 
                 self.last_buf_req_pos.store(last_buf_req_pos + channel_sample_buf_extend_cnt, Ordering::SeqCst);
 
-                return Ok(());
+                return Ok(channel_sample_buf_extend_cnt);
             }
 
             let mut sample_buffer = self.sample_buffer.write().unwrap();
@@ -198,10 +212,10 @@ impl AudioSample {
         let remain_samples = chunks_items_iter.remainder();
         remain_sample_raw.extend(remain_samples);
 
-        println!("done resampling wave data");
+        // println!("done resampling wave data");
         self.last_buf_req_pos.store(last_buf_req_pos + req_samples as usize, Ordering::SeqCst);
 
-        Ok(())
+        Ok(channel_sample_buf_extend_cnt)
     }
     
     pub fn play_for(&self, output: &mut [f32]) {

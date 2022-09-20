@@ -289,12 +289,12 @@ impl AudioStream {
                     break;
                 }
 
-                // if let Err(e) = audio_sample_1_clone.fetch_buffer(50., 1).await {
-                if let Err(e) = audio_sample_1_clone.fetch_buffer(20., 50.).await {
+                if let Err(e) = audio_sample_1_clone.fetch_buffer(180., 10.).await {
+                // if let Err(e) = audio_sample_1_clone.fetch_buffer(20., 50.).await {
                     println!("failed to fetch buffer: {}", e);
                 }
 
-                sleep(Duration::from_millis(500)).await;
+                sleep(Duration::from_millis(5000)).await;
             }
         });
         thread_run_states.push(thread_run_state_1);
