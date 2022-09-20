@@ -54,7 +54,8 @@
 
     const unlisten = await listen('update-playback-pos', event => {
       const payload = event.payload;
-      // console.log(payload);
+      const availSetPosWithoutFetch = payload.remainBuf + payload.pos;
+      console.log(`buffer len: ${Math.floor(payload.remainBuf)}, availSetPosWithoutFetch: ${convertSecToMMSS(availSetPosWithoutFetch)}`);
 
       if (audioPlayerStatus === 'Play' && payload.status === 'Stop') {
         audioLength = 0;
