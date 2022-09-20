@@ -1,35 +1,13 @@
-use std::sync::Arc;
-
-use tauri::{State, Window, Runtime, Manager};
+use tauri::{State, Window, Runtime};
 
 use cirrus_client_lib::{
     request,
-    state::PlaybackStatus
+    audio_player::state::PlaybackStatus
 };
 use cirrus_grpc::api::AudioTagRes;
 
-use crate::state::{AppState, self};
+use crate::state::AppState;
 
-
-
-// #[tauri::command]
-// pub fn set_action_emit_playback_position(
-//     state: State<'_, AppState>,
-//     action: String,
-// ) {
-//     match action.as_str() {
-//         "start" => state.ui.audio_player.is_playing = true,
-//         "stop" => state.ui.audio_player.is_playing = false,
-//     }
-// }
-
-// #[derive(Copy, Clone, Debug, PartialEq, serde::Serialize)]
-// pub enum PlaybackStatus {
-//     Play,
-//     Pause,
-//     Stop,
-//     Error,
-// }
 
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -138,7 +116,4 @@ pub async fn get_audio_tags(
         Ok(audio_tags) => Ok(audio_tags),
         Err(_) => return Err("failed to get audio tags from server"),
     }
-    // let audio_tags = request::get_audio_tags(items_per_page, page as u64).await.unwrap();
-
-    // Ok(audio_tags)
 }
