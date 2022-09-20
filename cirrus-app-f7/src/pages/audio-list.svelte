@@ -3,45 +3,46 @@
   import { writable } from "svelte/store";
 
   import { Navbar, Page, BlockTitle, List, ListItem, Sheet, Toolbar, Link, PageContent, Block, View, Icon, ListItemCell, Range, Button, Segmented } from 'framework7-svelte';
-  import { invoke } from '@tauri-apps/api';
   import { listen } from '@tauri-apps/api/event';
   import { audioStore } from '../js/store';
+
+  import * as command from '../js/command';
 
   let allowInfinite = true;
   let showPreloader = true;
 
-  let isFetchItems = false;
+  // let isFetchItems = false;
   let currentPage = 1;
   const itemsPerPage = 20;
   let audioTags = [];
-  let selectedItemIdx = -1;
-  let isHidePlayer = false;
+  let selectedAudioItemIdx = -1;
+  let selectedAudioTagId = '';
+  // let isHidePlayer = false;
   let isAudioPlay = false;
-  let playerIcon = 'play';
+  // let playerIcon = 'play';
   let latestFetchDatetime = 0;
 
   let audioLength = 0;
   let currentPos = 0;
-  let remainBuf = 0;
+  // let remainBuf = 0;
   let audioPlayerStatus = 'Stop';
+  let contentLength = 0;
   
   let updatePlaybackPosEventUnlisten = undefined;
   // let sliderProps = null;
-  let sliderProps = {
-    max: 0
-  };
+  // let sliderProps = {
+  //   max: 0
+  // };
 
-  let audioRangeBarProps = {
-    audioLength: 0,
-    position: 0,
-    isUserModifyPlaybackPos: false,
-  }
+  // let audioRangeBarProps = {
+  //   audioLength: 0,
+  //   position: 0,
+  //   isUserModifyPlaybackPos: false,
+  // }
 
   let sliderPos = 0;
   let isUserModifyPlaybackPos = false;
   let userSetPos = 0;
-
-  // let isAudioRangeBar
 
   // const audioIsPlayStore = writable(false);
 
@@ -54,12 +55,14 @@
 
     const unlisten = await listen('update-playback-pos', event => {
       const payload = event.payload;
-      const availSetPosWithoutFetch = payload.remainBuf + payload.pos;
-      console.log(`buffer len: ${Math.floor(payload.remainBuf)}, availSetPosWithoutFetch: ${convertSecToMMSS(availSetPosWithoutFetch)}`);
+      console.log(`buf: ${payload.remainBuf}`)
 
       if (audioPlayerStatus === 'Play' && payload.status === 'Stop') {
         audioLength = 0;
         updateAudioButton(false);
+      } else if (audioPlayerStatus === 'Stop' && payload.status === 'Play') {
+        audioLength = contentLength;
+        updateAudioButton(true);
       }
 
       currentPos = Math.floor(payload.pos);
@@ -74,13 +77,13 @@
 
     updatePlaybackPosEventUnlisten = unlisten;
 
-    await invoke('plugin:cirrus|send_audio_player_status');
+    await command.sendAudioPlayerStatus();
   });
 
-  onDestroy(() => {
+  onDestroy(async() => {
     console.log('destroy');
     updatePlaybackPosEventUnlisten();
-    invoke('plugin:cirrus|stop_audio');
+    await command.stopAudio();
   });
 
   async function fetchAudioTags() {
@@ -95,8 +98,8 @@
     allowInfinite = false;
     showPreloader = true;
 
-    const response = await invoke('plugin:cirrus|get_audio_tags', { itemsPerPage, page: currentPage });
-    
+    // const response = await invoke('plugin:cirrus|get_audio_tags', { itemsPerPage, page: currentPage });
+    const response = await command.getAudioTags({ itemsPerPage, currentPage });
     if (!Array.isArray(response)) {
         console.log("failed to get audio tags");
         showPreloader = false;
@@ -110,19 +113,6 @@
 
     allowInfinite = true;
     showPreloader = false;
-  }
-
-  async function playAudio() {
-    await invoke('plugin:cirrus|start_audio');
-  }
-
-  async function pauseAudio() {
-    await invoke('plugin:cirrus|pause_audio');
-  }
-
-  async function setPlaybackPosition(positionSec) {
-    console.log(positionSec);
-    await invoke('plugin:cirrus|set_playback_position', {playbackPos: positionSec});
   }
 
   function updateAudioButton(playStatus) {
@@ -145,7 +135,6 @@
   // $: playerIconProp = isPlay ? 'pause_fill' : 'play_fill';
 
   function onAudioRangeChange(sliderValue) {
-    // console.log(`curretPos: ${currentPos}, sliderValue: ${sliderValue}`)
     if (currentPos !== sliderValue) {
       userSetPos = sliderValue;
       isUserModifyPlaybackPos = true;
@@ -154,17 +143,43 @@
     }
   }
 
-  function onAudioRangeChanged(sliderValue) {
+  async function onAudioRangeChanged(sliderValue) {
     if (currentPos !== sliderValue) {
       console.log(`user change done, modified value: ${sliderValue}`);
-      setPlaybackPosition(sliderValue);
+      await command.setPlaybackPosition(sliderValue);
     }
 
     isUserModifyPlaybackPos = false;
     userSetPos = 0;
   }
 
+  async function onAudioListItemClick({ index, itemId }) {
+    if (selectedAudioTagId === itemId) {
+      console.log('clicked same audio');
+      return;
+    }
+
+    try {
+      if (isAudioPlay) {
+        await command.stopAudio();
+      }
+
+      contentLength = await command.loadAudio(itemId);
+      audioLength = contentLength;
+
+      await command.playAudio();
+
+      selectedAudioItemIdx = index;
+      selectedAudioTagId = itemId;
+
+      updateAudioButton(true);
+    } catch(e) {
+      console.log(`failed to play audio, ${e}`)
+    }
+  }
+
 </script>
+
 <Page
   infinite
   infiniteDistance={itemsPerPage}
@@ -175,41 +190,43 @@
 
   <List mediaList noHairlines>
     {#each audioTags as item, index (index)}
-      <ListItem 
+      <ListItem
+        selected={index === selectedAudioItemIdx}
         title={` ${item.title}`} 
         footer={item.artist}
         link='#'
-        on:click={async(e) => {
-          const contentLength = await invoke('plugin:cirrus|load_audio', { audioTagId: item.id });
-          console.log(contentLength);
-          audioLength = contentLength;
-
-          await invoke('plugin:cirrus|start_audio');
-
-          // isAudioPlay = !isAudioPlay;
-          updateAudioButton(!isAudioPlay);
-        }}
-      />
+        on:click={onAudioListItemClick({ index, itemId: item.id })} />
     {/each}
   </List>
 
   <Toolbar bottom>
     <List simpleList style='width:100%'>
       <ListItem>
-        <ListItemCell class="width-auto flex-shrink-0">
+        <!-- <ListItemCell class="width-auto">
+          <Button 
+            iconF7='backward_fill' />
+        </ListItemCell> -->
+
+        <ListItemCell class="width-auto">
           <Button 
             id="play-pause-btn" 
             iconF7={isAudioPlay === true ? 'pause_fill' : 'play_fill'} 
-            on:click={(e) => {
+            on:click={async(e) => {
               if (isAudioPlay) {
-                pauseAudio();
+                await command.pauseAudio();
               } else {
-                playAudio();
+                await command.playAudio();
               }
 
               updateAudioButton(!isAudioPlay);
             }} />
         </ListItemCell>
+
+        <!-- <ListItemCell class="width-auto">
+          <Button 
+            iconF7='forward_fill' />
+        </ListItemCell> -->
+
         <ListItemCell class="width-auto flex-shrink-0">
           <!-- <p>{convertSecToMMSS(sliderPos)}</p> -->
           {#if isUserModifyPlaybackPos}
@@ -231,9 +248,6 @@
         </ListItemCell>
         <ListItemCell class="width-auto flex-shrink-0">
           <p>{convertSecToMMSS(audioLength)}</p>
-        </ListItemCell>
-        <ListItemCell class="width-auto flex-shrink-0">
-          <Icon ios="f7:speaker_3_fill" aurora="f7:speaker_3_fill" md="material:volume_up"></Icon>
         </ListItemCell>
       </ListItem>
     </List>
