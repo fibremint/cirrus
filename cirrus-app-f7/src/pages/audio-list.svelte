@@ -55,10 +55,10 @@
 
     const unlisten = await listen('update-playback-pos', event => {
       const payload = event.payload;
-      console.log(`buf: ${payload.remainBuf}`)
+      // console.log(`buf: ${payload.remainBuf}`)
 
-      if (audioPlayerStatus === 'Play' && payload.status === 'Stop') {
-        audioLength = 0;
+      if (payload.status === 'Stop') {
+        resetSelectedAudioInfo();
         updateAudioButton(false);
       } else if (audioPlayerStatus === 'Stop' && payload.status === 'Play') {
         audioLength = contentLength;
@@ -113,6 +113,12 @@
 
     allowInfinite = true;
     showPreloader = false;
+  }
+
+  function resetSelectedAudioInfo() {
+    audioLength = 0;
+    selectedAudioItemIdx = -1;
+    selectedAudioTagId = '';
   }
 
   function updateAudioButton(playStatus) {
@@ -248,6 +254,18 @@
         </ListItemCell>
         <ListItemCell class="width-auto flex-shrink-0">
           <p>{convertSecToMMSS(audioLength)}</p>
+        </ListItemCell>
+        <ListItemCell class="width-auto flex-shrink-0">
+          <Button 
+            id="play-pause-btn" 
+            iconF7='xmark'
+            on:click={async(e) => {
+              if (isAudioPlay) {
+                await command.stopAudio();
+              }
+
+              resetSelectedAudioInfo();
+            }} />        
         </ListItemCell>
       </ListItem>
     </List>
