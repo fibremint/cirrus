@@ -15,8 +15,18 @@ use cirrus_grpc::{
 
 use crate::logic;
 
-#[derive(Debug, Default)]
-pub struct AudioDataSvcImpl {}
+#[derive(Debug)]
+pub struct AudioDataSvcImpl {
+    mongodb_client: mongodb::Client,
+}
+
+impl AudioDataSvcImpl {
+    pub fn new(mongodb_client: mongodb::Client) -> Self {
+        Self {
+            mongodb_client
+        }
+    }
+}
 
 #[tonic::async_trait]
 impl AudioDataSvc for AudioDataSvcImpl {
@@ -24,9 +34,10 @@ impl AudioDataSvc for AudioDataSvcImpl {
         &self,
         request: Request<AudioMetaReq>
     ) -> Result<Response<AudioMetaRes>, Status> {
-        let filepath = &request.get_ref().filename;
+        // let filepath = &request.get_ref().filename;
+        let audio_tag_id = &request.get_ref().audio_tag_id;
 
-        let res = match logic::AudioFile::read_meta(filepath) {
+        let res = match logic::AudioFile::read_meta(self.mongodb_client.clone(), audio_tag_id).await {
             Ok(res) => Response::new(res),
             Err(err) => return Err(Status::new(Code::Internal, err)),
         };
@@ -34,16 +45,16 @@ impl AudioDataSvc for AudioDataSvcImpl {
         Ok(res)
     }
 
-
     async fn get_data(
         &self,
         request: Request<AudioDataReq>
     ) -> Result<Response<AudioDataRes>, Status> {
-        let filepath = &request.get_ref().filename;
+        // let filepath = &request.get_ref().filename;
+        let audio_tag_id = &request.get_ref().audio_tag_id;
         let byte_start = request.get_ref().byte_start as usize;
         let byte_end = request.get_ref().byte_end as usize;
 
-        let res = match logic::AudioFile::read_data(filepath, byte_start, byte_end) {
+        let res = match logic::AudioFile::read_data(self.mongodb_client.clone(), audio_tag_id, byte_start, byte_end).await {
             Ok(res) => Response::new(res),
             Err(err) => return Err(Status::new(tonic::Code::Internal, err)),
         };

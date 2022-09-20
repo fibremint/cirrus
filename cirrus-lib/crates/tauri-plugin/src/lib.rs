@@ -1,49 +1,32 @@
 use tauri::{
-    Runtime, 
-    plugin::{TauriPlugin, Builder, Plugin}, 
+    Runtime,
+    plugin::{TauriPlugin, Builder}, 
     Invoke, 
-    AppHandle, Manager
+    AppHandle, Manager, Window,
 };
 
 pub mod state;
 pub mod commands;
 
-// use serde_json::Value as JsonValue;
-
-// struct CirrusPlugin<R: Runtime> {
-//     invoke_handler: Box<dyn Fn(Invoke<R>) + Send + Sync>,
-// }
-
-// impl<R: Runtime> CirrusPlugin<R> {
-//     pub fn new() -> Self {
-//         Self {
-//             invoke_handler: Box::new(
-//                 tauri::generate_handler![
-
-//                 ]
-//             )
-//         }
-//     }
-// }
-
-// impl<R: Runtime> Plugin<R> for CirrusPlugin<R> {
-//     fn name(&self) -> &'static str {
-//         "cirrus"
-//     }
-
-//     fn initialize(&mut self, app: &AppHandle<R>, config: JsonValue) -> Result<()> {
-//         Ok(())
-//       }
-// }
+fn manage_player_event<R: Runtime>(window: &Window<R>) {
+    // let id = window.listen(event, handler)
+}
 
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("cirrus")
         .invoke_handler(tauri::generate_handler![
             commands::load_audio,
             commands::get_audio_tags,
+            commands::start_audio,
+            commands::stop_audio,
+            commands::pause_audio,
+            commands::send_audio_player_status,
+            commands::set_playback_position,
         ])
         .setup(|app_handle| {
-            app_handle.manage(state::AppState::new());
+            let state = state::AppState::new();
+            app_handle.manage(state);
+
             Ok(())
         })
         .build()

@@ -1,101 +1,119 @@
-use std::borrow::Borrow;
+use tauri::{State, Window, Runtime};
 
-use http::Response;
-use tauri::{
-    plugin::{Builder, TauriPlugin},
-    AppHandle, Manager, Runtime, State,
+use cirrus_client_lib::{
+    request,
+    audio_player::state::PlaybackStatus
 };
-
-use cirrus_client_lib::request;
 use cirrus_grpc::api::AudioTagRes;
 
 use crate::state::AppState;
 
-// #[tauri::command]
-// pub fn baz(app_state: State<'_, AppState>, target: String) {
-//     println!("load audio fn ");
-// }
 
-// #[tauri::command]
-// pub fn load_audio(
-//     app_state: State<'_, AppState>,
-//     target: String
-// ) {
-//     println!("load audio fn");
-// }
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PlaybackPayload {
+    status: PlaybackStatus,
+    pos: f32,
+    remain_buf: f32,
+}
+
+#[tauri::command]
+pub fn set_playback_position(
+    state: State<'_, AppState>,
+    playback_pos: f32
+) -> Result<(), &'static str> {
+
+    println!("got set playback position command");
+
+    match state.audio_player.set_playback_position(playback_pos) {
+        Ok(content_length) => return Ok(content_length),
+        Err(_) => return Err("tauri-plugin: failed to add audio"),
+    }
+}
+
+#[tauri::command]
+pub fn send_audio_player_status<R: Runtime>(
+    window: Window<R>,
+    state: State<'_, AppState>,
+) {
+    let audio_player = state.audio_player.clone();
+
+    std::thread::spawn(move || loop {
+        let playback_payload = PlaybackPayload {
+            status: audio_player.get_status(),
+            pos: audio_player.get_playback_position(),
+            remain_buf: audio_player.get_remain_sample_buffer_sec(),
+        };
+
+        if let Err(e) = window.emit("update-playback-pos", playback_payload) {
+            println!("{:?}", e);
+        }
+
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    });
+}
 
 #[tauri::command]
 pub async fn load_audio(
     state: State<'_, AppState>,
-    request: String
-) -> Result<String, String> {
-    println!("load audio fn, got: {}", request);
+    audio_tag_id: String
+) -> Result<f32, &'static str> {
 
-    // let mut audio_player = state.audio_player.write();
-    // audio_player.await;
-    let mut audio_player = state.audio_player.write().await;
-    audio_player.add_audio(request.as_str()).await.unwrap();
-    audio_player.play();
+    println!("got load audio command");
 
-    // state.audio_player.add_audio(request.as_str());
+    match state.audio_player.add_audio(&audio_tag_id).await {
+        Ok(content_length) => return Ok(content_length),
+        Err(_) => return Err("tauri-plugin: failed to add audio"),
+    }
+}
 
-    // let audio_player = state.audio_player.clone().write().await;
+#[tauri::command]
+pub fn start_audio(
+    state: State<'_, AppState>
+) -> Result<(), &'static str> {
 
-    // let audio_player = state.audio_player.clone();
-    // audio_player.write().await.add_audio(request.as_str());
+    println!("got start audio command");
 
-    // let mut audio_player = state.audio_player.clone().write().await;
-    // audio_player.add_audio(request.as_str());
+    match state.audio_player.play() {
+        Ok(())=> return Ok(()),
+        Err(_) => return Err("tauri-plugin: failed to play audio"), 
+    }
+}
 
-    // let mut audio_player = state.audio_player.write().await;
-    // let audio_player = state.audio_player.clone();
-    // let audio_player = audio_player.write().await;
+#[tauri::command]
+pub fn stop_audio(
+    state: State<'_, AppState>
+) -> Result<(), &'static str> {
 
-    Ok(String::from("ok"))
+    println!("got stop audio command");
 
-    // audio_player.await.write().add_audio(request.as_str());
+    state.audio_player.stop();
 
-    // state.audio_player.add_audio(request.as_str());
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pause_audio(
+    state: State<'_, AppState>
+) -> Result<(), &'static str> {
+    println!("got pause audio command");
+
+
+    match state.audio_player.pause() {
+        Ok(_) => Ok(()),
+        Err(_) => Err("failed to pause audio"),
+    }
 }
 
 #[tauri::command]
 pub async fn get_audio_tags(
-    // state: State<'_, AppState>,
     items_per_page: u64,
     page: u32,
-) -> Result<Vec<AudioTagRes>, String> {
-    println!("got get-audio-tags commnad");
+) -> Result<Vec<AudioTagRes>, &'static str> {
+    println!("got get-audio-tags command");
 
-    let audio_tags = request::get_audio_tags(items_per_page, page as u64).await.unwrap();
-
-    Ok(audio_tags)
-
-    // let mut audio_tags = state.audio_tags.lock().await;
-    // // let res: Vec<AudioTagRes> = Vec::new();
-
-    // match audio_tags.get(&page) {
-    //     Some(_) => (),
-    //     None => {
-    //         let response = request::get_audio_tags(items_per_page, page as u64).await.unwrap();
-    //         let response: Vec<_> = response
-    //             .into_iter()
-    //             // .filter_map(|item| item.ok())
-    //             .collect();
-
-    //         audio_tags.insert(page, response);
-    //     },
-    // }
-
-    // let res = audio_tags.get(&page).unwrap().clone();
-    // // let mut res: Vec<TagResponse> = Vec::new();
-    // // res.push(TagResponse {
-    // //     artist: String::from("foo"),
-    // //     genre: String::from("bar"),
-    // //     title: String::from("baz"),
-    // // });
-
-    // Ok(res)
-    // // Ok(audio_tags.get(&page).clone())
-
-    // // audio_tags.i
+    match request::get_audio_tags(items_per_page, page as u64).await {
+        Ok(audio_tags) => Ok(audio_tags),
+        Err(_) => return Err("failed to get audio tags from server"),
+    }
 }
