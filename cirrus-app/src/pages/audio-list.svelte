@@ -24,7 +24,7 @@
 
   let audioLength = 0;
   let currentPos = 0;
-  // let remainBuf = 0;
+  let remainBuf = 0;
   let audioPlayerStatus = 'Stop';
   let contentLength = 0;
   
