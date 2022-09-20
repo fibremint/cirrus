@@ -1,0 +1,13 @@
+#[package]
+#name = "cirrus"
+#authors = ["Lunar Bridge <fibremint@gmail.com>"]
+#version = "0.1.0"
+#edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[workspace]
+members = ["crates/*"]
+
+#[build-dependencies]
+#tonic-build = "0.6"
