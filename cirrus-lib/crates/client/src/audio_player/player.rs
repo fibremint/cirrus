@@ -415,33 +415,18 @@ impl AudioStreamInner {
         self.audio_player_status.store(PlaybackStatus::Pause as usize, Ordering::Relaxed);
         self.set_stream_playback(PlaybackStatus::Pause)?;
 
-        // let get_remain_buffer_len_as_source = || {
-        //     (
-        //         self.audio_sample.get_remain_sample_buffer_len() as f32 * (
-        //             self.audio_sample.resampler_frames_input_next as f32 / self.audio_sample.resampler_frames_output_next as f32
-        //         )
-        //     ).floor() as usize
-        // };
-
         let position_sample_idx = self.audio_sample.get_sample_idx_from_sec(position_sec);
         let drain_buffer_len = {
             if position_sec - self.audio_sample.get_current_playback_position_sec() > 0.0 {
                 position_sample_idx - self.audio_sample.get_current_sample_idx()
             } else {
                 self.audio_sample.get_remain_sample_buffer_len()
-                // usize::MAX
             }
         };
 
         self.audio_sample.drain_sample_buffer(drain_buffer_len);
-
-        // let source_sample_req_pos = 
-        //     (position_sec * self.audio_sample.source.metadata.sample_rate as f32).floor() as usize + 
-        //     get_remain_buffer_len_as_source();
-        // self.audio_sample.last_buf_req_pos.store(source_sample_req_pos, Ordering::SeqCst);
         self.audio_sample.set_current_sample_frame_idx(position_sample_idx);
 
-        // self.audio_sample.buffer_status.store(AudioSampleStatus::Play as usize, Ordering::SeqCst);
         self.audio_player_status.store(PlaybackStatus::Play as usize, Ordering::Relaxed);
         self.set_stream_playback(PlaybackStatus::Play)?;
 

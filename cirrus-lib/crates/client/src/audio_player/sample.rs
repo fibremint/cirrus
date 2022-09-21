@@ -17,7 +17,6 @@ pub struct AudioSample {
     sample_buffer: Arc<RwLock<Vec<VecDeque<f32>>>>,
     current_sample_frame: Arc<AtomicUsize>,
     pub buffer_status: Arc<AtomicUsize>,
-    // pub last_buf_req_pos: Arc<AtomicUsize>,
     resampler: Arc<RwLock<rubato::FftFixedInOut<f32>>>,
     pub resampler_frames_input_next: usize,
     pub resampler_frames_output_next: usize,
@@ -54,7 +53,6 @@ impl AudioSample {
             sample_buffer: Arc::new(RwLock::new(sample_buffer)),
             current_sample_frame: Arc::new(AtomicUsize::new(0)),
             buffer_status: Arc::new(AtomicUsize::new(AudioSampleStatus::FillBuffer as usize)),
-            // last_buf_req_pos: Arc::new(AtomicUsize::new(0)),
             resampler: Arc::new(
                 RwLock::new(
                     resampler
@@ -63,7 +61,6 @@ impl AudioSample {
             resampler_frames_input_next,
             resampler_frames_output_next,
             remain_sample_raw: Arc::new(RwLock::new(Vec::new())),
-            // resampled_sample_frames,
             host_sample_rate,
             host_output_channels,
             content_length,
@@ -139,8 +136,6 @@ impl AudioSample {
     pub async fn get_buffer_for(&self, ms: u32) -> Result<usize, anyhow::Error> {
         let req_samples = ms * self.source.metadata.sample_rate / 1000;
         
-        // println!("request audio data part");
-        // let last_buf_req_pos = self.last_buf_req_pos.load(Ordering::SeqCst);
         let buf_req_pos = (
             (self.get_current_playback_position_sec() + self.get_remain_sample_buffer_sec()) * 
                 self.source.metadata.sample_rate as f32
@@ -190,8 +185,6 @@ impl AudioSample {
             if  AudioSampleStatus::StopFillBuffer == AudioSampleStatus::from(self.buffer_status.load(Ordering::Relaxed)) {
                 println!("stop fill buffer");
 
-                // self.last_buf_req_pos.store(last_buf_req_pos + channel_sample_buf_extend_cnt, Ordering::SeqCst);
-
                 return Ok(channel_sample_buf_extend_cnt);
             }
 
@@ -206,8 +199,6 @@ impl AudioSample {
         let remain_samples = chunks_items_iter.remainder();
         remain_sample_raw.extend(remain_samples);
 
-        // println!("done resampling wave data");
-        // self.last_buf_req_pos.store(last_buf_req_pos + req_samples as usize, Ordering::SeqCst);
         
         Ok(channel_sample_buf_extend_cnt)
     }
