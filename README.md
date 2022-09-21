@@ -1,10 +1,12 @@
 # Cirrus
 
-Cirrus is an audio player that reads audio file from remote server.
+Cirrus is a open source audio streaming service.
 
-This repository provides:
+![demo-audio-player](assets/demo-audio-player.png)
 
-* cirrus-app: desktop application
+This repository contains:
+
+* cirrus-app: desktop application that plays audio
 * cirrus-server: manage audio library and serve audio data
 
 At now, supported audio format is restricted as `AIFF` and `16-bit, 2-channel`.
@@ -14,6 +16,7 @@ At now, supported audio format is restricted as `AIFF` and `16-bit, 2-channel`.
 ### Server
 
 * Install MongoDB
+* Update submodules (`git submodule init`, `git submodule update`)
 * Build Cirrus server with `cargo build --release` under `cirrus-server` directory
 * Run Cirrus server with `cargo run --release`
 * Add/Analyze/Refresh audio library with gRPC client (e.g. BloomRPC)
@@ -28,6 +31,7 @@ At now, supported audio format is restricted as `AIFF` and `16-bit, 2-channel`.
 ## Architecture
 
 ### Overview
+
 ![architecture](assets/architecture-overview.png)
 
 ### Project Strucutre
@@ -74,10 +78,12 @@ And an audio buffer is filled by audio buffer thread that fetch data, process an
 In most cases, an audio directory has sub-directories that contain audio files. And Cirrus reads audio files from audio directories. Cirrus thinks that there is root (`library-root`) of sub-directories and sub-directory contains metadata of audio contents (`library`) such as timestamp of directory that used for check modification of directory at library refresh. An audio file metadata (`audio`) has field filename and path of audio sub-directory to point the actual path of audio file, and timestamp for check update of this one. And audio has tags such as title, artist, genre and so on. This information is stored at (`audio-tags`) collection.
 
 A Cirrus server manages audio libraries with these behaviors:
+
 * `add_audio_library`: insert `library-root` and `library` document to database
 * `remove_audio_library`: remove documents of audio `library-root`, `library` and related audio data (`audio`) from database
-* `analyze_audio_library`: create `audio-tags` document from `audio` and insert to database 
+* `analyze_audio_library`: create `audio-tags` document from `audio` and insert to database
 * `refesh_audio_library`: update `library`, `audio`, `audio-tags` documents.
 
 ## License
+
 This project is licensed under the terms of the MIT license.
