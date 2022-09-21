@@ -1,6 +1,6 @@
 # Cirrus
 
-Cirrus is a open source audio streaming service.
+Cirrus is an open source audio streaming service.
 
 ![demo-audio-player](assets/demo-audio-player.png)
 
