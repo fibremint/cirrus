@@ -20,7 +20,7 @@ At now, supported audio format is restricted as `AIFF` and `16-bit, 2-channel`.
   * Server: Set your listen address (located at `cirrus-server/src/main.rs`). default address is `127.0.0.1:50000`
 * Build Cirrus server with `cargo build --release` under `cirrus-server` directory
 * Run Cirrus server with `cargo run --release`
-* Add your musics to Cirrus
+* Add your music to Cirrus
   * At now, gRPC client (e.g. BloomRPC) is required to request audio management actions. You can import proto file that defines API in Cirrus (located at `cirrus-lib/crates/grpc/proto/cirrus.proto`)
   * Add audio directory with `cirrus.AudioLibrarySvc/AddAudioLibrary`
   * Read ID3 tags in audio file with `cirrus.AudioLibrarySvc/AnalyzeAudioLibrary`
