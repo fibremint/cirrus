@@ -9,7 +9,7 @@ use cirrus_grpc::{
 };
 
 pub async fn get_audio_meta(audio_tag_id: &str) -> Result<Response<AudioMetaRes>, anyhow::Error> {
-    let mut client = AudioDataSvcClient::connect("http://[::1]:50000").await?;
+    let mut client = AudioDataSvcClient::connect("http://127.0.0.1:50000").await?;
 
     let request = Request::new({
         AudioMetaReq {
@@ -23,7 +23,7 @@ pub async fn get_audio_meta(audio_tag_id: &str) -> Result<Response<AudioMetaRes>
 }
 
 pub async fn get_audio_data(audio_tag_id: &str, sample_pos_start: u32, sample_pos_end: u32) -> Result<Response<AudioDataRes>, anyhow::Error> {
-    let mut client = AudioDataSvcClient::connect("http://[::1]:50000").await?;
+    let mut client = AudioDataSvcClient::connect("http://127.0.0.1:50000").await?;
 
     let request = Request::new({
         AudioDataReq {
@@ -41,7 +41,7 @@ pub async fn get_audio_data(audio_tag_id: &str, sample_pos_start: u32, sample_po
 
 // pub async fn get_audio_tags(items_per_page: u64, page: u64) -> Result<Vec<Result<AudioTagRes, Status>>, Box<dyn std::error::Error>> {
 pub async fn get_audio_tags(items_per_page: u64, page: u64) -> Result<Vec<AudioTagRes>, Box<dyn std::error::Error>> {
-    let mut client = AudioTagSvcClient::connect("http://[::1]:50000").await?;
+    let mut client = AudioTagSvcClient::connect("http://127.0.0.1:50000").await?;
 
     let request = Request::new( {
         ListRequest {
