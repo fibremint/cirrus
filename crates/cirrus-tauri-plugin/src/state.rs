@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use cirrus_client_lib::AudioPlayer;
+use cirrus_client_core::AudioPlayer;
 
 pub struct AppState {
     pub audio_player: Arc<AudioPlayer>,

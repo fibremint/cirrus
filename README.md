@@ -16,19 +16,19 @@ At now, supported audio format is restricted as `AIFF` and `16-bit, 2-channel`.
 ### Server
 
 * Configure address
-  * MongoDB: (**Warning: Cirrus will create and write documents under `cirrus` collection**) Set your MongoDB address to the variable in `get_mongodb_client` function (located at `cirrus-lib/crates/server/src/model/mod.rs`). default address is `127.0.0.1:27017`
+  * MongoDB: (**Warning: Cirrus will create and write documents under `cirrus` collection**) Set your MongoDB address to the variable in `get_mongodb_client` function (located at `cirrus-server/src/model/mod.rs`). default address is `127.0.0.1:27017`
   * Server: Set your listen address (located at `cirrus-server/src/main.rs`). default address is `127.0.0.1:50000`
 * Build Cirrus server with `cargo build --release` under `cirrus-server` directory
 * Run Cirrus server with `cargo run --release`
-* Add your music to Cirrus
-  * At now, gRPC client (e.g. BloomRPC) is required to request audio management actions. You can import proto file that defines API in Cirrus (located at `cirrus-lib/crates/grpc/proto/cirrus.proto`)
+* Add your musics to Cirrus
+  * At now, gRPC client (e.g. BloomRPC) is required to request audio management actions. You can import proto file that defines API in Cirrus (located at `proto/cirrus.proto`)
   * Add audio directory with `cirrus.AudioLibrarySvc/AddAudioLibrary`
   * Read ID3 tags in audio file with `cirrus.AudioLibrarySvc/AnalyzeAudioLibrary`
 
 ### Client
 
 * Configure address
-  * Set your address of the Cirrus server to each of the arguments in `cirrus-lib/crates/client/src/request.rs`. default address is `http://127.0.0.1:50000`
+  * Set your address of the Cirrus server to each of the arguments in `crates/cirrus-client-core/src/request.rs`. default address is `http://127.0.0.1:50000`
 * Move to `cirrus-app` directory
 * Install dependencies by run `yarn`
 * Build and run client
@@ -46,13 +46,12 @@ At now, supported audio format is restricted as `AIFF` and `16-bit, 2-channel`.
 ### Project Strucutre
 
 * cirrus-app: Cirrus client frontend that provides UI and interact backend with Tauri plugin
-* cirrus-lib/crates
+* crates
   * aiff-rs: read idv3 tags and audio data from AIFF audio file
-  * client: implementation of core audio player
-  * grpc: contains protobuf definition and provide interoperability with Rust
-  * server: implementation of server
-  * tauri-plugin: Tauri plugin that initialize and utilize core audio player
-* cirrus-server: Cirrus server wrapper
+  * cirrus-client-core: implementation of core audio player
+  * cirrus-protobuf: contains protobuf definition and provide interoperability with Rust
+  * cirrus-tauri-plugin: Tauri plugin that initialize and utilize core audio player
+* cirrus-server: manages audio metadata and serves audio data
 
 ### Stack
 

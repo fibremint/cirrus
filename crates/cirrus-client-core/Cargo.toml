@@ -1,5 +1,5 @@
 [package]
-name = "cirrus-tauri-plugin"
+name = "cirrus-client-core"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,9 +7,16 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1"
-cirrus-client-lib = { path = "../client" }
-cirrus-grpc = { path = "../grpc" }
-http = "0.2"
-tauri = { version = "1.0.0-rc.4", default-features = false, features = [] }
+#bytes = "1"
+cirrus-protobuf = { path = "../cirrus-protobuf", features = ["client"] }
+cpal = "0.13"
+futures = "0.3"
 tokio = { version = "1.0", features = ["rt-multi-thread", "time", "macros", "fs"] }
+tonic = "0.6"
 serde = "1"
+#prost = "0.9"
+rubato = "0.12"
+ndarray = "0.15"
+
+#[build-dependencies]
+#tonic-build = "0.6"

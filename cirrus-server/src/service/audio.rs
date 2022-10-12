@@ -4,7 +4,7 @@ use tokio::sync::mpsc;
 use tonic::{Code, Request, Response, Status};
 use tokio_stream::wrappers::ReceiverStream;
 
-use cirrus_grpc::{
+use cirrus_protobuf::{
     api::{AudioMetaReq, AudioMetaRes, AudioDataReq, AudioDataRes, AudioLibraryReq, AudioTagRes},
     common::{RequestAction, Response as Res, ListRequest},
 
