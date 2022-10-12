@@ -351,11 +351,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd16c4719339c4530435d38e511904438d07cce7950afa3718a84ac36c10e89e"
 
 [[package]]
-name = "cirrus-client-lib"
+name = "cirrus-client-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "cirrus-grpc",
+ "cirrus-protobuf",
  "cpal",
  "futures",
  "ndarray",
@@ -366,9 +366,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "cirrus-grpc"
+name = "cirrus-protobuf"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "dunce",
  "prost",
  "serde",
  "tonic",
@@ -380,8 +382,8 @@ name = "cirrus-tauri-plugin"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "cirrus-client-lib",
- "cirrus-grpc",
+ "cirrus-client-core",
+ "cirrus-protobuf",
  "http",
  "serde",
  "tauri",
@@ -807,6 +809,12 @@ checksum = "bde03329ae10e79ede66c9ce4dc930aa8599043b0743008548680f25b91502d6"
 dependencies = [
  "dtoa",
 ]
+
+[[package]]
+name = "dunce"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0bd4b30a6560bbd9b4620f4de34c3f14f60848e58a9b7216801afcb4c7b31c3c"
 
 [[package]]
 name = "either"

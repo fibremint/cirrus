@@ -1,5 +1,5 @@
 [package]
-name = "cirrus-grpc"
+name = "cirrus-protobuf"
 version = "0.1.0"
 edition = "2021"
 
@@ -11,8 +11,11 @@ prost = "0.9"
 serde = "1"
 
 [build-dependencies]
+anyhow = "1"
+dunce = "1"
 tonic-build = "0.6"
 
-#[features]
-#only-server = []
-#only-client = []
+[features]
+#default = ["server", "client"]
+server = []
+client = []

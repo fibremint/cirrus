@@ -6,7 +6,7 @@ use std::{
 use aiff::reader::AiffReader;
 use bson::oid::ObjectId;
 use chrono::{DateTime, NaiveDateTime, Utc, TimeZone};
-use cirrus_grpc::api::{
+use cirrus_protobuf::api::{
     AudioDataRes, AudioMetaRes, AudioTagRes
 };
 // use futures::{TryStreamExt};

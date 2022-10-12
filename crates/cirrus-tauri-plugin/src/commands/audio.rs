@@ -1,10 +1,10 @@
 use tauri::{State, Window, Runtime};
 
-use cirrus_client_lib::{
+use cirrus_client_core::{
     request,
     audio_player::state::PlaybackStatus
 };
-use cirrus_grpc::api::AudioTagRes;
+use cirrus_protobuf::api::AudioTagRes;
 
 use crate::state::AppState;
 

@@ -1,7 +1,7 @@
 use futures::StreamExt;
 use tonic::{Request, Response, Status};
 
-use cirrus_grpc::{
+use cirrus_protobuf::{
     api::{AudioDataReq, AudioDataRes, AudioMetaReq, AudioMetaRes, AudioTagRes},
     common::ListRequest,
     audio_data_svc_client::AudioDataSvcClient,
