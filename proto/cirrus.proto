@@ -7,7 +7,7 @@ import "common/list.proto";
 
 service AudioDataSvc {
     rpc GetMeta (cirrus.api.AudioMetaReq) returns (cirrus.api.AudioMetaRes) {}
-    rpc GetData (cirrus.api.AudioDataReq) returns (cirrus.api.AudioDataRes) {}
+    rpc GetData (cirrus.api.AudioDataReq) returns (stream cirrus.api.AudioDataRes) {}
 }
 
 service AudioLibrarySvc {

@@ -6,6 +6,8 @@ use std::{
     }, 
     collections::VecDeque
 };
+use futures::StreamExt;
+
 use rubato::Resampler;
 
 use crate::{dto::AudioSource, request};
@@ -141,35 +143,37 @@ impl AudioSample {
                 self.source.metadata.sample_rate as f32
         ).floor() as usize;
 
-        let sample_res = request::get_audio_data(
+        let mut audio_data_stream = request::get_audio_data_stream(
             &self.source.id,
             std::cmp::min(buf_req_pos as u32, self.source.metadata.sample_frames as u32),
             std::cmp::min(buf_req_pos as u32 + req_samples, self.source.metadata.sample_frames as u32)
         ).await?;
 
-        // println!("parse audio data response as audio sample");
         // ref: https://users.rust-lang.org/t/convert-slice-u8-to-u8-4/63836
-        let sample_res = sample_res.into_inner();
         let chunks_per_channel = 2;
         let channel = 2;
-
-        let mut remain_sample_raw = self.remain_sample_raw.write().unwrap();
-        
-        let mut p_samples: Vec<u8> = remain_sample_raw.drain(..).collect();
-        p_samples.extend_from_slice(&sample_res.content);
-        
-        let mut chunks_items_iter = p_samples.chunks_exact(chunks_per_channel * channel * self.resampler_frames_input_next);
         let mut channel_sample_buf_extend_cnt: usize = 0;
+        let sample_drain_len = chunks_per_channel * chunks_per_channel * self.resampler_frames_input_next;
 
-        while let Some(chunk_items) = chunks_items_iter.next() {
+        while let Some(data) = audio_data_stream.next().await {
+            let d = data.unwrap().content;
+            let mut remain_sample_raw = self.remain_sample_raw.write().unwrap();
+            remain_sample_raw.extend_from_slice(&d);
+            
+            if remain_sample_raw.len() < sample_drain_len {
+                continue;
+            }
+
             let mut input_buf: Vec<Vec<f32>> = Vec::with_capacity(channel);
 
             for _ in 0..channel {
                 input_buf.push(Vec::with_capacity(self.resampler_frames_input_next));
             }
 
-            let sample_items = chunk_items
-                .chunks(2)
+            let sample_items = remain_sample_raw
+                .drain(..sample_drain_len)
+                .collect::<Vec<u8>>()
+                .chunks(chunks_per_channel)
                 .map(|item| i16::from_be_bytes(item.try_into().unwrap()) as f32 / self.host_sample_rate as f32)
                 .collect::<Vec<f32>>();
 
@@ -196,10 +200,6 @@ impl AudioSample {
             channel_sample_buf_extend_cnt += resampled_wave[0].len();
         }
 
-        let remain_samples = chunks_items_iter.remainder();
-        remain_sample_raw.extend(remain_samples);
-
-        
         Ok(channel_sample_buf_extend_cnt)
     }
     
