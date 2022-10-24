@@ -6,7 +6,7 @@ use std::{
     }, 
     collections::VecDeque
 };
-use futures::StreamExt;
+use futures::{StreamExt, sink::drain};
 
 use rubato::Resampler;
 
@@ -54,7 +54,7 @@ impl AudioSample {
             source,
             sample_buffer: Arc::new(RwLock::new(sample_buffer)),
             current_sample_frame: Arc::new(AtomicUsize::new(0)),
-            buffer_status: Arc::new(AtomicUsize::new(AudioSampleStatus::FillBuffer as usize)),
+            buffer_status: Arc::new(AtomicUsize::new(AudioSampleStatus::StopFillBuffer as usize)),
             resampler: Arc::new(
                 RwLock::new(
                     resampler
@@ -101,42 +101,37 @@ impl AudioSample {
         let mut sample_buffer = self.sample_buffer.write().unwrap();
 
         let min_drain_buffer_len = std::cmp::min(sample_buffer[0].len(), drain_len);
+        let drain_delta = sample_buffer[0].len() as i32 - drain_len as i32;
 
         for ch_sample_buffer in sample_buffer.iter_mut() {
             ch_sample_buffer.drain(..min_drain_buffer_len);
         }
+
+        if drain_delta < 0 {
+            let mut remain_sample_raw = self.remain_sample_raw.write().unwrap();
+            remain_sample_raw.drain(..);
+            // let drain_remain_sample_raw_len = std::cmp::min(remain_sample_raw.len(), (drain_delta.abs() * 2 * 2) as usize);
+
+            // remain_sample_raw.drain(..drain_remain_sample_raw_len);
+        }
     }
 
     pub async fn fetch_buffer(
-        &self, 
-        buffer_margin: f32,
-        fetch_buffer_sec: f32,
+        &self,
+        playback_buffer_margin_sec: f32,
     ) -> Result<(), anyhow::Error> {
-        if AudioSampleStatus::StopFillBuffer == 
-            AudioSampleStatus::from(self.buffer_status.load(Ordering::Relaxed)) {
-                self.buffer_status.store(AudioSampleStatus::FillBuffer as usize, Ordering::Relaxed);
-            }
+        self.buffer_status.store(AudioSampleStatus::FillBuffer as usize, Ordering::Relaxed);
 
-        while AudioSampleStatus::FillBuffer == AudioSampleStatus::from(self.buffer_status.load(Ordering::Relaxed)) {
-            if self.get_remain_sample_buffer_sec() > buffer_margin {
-                break;
-            }
+        let fetch_buffer_sec = playback_buffer_margin_sec - self.get_remain_sample_buffer_sec();
+        let _ = self.get_buffer_for(fetch_buffer_sec).await?;
 
-            if self.get_current_playback_position_sec() + self.get_remain_sample_buffer_sec() + 0.1 > self.content_length {
-                break;
-            }
-
-            let fetched_sample_cnt = self.get_buffer_for(fetch_buffer_sec as u32 * 1000).await?;
-            if fetched_sample_cnt == 0 {
-                break;
-            }
-        }
+        self.buffer_status.store(AudioSampleStatus::StopFillBuffer as usize, Ordering::Relaxed);
         
         Ok(())
     }
 
-    pub async fn get_buffer_for(&self, ms: u32) -> Result<usize, anyhow::Error> {
-        let req_samples = ms * self.source.metadata.sample_rate / 1000;
+    pub async fn get_buffer_for(&self, sec: f32) -> Result<usize, anyhow::Error> {
+        let req_samples = (sec * self.source.metadata.sample_rate as f32) as u32;
         
         let buf_req_pos = (
             (self.get_current_playback_position_sec() + self.get_remain_sample_buffer_sec()) * 
@@ -156,26 +151,39 @@ impl AudioSample {
         let sample_drain_len = chunks_per_channel * chunks_per_channel * self.resampler_frames_input_next;
 
         while let Some(data) = audio_data_stream.next().await {
+            // let mut remain_sample_raw = self.remain_sample_raw.write().unwrap();
+
+            if  AudioSampleStatus::StopFillBuffer == AudioSampleStatus::from(self.buffer_status.load(Ordering::Relaxed)) {
+                println!("stop fill buffer");
+                
+                // drop(remain_sample_raw);
+                // self.drain_sample_buffer(drain_len)
+                // remain_sample_raw.drain(..);
+
+                return Ok(channel_sample_buf_extend_cnt);
+            }
+
             let d = data.unwrap().content;
             let mut remain_sample_raw = self.remain_sample_raw.write().unwrap();
             remain_sample_raw.extend_from_slice(&d);
             
             if remain_sample_raw.len() < sample_drain_len {
+                // drop(remain_sample_raw);
                 continue;
             }
-
-            let mut input_buf: Vec<Vec<f32>> = Vec::with_capacity(channel);
-
-            for _ in 0..channel {
-                input_buf.push(Vec::with_capacity(self.resampler_frames_input_next));
-            }
-
             let sample_items = remain_sample_raw
                 .drain(..sample_drain_len)
                 .collect::<Vec<u8>>()
                 .chunks(chunks_per_channel)
                 .map(|item| i16::from_be_bytes(item.try_into().unwrap()) as f32 / self.host_sample_rate as f32)
                 .collect::<Vec<f32>>();
+            drop(remain_sample_raw);
+
+            let mut input_buf: Vec<Vec<f32>> = Vec::with_capacity(channel);
+
+            for _ in 0..channel {
+                input_buf.push(Vec::with_capacity(self.resampler_frames_input_next));
+            }
 
             for sample_item in sample_items.chunks(2) {
                 for channel_idx in 0..channel {
@@ -185,12 +193,6 @@ impl AudioSample {
 
             let mut resampler = self.resampler.write().unwrap();
             let resampled_wave = resampler.process(input_buf.as_ref(), None).unwrap();
-
-            if  AudioSampleStatus::StopFillBuffer == AudioSampleStatus::from(self.buffer_status.load(Ordering::Relaxed)) {
-                println!("stop fill buffer");
-
-                return Ok(channel_sample_buf_extend_cnt);
-            }
 
             let mut sample_buffer = self.sample_buffer.write().unwrap();
             for (ch_idx, channel_sample_buffer) in sample_buffer.iter_mut().enumerate() {
