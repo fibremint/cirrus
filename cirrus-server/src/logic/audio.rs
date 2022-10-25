@@ -76,7 +76,7 @@ impl AudioFile {
         samples_size: usize,
         samples_start_idx: usize, 
         samples_end_idx: usize
-    ) -> Result<Vec<f32>, String> {
+    ) -> Result<Vec<u8>, String> {
     // ) -> Result<Vec<Vec<f32>>, String> {
     // ) -> Result<ArrayView3<f32>, String> {
         // let file = File::open(filepath)?;
@@ -114,10 +114,14 @@ impl AudioFile {
         let mut audio_data_part = Vec::<u8>::new();
         audio_data_part.extend_from_slice(&data.sound_data[peek_sound_data_start_idx..peek_sound_data_end_idx]);
         
-        let audio_data_part = audio_data_part
-            .chunks(2)
-            .map(|item| i16::from_be_bytes(item.try_into().unwrap()) as f32 / 44100 as f32)
-            .collect::<Vec<f32>>();
+        // let audio_data_part = audio_data_part
+        //     .chunks(2)
+        //     .map(|item| i16::from_be_bytes(item.try_into().unwrap()) as f32 / 44100 as f32);
+
+        // let audio_data_part = audio_data_part
+        //     .chunks(2)
+        //     .map(|item| i16::from_be_bytes(item.try_into().unwrap()) as f32 / 44100 as f32)
+        //     .collect::<Vec<f32>>();
 
         // let t = ArrayView3::from_shape(
         //     (samples_end_idx-samples_start_idx, 2, samples_size).strides((samples_size, 1, 2)), &audio_data_part).unwrap();

@@ -70,46 +70,7 @@ impl AudioDataSvc for AudioDataSvcImpl {
             Err(err) => return Err(Status::new(tonic::Code::Internal, err)),
         };
 
-        // let t = ArrayView3::from_shape(
-        //     (samples_end_idx-samples_start_idx, 2, samples_size).strides((samples_size*2, 1, 2)), &audio_data).unwrap();
-
-        // let l = t.len_of(Axis(0));
-        // for idx in 0..l {
-        //     let r = t.slice(s![idx, .., ..]);
-        //     // let r = t.slice(s![idx, .., ..]).into_shape((2, samples_size)).unwrap();
-        //     println!("{:?}", r);
-        //     let r2 = AudioChannelData {
-        //         content: Vec::from(r)
-        //         // content: Vec::from(r.to_slice().unwrap())
-        //     };
-        //     println!("{:?}", r2);
-        // }
-
         let channel_size = 2;
-
-        // let mut data_buf = Vec::with_capacity(channel_size);
-        // for _ in 0..channel_size {
-        //     data_buf.push(vec![0.; 0]);
-        // }
-
-        // let mut data_chunk_iter = audio_data.chunks(samples_size*channel_size);
-        // while let Some(sample_data) = data_chunk_iter.next() {
-        //     for ch_buf in data_buf.iter_mut() {
-        //         *ch_buf = vec![0.; sample_data.len()/channel_size];
-        //     }
-
-        //     for (sample_idx, sample_chunk) in sample_data.chunks(channel_size).enumerate() {
-        //         for ch_idx in 0..channel_size {
-        //             data_buf[ch_idx][sample_idx] = sample_chunk[ch_idx];
-        //         }
-        //     }
-
-        //     let t2 = data_buf.iter()
-        //         .map(|item| AudioChannelData {
-        //             content: item.to_owned()
-        //         })
-        //         .collect::<Vec<_>>();
-        // }
 
         tokio::spawn(async move {
             let mut data_buf = Vec::with_capacity(channel_size);
@@ -117,17 +78,33 @@ impl AudioDataSvc for AudioDataSvcImpl {
                 data_buf.push(vec![0.; 0]);
             }
     
-            let mut data_chunk_iter = audio_data.chunks(samples_size*channel_size);
+            let mut data_chunk_iter = audio_data.chunks(samples_size*channel_size*2);
+            // let mut data_chunk_iter = audio_data
+            //     .chunks(2)
+            //     .map(|item| i16::from_be_bytes(item.try_into().unwrap()) as f32 / 44100 as f32)
+            //     .collect();
+            // let mut data_chunk_iter = audio_data
+            //     .chunks(4)
             while let Some(sample_data) = data_chunk_iter.next() {
                 for ch_buf in data_buf.iter_mut() {
-                    *ch_buf = vec![0.; sample_data.len()/channel_size];
+                    *ch_buf = vec![0.; sample_data.len()/(channel_size*2)];
+                }
+
+                let sample_iter = sample_data
+                    .chunks(2)
+                    .map(|item| i16::from_be_bytes(item.try_into().unwrap()) as f32 / 44100 as f32);
+
+                for (sample_item_idx, sample_item) in sample_iter.enumerate() {
+                    let ch_idx = sample_item_idx % channel_size;
+                    let sample_idx = sample_item_idx / channel_size;
+                    data_buf[ch_idx][sample_idx] = sample_item;
                 }
     
-                for (sample_idx, sample_chunk) in sample_data.chunks(channel_size).enumerate() {
-                    for ch_idx in 0..channel_size {
-                        data_buf[ch_idx][sample_idx] = sample_chunk[ch_idx];
-                    }
-                }
+                // for (sample_idx, sample_chunk) in sample_iter.enumerate() {
+                //     for ch_idx in 0..channel_size {
+                //         data_buf[ch_idx][sample_idx] = sample_chunk[ch_idx];
+                //     }
+                // }
     
                 let audio_channel_data = data_buf.iter()
                     .map(|item| AudioChannelData {
