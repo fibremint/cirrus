@@ -1,19 +1,18 @@
 use std::{
     fs::File,
-    path::{Path, PathBuf}, collections::{HashMap, HashSet, hash_map::DefaultHasher}, hash::{Hash, Hasher}, ops::{Deref, DerefMut}, borrow::{BorrowMut, Borrow}, rc::Rc, sync::Arc,
+    path::{Path, PathBuf}, collections::{HashMap, HashSet},
 };
+use itertools::Itertools;
 
 use aiff::reader::AiffReader;
 use bson::oid::ObjectId;
-use chrono::{DateTime, NaiveDateTime, Utc, TimeZone};
+use chrono::{Utc, TimeZone};
 use cirrus_protobuf::api::{
-    AudioDataRes, AudioMetaRes, AudioTagRes, AudioChannelData
+    AudioMetaRes, AudioTagRes
 };
 
-use mongodb::{bson::{Document, doc}, options::FindOptions, results::DeleteResult};
-use tokio::sync::{Mutex, MutexGuard};
+use mongodb::bson;
 use walkdir::{DirEntry, WalkDir};
-use ndarray::prelude::*;
 
 use crate::{
     util, 
@@ -27,7 +26,6 @@ impl AudioFile {
         mongodb_client: mongodb::Client,
         audio_tag_id: &str
     ) -> Result<AudioMetaRes, String> {
-        // let file = File::open(filepath)?;
         let audio_tag_id = ObjectId::parse_str(audio_tag_id).unwrap();
         let audio_file = model::AudioFile::find_by_audio_tag_id(mongodb_client.clone(), audio_tag_id).await.unwrap();
 
@@ -36,21 +34,18 @@ impl AudioFile {
             None => return Err(String::from("failed to retrieve audio file information")),
         };
 
-        // let audio_file_path = util::path::materialized_to_path(audio_file.get_path())
-
         let file = match File::open(audio_file.get_path()) {
             Ok(file) => file,
-            Err(err) => return Err(String::from("failed to load file")),
+            Err(_) => return Err(String::from("failed to load file")),
         };
 
         let mut reader = AiffReader::new(file);
-        // reader.read().unwrap();
         match reader.read() {
             Ok(_) => (),
             Err(err) => match err {
-                aiff::chunks::ChunkError::InvalidID(id) => return Err(String::from("invalid id")),
-                aiff::chunks::ChunkError::InvalidFormType(id) => return Err(String::from("invalid form type")),
-                aiff::chunks::ChunkError::InvalidID3Version(ver) => return Err(String::from("invalid id3 version")),
+                aiff::chunks::ChunkError::InvalidID(_id) => return Err(String::from("invalid id")),
+                aiff::chunks::ChunkError::InvalidFormType(_id) => return Err(String::from("invalid form type")),
+                aiff::chunks::ChunkError::InvalidID3Version(_ver) => return Err(String::from("invalid id3 version")),
                 aiff::chunks::ChunkError::InvalidSize(exp, actual) => return Err(format!("invalid size, expected: {}, actual: {}", exp, actual)),
                 aiff::chunks::ChunkError::InvalidData(msg) => return Err(msg.to_string()),
             },
@@ -77,9 +72,6 @@ impl AudioFile {
         samples_start_idx: usize, 
         samples_end_idx: usize
     ) -> Result<Vec<u8>, String> {
-    // ) -> Result<Vec<Vec<f32>>, String> {
-    // ) -> Result<ArrayView3<f32>, String> {
-        // let file = File::open(filepath)?;
         let audio_tag_id = ObjectId::parse_str(audio_tag_id).unwrap();
         let audio_file = model::AudioFile::find_by_audio_tag_id(mongodb_client.clone(), audio_tag_id).await.unwrap();
 
@@ -90,17 +82,16 @@ impl AudioFile {
 
         let file = match File::open(audio_file.get_path()) {
             Ok(file) => file,
-            Err(err) => return Err(String::from("failed to load file")),
+            Err(_err) => return Err(String::from("failed to load file")),
         };
     
         let mut reader = AiffReader::new(file);
-        // reader.read().unwrap();
         match reader.read() {
             Ok(_) => (),
             Err(err) => match err {
-                aiff::chunks::ChunkError::InvalidID(id) => return Err(String::from("invalid id")),
-                aiff::chunks::ChunkError::InvalidFormType(id) => return Err(String::from("invalid form type")),
-                aiff::chunks::ChunkError::InvalidID3Version(ver) => return Err(String::from("invalid id3 version")),
+                aiff::chunks::ChunkError::InvalidID(_id) => return Err(String::from("invalid id")),
+                aiff::chunks::ChunkError::InvalidFormType(_id) => return Err(String::from("invalid form type")),
+                aiff::chunks::ChunkError::InvalidID3Version(_ver) => return Err(String::from("invalid id3 version")),
                 aiff::chunks::ChunkError::InvalidSize(exp, actual) => return Err(format!("invalid size, expected: {}, actual: {}", exp, actual)),
                 aiff::chunks::ChunkError::InvalidData(msg) => return Err(msg.to_string()),
             },
@@ -114,37 +105,87 @@ impl AudioFile {
         let mut audio_data_part = Vec::<u8>::new();
         audio_data_part.extend_from_slice(&data.sound_data[peek_sound_data_start_idx..peek_sound_data_end_idx]);
         
-        // let audio_data_part = audio_data_part
-        //     .chunks(2)
-        //     .map(|item| i16::from_be_bytes(item.try_into().unwrap()) as f32 / 44100 as f32);
-
-        // let audio_data_part = audio_data_part
-        //     .chunks(2)
-        //     .map(|item| i16::from_be_bytes(item.try_into().unwrap()) as f32 / 44100 as f32)
-        //     .collect::<Vec<f32>>();
-
-        // let t = ArrayView3::from_shape(
-        //     (samples_end_idx-samples_start_idx, 2, samples_size).strides((samples_size, 1, 2)), &audio_data_part).unwrap();
-        
-            // .collect::<Vec<f32>>();
-
-        // let mut peek_sound_data = Vec::with_capacity(2);
-        // for _ in 0..2 {
-        //     peek_sound_data.push(Vec::with_capacity(samples_size * (samples_end_idx - samples_start_idx)));
-        // }
-
-        // for ch_audio_data_part in audio_data_part.chunks(2) {
-        //     for channel_idx in 0..2 {
-        //         peek_sound_data[channel_idx].push(ch_audio_data_part[channel_idx]);
-        //     }
-        // }
-    
-        // Ok(AudioDataRes {
-        //     content: audio_data_part
-        // })
-
-        // Ok(peek_sound_data)
         Ok(audio_data_part)
+    }
+}
+
+pub struct AudioSampleIterator {
+    samples_size: usize,
+    channel_size: usize,
+    sample_buf: Vec<Vec<f32>>,
+    audio_raw_data: Vec<u8>,
+}
+
+impl AudioSampleIterator {
+    pub fn new(
+        samples_size: usize,
+        channel_size: usize,
+        audio_raw_data: Vec<u8>
+    ) -> Self {
+        let mut sample_buf = Vec::with_capacity(channel_size);
+        for _ in 0..channel_size {
+            sample_buf.push(vec![0.; 0]);
+        }
+
+        Self {
+            samples_size,
+            channel_size,
+            sample_buf,
+            audio_raw_data,
+        }
+    }
+
+    fn reset_buf(&mut self, ch_buf_size: usize) {
+        for sample_ch_buf in self.sample_buf.iter_mut() {
+            *sample_ch_buf = vec![0.; ch_buf_size];
+        }
+    }
+
+    fn drain_sample_buffer(&mut self) -> Vec<Vec<f32>> {
+        let mut drained_sample_buf = Vec::with_capacity(self.channel_size);
+        for sample_ch_buf in self.sample_buf.iter_mut() {
+            drained_sample_buf.push(sample_ch_buf.drain(..).collect_vec());
+        }
+
+        drained_sample_buf
+    }
+}
+
+impl Iterator for AudioSampleIterator {
+    type Item = Vec<Vec<f32>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let drain_len = std::cmp::min(
+            self.samples_size * self.channel_size * 2, 
+            self.audio_raw_data.len()
+        );
+
+        if drain_len == 0 {
+            return None
+        }
+
+        self.reset_buf(drain_len/(self.channel_size*2));
+
+        {
+            let drain_raw_audio_data = self.audio_raw_data.drain(..drain_len);
+            // ref: https://stackoverflow.com/a/66449378
+            let binding = drain_raw_audio_data
+                .into_iter()
+                .chunks(2);
+            let sample_iter = binding
+                .into_iter()
+                .map(|item| 
+                    i16::from_be_bytes(item.collect_vec().try_into().unwrap()) as f32 / 44100 as f32);
+            
+            for (sample_item_idx, sample_item) in sample_iter.enumerate() {
+                let ch_idx = sample_item_idx % self.channel_size;
+                let sample_idx = sample_item_idx / self.channel_size;
+                self.sample_buf[ch_idx][sample_idx] = sample_item;
+            }
+        }
+
+        Some(self.drain_sample_buffer())
+        
     }
 }
 
@@ -235,7 +276,7 @@ impl AudioLibrary {
 
         match library_create_res {
             Ok(res) => return Ok(format!("{:?}", res.inserted_id)),
-            Err(err) => return Err(format!("failed to create library {:?}", library_root)),
+            Err(_err) => return Err(format!("failed to create library {:?}", library_root)),
         }
     }
 
@@ -364,11 +405,11 @@ impl AudioLibrary {
                         .filter_map(|item| item.audio_tag_refer)
                         .collect();
 
-                    let audio_tag_delete_res = model::AudioTag::delete_by_ids(mongodb_client.clone(), &delete_audio_tag_ids).await.unwrap();
+                    let _audio_tag_delete_res = model::AudioTag::delete_by_ids(mongodb_client.clone(), &delete_audio_tag_ids).await.unwrap();
 
-                    let audio_file_delete_res = model::AudioFile::delete_by_selfs(mongodb_client.clone(), &audio_files).await.unwrap();
+                    let _audio_file_delete_res = model::AudioFile::delete_by_selfs(mongodb_client.clone(), &audio_files).await.unwrap();
 
-                    let library_delete_res = model::AudioLibrary::delete_by_path(mongodb_client.clone(), delted_library_path).await.unwrap();
+                    let _library_delete_res = model::AudioLibrary::delete_by_path(mongodb_client.clone(), delted_library_path).await.unwrap();
                 }
             }
 
@@ -460,7 +501,7 @@ impl AudioLibrary {
                     }
 
                     let local_library_modified_timestamp = util::path::get_timestamp(&local_library_path);
-                    let update_local_library_res = model::AudioLibrary::update_modified_timestamp(mongodb_client.clone(), &updated_local_library.id, local_library_modified_timestamp).await;
+                    let _update_local_library_res = model::AudioLibrary::update_modified_timestamp(mongodb_client.clone(), &updated_local_library.id, local_library_modified_timestamp).await;
                 }
             }
 
@@ -492,7 +533,7 @@ impl AudioLibrary {
             None => Some(ObjectId::new())
         };
 
-        let audio_metadata = if let Some(id3v2_tag) = aiff.id3v2_tag {
+        let _audio_metadata = if let Some(id3v2_tag) = aiff.id3v2_tag {
             let date_recorded = match id3v2_tag.date_recorded() {
                 Some(datetime) => {
                     let month = datetime.month.unwrap_or_else(|| 1u8);
