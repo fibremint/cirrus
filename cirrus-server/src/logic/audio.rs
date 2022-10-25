@@ -13,6 +13,7 @@ use cirrus_protobuf::api::{
 use mongodb::{bson::{Document, doc}, options::FindOptions, results::DeleteResult};
 use tokio::sync::{Mutex, MutexGuard};
 use walkdir::{DirEntry, WalkDir};
+use ndarray::prelude::*;
 
 use crate::{
     util, 
@@ -75,7 +76,9 @@ impl AudioFile {
         samples_size: usize,
         samples_start_idx: usize, 
         samples_end_idx: usize
-    ) -> Result<Vec<Vec<f32>>, String> {
+    ) -> Result<Vec<f32>, String> {
+    // ) -> Result<Vec<Vec<f32>>, String> {
+    // ) -> Result<ArrayView3<f32>, String> {
         // let file = File::open(filepath)?;
         let audio_tag_id = ObjectId::parse_str(audio_tag_id).unwrap();
         let audio_file = model::AudioFile::find_by_audio_tag_id(mongodb_client.clone(), audio_tag_id).await.unwrap();
@@ -116,22 +119,28 @@ impl AudioFile {
             .map(|item| i16::from_be_bytes(item.try_into().unwrap()) as f32 / 44100 as f32)
             .collect::<Vec<f32>>();
 
-        let mut peek_sound_data = Vec::with_capacity(2);
-        for _ in 0..2 {
-            peek_sound_data.push(Vec::with_capacity(samples_size * (samples_end_idx - samples_start_idx)));
-        }
+        // let t = ArrayView3::from_shape(
+        //     (samples_end_idx-samples_start_idx, 2, samples_size).strides((samples_size, 1, 2)), &audio_data_part).unwrap();
+        
+            // .collect::<Vec<f32>>();
 
-        for ch_audio_data_part in audio_data_part.chunks(2) {
-            for channel_idx in 0..2 {
-                peek_sound_data[channel_idx].push(ch_audio_data_part[channel_idx]);
-            }
-        }
+        // let mut peek_sound_data = Vec::with_capacity(2);
+        // for _ in 0..2 {
+        //     peek_sound_data.push(Vec::with_capacity(samples_size * (samples_end_idx - samples_start_idx)));
+        // }
+
+        // for ch_audio_data_part in audio_data_part.chunks(2) {
+        //     for channel_idx in 0..2 {
+        //         peek_sound_data[channel_idx].push(ch_audio_data_part[channel_idx]);
+        //     }
+        // }
     
         // Ok(AudioDataRes {
         //     content: audio_data_part
         // })
 
-        Ok(peek_sound_data)
+        // Ok(peek_sound_data)
+        Ok(audio_data_part)
     }
 }
 

@@ -3,6 +3,7 @@ use std::path::Path;
 use tokio::sync::mpsc;
 use tonic::{Code, Request, Response, Status};
 use tokio_stream::wrappers::ReceiverStream;
+use ndarray::prelude::*;
 
 use cirrus_protobuf::{
     api::{AudioMetaReq, AudioMetaRes, AudioDataReq, AudioDataRes, AudioLibraryReq, AudioTagRes, AudioChannelData},
@@ -69,39 +70,118 @@ impl AudioDataSvc for AudioDataSvcImpl {
             Err(err) => return Err(Status::new(tonic::Code::Internal, err)),
         };
 
+        // let t = ArrayView3::from_shape(
+        //     (samples_end_idx-samples_start_idx, 2, samples_size).strides((samples_size*2, 1, 2)), &audio_data).unwrap();
+
+        // let l = t.len_of(Axis(0));
+        // for idx in 0..l {
+        //     let r = t.slice(s![idx, .., ..]);
+        //     // let r = t.slice(s![idx, .., ..]).into_shape((2, samples_size)).unwrap();
+        //     println!("{:?}", r);
+        //     let r2 = AudioChannelData {
+        //         content: Vec::from(r)
+        //         // content: Vec::from(r.to_slice().unwrap())
+        //     };
+        //     println!("{:?}", r2);
+        // }
+
+        let channel_size = 2;
+
+        // let mut data_buf = Vec::with_capacity(channel_size);
+        // for _ in 0..channel_size {
+        //     data_buf.push(vec![0.; 0]);
+        // }
+
+        // let mut data_chunk_iter = audio_data.chunks(samples_size*channel_size);
+        // while let Some(sample_data) = data_chunk_iter.next() {
+        //     for ch_buf in data_buf.iter_mut() {
+        //         *ch_buf = vec![0.; sample_data.len()/channel_size];
+        //     }
+
+        //     for (sample_idx, sample_chunk) in sample_data.chunks(channel_size).enumerate() {
+        //         for ch_idx in 0..channel_size {
+        //             data_buf[ch_idx][sample_idx] = sample_chunk[ch_idx];
+        //         }
+        //     }
+
+        //     let t2 = data_buf.iter()
+        //         .map(|item| AudioChannelData {
+        //             content: item.to_owned()
+        //         })
+        //         .collect::<Vec<_>>();
+        // }
+
         tokio::spawn(async move {
+            let mut data_buf = Vec::with_capacity(channel_size);
+            for _ in 0..channel_size {
+                data_buf.push(vec![0.; 0]);
+            }
+    
+            let mut data_chunk_iter = audio_data.chunks(samples_size*channel_size);
+            while let Some(sample_data) = data_chunk_iter.next() {
+                for ch_buf in data_buf.iter_mut() {
+                    *ch_buf = vec![0.; sample_data.len()/channel_size];
+                }
+    
+                for (sample_idx, sample_chunk) in sample_data.chunks(channel_size).enumerate() {
+                    for ch_idx in 0..channel_size {
+                        data_buf[ch_idx][sample_idx] = sample_chunk[ch_idx];
+                    }
+                }
+    
+                let audio_channel_data = data_buf.iter()
+                    .map(|item| AudioChannelData {
+                        content: item.to_owned()
+                    })
+                    .collect::<Vec<_>>();
+
+                if let Err(_) = tx.send(Ok(AudioDataRes {
+                    audio_channel_data
+                })).await {
+                    // println!("WARN: closed the stream of send audio data");
+                }
+            }
+
+            // while let Some(chunk_item) = data_chunk_iter.next() {
+            //     if let Err(_) = tx.send(Ok(AudioDataRes {
+            //         content: chunk_item.to_vec()
+            //     })).await {
+            //         // println!("WARN: closed the stream of send audio data");
+            //     }
+            // }
+
             // let a = AudioDataRes {
             //     audio_channel_data: Vec::new()
             // };
             // let audio_channel_data = res.into_inner().audio_channel_data;
             // let mut data_chunk_iter = content.chunks(1024);
-            let mut audio_data_ch_chunks = audio_data.iter().map(|item| item.chunks(samples_size)).collect::<Vec<_>>();
+            // let mut audio_data_ch_chunks = audio_data.iter().map(|item| item.chunks(samples_size)).collect::<Vec<_>>();
 
-            loop {
-                // let mut audio_channel_data: Vec<Vec<f32>> = Vec::with_capacity(2);
-                let mut audio_channel_data: Vec<AudioChannelData> = Vec::with_capacity(2);
-                // for _ in 0..2 {
-                //     // audio_channel_data.push(Vec::with_capacity(1024));
-                //     audio_channel_data.push(AudioChannelData {
-                //         content: None
-                //     });
-                // }
+            // loop {
+            //     // let mut audio_channel_data: Vec<Vec<f32>> = Vec::with_capacity(2);
+            //     let mut audio_channel_data: Vec<AudioChannelData> = Vec::with_capacity(2);
+            //     // for _ in 0..2 {
+            //     //     // audio_channel_data.push(Vec::with_capacity(1024));
+            //     //     audio_channel_data.push(AudioChannelData {
+            //     //         content: None
+            //     //     });
+            //     // }
 
-                for ch_chunk in audio_data_ch_chunks.iter_mut() {
-                    match ch_chunk.next() {
-                        Some(item) => audio_channel_data.push(AudioChannelData {
-                            content: item.to_vec()
-                        }),
-                        None => return
-                    }
-                }
+            //     for ch_chunk in audio_data_ch_chunks.iter_mut() {
+            //         match ch_chunk.next() {
+            //             Some(item) => audio_channel_data.push(AudioChannelData {
+            //                 content: item.to_vec()
+            //             }),
+            //             None => return
+            //         }
+            //     }
 
-                if let Err(_) = tx.send(Ok(AudioDataRes {
-                    audio_channel_data: audio_channel_data.to_vec()
-                })).await {
-                    // println!("WARN: closed the stream of send audio data");
-                }
-            }
+            //     if let Err(_) = tx.send(Ok(AudioDataRes {
+            //         audio_channel_data: audio_channel_data.to_vec()
+            //     })).await {
+            //         // println!("WARN: closed the stream of send audio data");
+            //     }
+            // }
 
             // while let Some(chunk_item) = data_chunk_iter.next() {
             //     if let Err(_) = tx.send(Ok(AudioDataRes {
