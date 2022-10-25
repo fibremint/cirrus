@@ -22,14 +22,20 @@ pub async fn get_audio_meta(audio_tag_id: &str) -> Result<Response<AudioMetaRes>
     Ok(response)
 }
 
-pub async fn get_audio_data_stream(audio_tag_id: &str, sample_pos_start: u32, sample_pos_end: u32) -> Result<Streaming<AudioDataRes>, anyhow::Error> {
+pub async fn get_audio_data_stream(
+    audio_tag_id: &str,
+    samples_size: u32,
+    samples_start_idx: u32, 
+    samples_end_idx: u32
+) -> Result<Streaming<AudioDataRes>, anyhow::Error> {
     let mut client = AudioDataSvcClient::connect("http://127.0.0.1:50000").await?;
 
     let request = Request::new({
         AudioDataReq {
             audio_tag_id: audio_tag_id.to_string(),
-            byte_start: sample_pos_start,
-            byte_end: sample_pos_end,
+            samples_size,
+            samples_start_idx,
+            samples_end_idx,
         }
     });
 

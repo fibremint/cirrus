@@ -2,13 +2,20 @@ use std::{
     sync::{
         Arc, 
         RwLock, 
-        atomic::{AtomicUsize, Ordering}
+        atomic::{AtomicUsize, Ordering}, Mutex
     }, 
     collections::VecDeque
 };
-use futures::{StreamExt, sink::drain};
+
+
+use std::iter::Iterator;
+
+use anyhow::anyhow;
+use futures::StreamExt;
 
 use rubato::Resampler;
+
+// use ndarray::{prelude::*, AssignElem};
 
 use crate::{dto::AudioSource, request};
 
@@ -16,17 +23,17 @@ use super::state::AudioSampleStatus;
 
 pub struct AudioSample {
     pub source: AudioSource,
-    sample_buffer: Arc<RwLock<Vec<VecDeque<f32>>>>,
+    sample_buffer: RwLock<Vec<VecDeque<f32>>>,
     current_sample_frame: Arc<AtomicUsize>,
     pub buffer_status: Arc<AtomicUsize>,
-    resampler: Arc<RwLock<rubato::FftFixedInOut<f32>>>,
+    resampler: Mutex<rubato::FftFixedInOut<f32>>,
     pub resampler_frames_input_next: usize,
     pub resampler_frames_output_next: usize,
-    remain_sample_raw: Arc<RwLock<Vec<u8>>>,
-    // resampled_sample_frames: usize,
+    remain_sample_raw: Mutex<Vec<u8>>,
     host_sample_rate: u32,
     host_output_channels: usize,
     pub content_length: f32,
+    last_buf_req_pos: Arc<AtomicUsize>,
 }
 
 impl AudioSample {
@@ -42,7 +49,6 @@ impl AudioSample {
         let resampler_frames_output_next = resampler.output_frames_next();
 
         let mut sample_buffer: Vec<VecDeque<f32>> = Vec::with_capacity(2);
-
         for _ in 0..host_output_channels {
             sample_buffer.push(VecDeque::new());
         }
@@ -52,20 +58,17 @@ impl AudioSample {
 
         Self {
             source,
-            sample_buffer: Arc::new(RwLock::new(sample_buffer)),
+            sample_buffer: RwLock::new(sample_buffer),
             current_sample_frame: Arc::new(AtomicUsize::new(0)),
-            buffer_status: Arc::new(AtomicUsize::new(AudioSampleStatus::StopFillBuffer as usize)),
-            resampler: Arc::new(
-                RwLock::new(
-                    resampler
-                )
-            ),
+            buffer_status: Arc::new(AtomicUsize::new(AudioSampleStatus::DoneFillBuffer as usize)),
+            resampler: Mutex::new(resampler),
             resampler_frames_input_next,
             resampler_frames_output_next,
-            remain_sample_raw: Arc::new(RwLock::new(Vec::new())),
+            remain_sample_raw: Mutex::new(Vec::new()),
             host_sample_rate,
             host_output_channels,
             content_length,
+            last_buf_req_pos: Arc::new(AtomicUsize::new(0))
         }
     }
 
@@ -97,6 +100,10 @@ impl AudioSample {
         self.current_sample_frame.store(sample_frame_idx, Ordering::SeqCst);
     }
 
+    pub fn set_playback_position(&mut self) {
+        todo!()
+    }
+
     pub fn drain_sample_buffer(&self, drain_len: usize) {
         let mut sample_buffer = self.sample_buffer.write().unwrap();
 
@@ -108,7 +115,7 @@ impl AudioSample {
         }
 
         if drain_delta < 0 {
-            let mut remain_sample_raw = self.remain_sample_raw.write().unwrap();
+            let mut remain_sample_raw = self.remain_sample_raw.lock().unwrap();
             remain_sample_raw.drain(..);
             // let drain_remain_sample_raw_len = std::cmp::min(remain_sample_raw.len(), (drain_delta.abs() * 2 * 2) as usize);
 
@@ -120,93 +127,101 @@ impl AudioSample {
         &self,
         playback_buffer_margin_sec: f32,
     ) -> Result<(), anyhow::Error> {
-        self.buffer_status.store(AudioSampleStatus::FillBuffer as usize, Ordering::Relaxed);
+        self.buffer_status.store(AudioSampleStatus::StartFillBuffer as usize, Ordering::SeqCst);
 
         let fetch_buffer_sec = playback_buffer_margin_sec - self.get_remain_sample_buffer_sec();
-        let _ = self.get_buffer_for(fetch_buffer_sec).await?;
+        if let Err(_) = self.get_buffer_for(fetch_buffer_sec).await {
+            // println!("batch buffer error: {:?}", e);
+        }
 
-        self.buffer_status.store(AudioSampleStatus::StopFillBuffer as usize, Ordering::Relaxed);
+        self.buffer_status.store(AudioSampleStatus::DoneFillBuffer as usize, Ordering::SeqCst);
         
         Ok(())
     }
 
-    pub async fn get_buffer_for(&self, sec: f32) -> Result<usize, anyhow::Error> {
-        let req_samples = (sec * self.source.metadata.sample_rate as f32) as u32;
+    pub async fn get_buffer_for(&self, sec: f32) -> Result<(), anyhow::Error> {
+        let buf_req_start_idx = self.last_buf_req_pos.load(Ordering::SeqCst) as u32;
+        let buf_req_len = (
+            (sec * self.source.metadata.sample_rate as f32) / self.resampler_frames_input_next as f32
+        ).floor() as u32;
         
-        let buf_req_pos = (
-            (self.get_current_playback_position_sec() + self.get_remain_sample_buffer_sec()) * 
-                self.source.metadata.sample_rate as f32
-        ).floor() as usize;
-
         let mut audio_data_stream = request::get_audio_data_stream(
             &self.source.id,
-            std::cmp::min(buf_req_pos as u32, self.source.metadata.sample_frames as u32),
-            std::cmp::min(buf_req_pos as u32 + req_samples, self.source.metadata.sample_frames as u32)
+            self.resampler_frames_input_next as u32,
+            buf_req_start_idx,
+            buf_req_start_idx + buf_req_len
         ).await?;
 
         // ref: https://users.rust-lang.org/t/convert-slice-u8-to-u8-4/63836
-        let chunks_per_channel = 2;
-        let channel = 2;
-        let mut channel_sample_buf_extend_cnt: usize = 0;
-        let sample_drain_len = chunks_per_channel * chunks_per_channel * self.resampler_frames_input_next;
+        let channels = 2;
 
         while let Some(data) = audio_data_stream.next().await {
-            // let mut remain_sample_raw = self.remain_sample_raw.write().unwrap();
+            let mut sample_items = Vec::with_capacity(channels);
+            for ch_data in data.unwrap().audio_channel_data.into_iter() {
+                sample_items.push(ch_data.content);
+            }
 
-            if  AudioSampleStatus::StopFillBuffer == AudioSampleStatus::from(self.buffer_status.load(Ordering::Relaxed)) {
+            let mut resampler = self.resampler.lock().unwrap();
+            let mut resampler_output_buffer = resampler.output_buffer_allocate();
+
+            resampler.process_into_buffer(&sample_items, &mut resampler_output_buffer, None).unwrap();
+
+            if  AudioSampleStatus::DoneFillBuffer == AudioSampleStatus::from(self.buffer_status.load(Ordering::Relaxed)) {
                 println!("stop fill buffer");
                 
-                // drop(remain_sample_raw);
-                // self.drain_sample_buffer(drain_len)
-                // remain_sample_raw.drain(..);
-
-                return Ok(channel_sample_buf_extend_cnt);
+                return Err(anyhow!("fill buffer interrupted"));
             }
-
-            let d = data.unwrap().content;
-            let mut remain_sample_raw = self.remain_sample_raw.write().unwrap();
-            remain_sample_raw.extend_from_slice(&d);
-            
-            if remain_sample_raw.len() < sample_drain_len {
-                // drop(remain_sample_raw);
-                continue;
-            }
-            let sample_items = remain_sample_raw
-                .drain(..sample_drain_len)
-                .collect::<Vec<u8>>()
-                .chunks(chunks_per_channel)
-                .map(|item| i16::from_be_bytes(item.try_into().unwrap()) as f32 / self.host_sample_rate as f32)
-                .collect::<Vec<f32>>();
-            drop(remain_sample_raw);
-
-            let mut input_buf: Vec<Vec<f32>> = Vec::with_capacity(channel);
-
-            for _ in 0..channel {
-                input_buf.push(Vec::with_capacity(self.resampler_frames_input_next));
-            }
-
-            for sample_item in sample_items.chunks(2) {
-                for channel_idx in 0..channel {
-                    input_buf[channel_idx].push(sample_item[channel_idx]);
-                }
-            }
-
-            let mut resampler = self.resampler.write().unwrap();
-            let resampled_wave = resampler.process(input_buf.as_ref(), None).unwrap();
 
             let mut sample_buffer = self.sample_buffer.write().unwrap();
             for (ch_idx, channel_sample_buffer) in sample_buffer.iter_mut().enumerate() {
-                channel_sample_buffer.extend(resampled_wave.get(ch_idx).unwrap());
+                // channel_sample_buffer.extend(resampled_wave.get(ch_idx).unwrap());
+                channel_sample_buffer.extend(resampler_output_buffer.get(ch_idx).unwrap())
             }
 
-            channel_sample_buf_extend_cnt += resampled_wave[0].len();
+            let buf_req_start_idx = self.last_buf_req_pos.load(Ordering::SeqCst);
+            self.last_buf_req_pos.store(
+                buf_req_start_idx + 1, 
+                Ordering::SeqCst
+            );
         }
 
-        Ok(channel_sample_buf_extend_cnt)
+        Ok(())
     }
     
     pub fn play_for(&self, output: &mut [f32]) {
         // let mut sample_buffer = self.sample_buffer.write().unwrap();
+        // let ch_drain_len = std::cmp::min(sample_buffer[0].len(), output.len()/2);
+        // // ref: https://github.com/rust-ndarray/ndarray/issues/419#issuecomment-368352024
+        // // let t = sample_buffer.into_iter().take(ch_drain_len).collect::<Vec<_>>();
+        // // let mut t = Array::from_iter(output.iter().cloned());
+        // // drop(sample_buffer);
+        // let mut o = ArrayViewMut2::from_shape(
+        //     (2, output.len()/2).strides((1, 2)),
+        //     output
+        // ).unwrap();
+
+        // for ch_idx in 0..2 {
+        //     // let d = sample_buffer[ch_idx].drain(..ch_drain_len).collect::<&[f32]>();
+            
+        //     let a = sample_buffer[ch_idx]
+        //         .drain(..ch_drain_len)
+        //         .map(|item| item);
+        //     let mut a2 = Array::from_iter(a);
+        //     let mut ch = o.slice_mut(s![ch_idx, ..]);
+        //     ch.assign_elem(a2.view_mut());
+        //     // o.slice_mut(s![[ch_idx, ..]]) = a;
+        //     // o[s![ch_idx, ..]] = sample_buffer[ch_idx].drain(..ch_drain_len).collect::<&[f32]>();
+        // }
+
+        // let current_sample_frame = self.current_sample_frame.load(Ordering::SeqCst);
+        // self.current_sample_frame.store(
+        //     current_sample_frame + ch_drain_len, 
+        //     Ordering::SeqCst
+        // );
+
+        // for ch in o.axis_chunks_iter(axis, size) {
+
+        // }
 
         for output_channel_frame in output.chunks_mut(self.host_output_channels) {  
             let mut channel_sample_read: u8 = 0;

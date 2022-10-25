@@ -3,7 +3,6 @@ use std::{
     sync::{
         Arc, 
         atomic::{AtomicUsize, Ordering, AtomicBool},
-        // mpsc,
     },
     thread,
 };
@@ -11,7 +10,7 @@ use std::{
 use anyhow::anyhow;
 use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
 use tokio::{
-    time::{sleep, Duration}, 
+    time::Duration, 
     sync::{Mutex, mpsc},
 };
 
@@ -437,9 +436,9 @@ impl AudioStreamInner {
     pub fn set_playback_position(&mut self, position_sec: f32) -> Result<(), anyhow::Error> {
         println!("set stream playback position: {}", position_sec);
 
-        self.audio_sample.buffer_status.store(AudioSampleStatus::StopFillBuffer as usize, Ordering::Relaxed);
+        self.audio_sample.buffer_status.store(AudioSampleStatus::DoneFillBuffer as usize, Ordering::Relaxed);
         self.audio_player_status.store(PlaybackStatus::Pause as usize, Ordering::Relaxed);
-        self.set_stream_playback(PlaybackStatus::Pause)?;
+        // self.set_stream_playback(PlaybackStatus::Pause)?;
 
         let position_sample_idx = self.audio_sample.get_sample_idx_from_sec(position_sec);
         let drain_buffer_len = {
@@ -451,6 +450,8 @@ impl AudioStreamInner {
         };
 
         self.audio_sample.drain_sample_buffer(drain_buffer_len);
+        self.set_stream_playback(PlaybackStatus::Pause)?;
+
         self.audio_sample.set_current_sample_frame_idx(position_sample_idx);
 
         // self.audio_sample.buffer_status.store(AudioSampleStatus::FillBuffer as usize, Ordering::Relaxed);
@@ -481,7 +482,7 @@ impl AudioStreamInner {
             self.set_stream_playback(PlaybackStatus::Pause)?;
 
             // self.tx.send("stop").unwrap();
-            self.tx.blocking_send("stop");
+            self.tx.blocking_send("stop").unwrap();
 
             return Ok("stop");
         }
@@ -516,8 +517,8 @@ impl AudioStreamInner {
         fetch_buffer_margin_sec: f32
     ) -> Result<(), anyhow::Error> {
 
-        if AudioSampleStatus::FillBuffer == 
-            AudioSampleStatus::from(self.audio_sample.buffer_status.load(Ordering::Relaxed)) {
+        if AudioSampleStatus::StartFillBuffer == 
+            AudioSampleStatus::from(self.audio_sample.buffer_status.load(Ordering::SeqCst)) {
                 return Ok(());
         }
 
@@ -530,7 +531,7 @@ impl AudioStreamInner {
 
         Ok(())
     }
-    
+
     fn update(&mut self) -> Result<&'static str, anyhow::Error> {
         self.check_fetch_buffer(180., 20.).unwrap();
 
@@ -561,7 +562,7 @@ impl AudioStreamInner {
 
 impl Drop for AudioStreamInner {
     fn drop(&mut self) {
-        self.audio_sample.buffer_status.store(AudioSampleStatus::StopFillBuffer as usize, Ordering::Relaxed);
+        self.audio_sample.buffer_status.store(AudioSampleStatus::DoneFillBuffer as usize, Ordering::Relaxed);
         self.set_stream_playback(PlaybackStatus::Stop).unwrap();
     }
 }

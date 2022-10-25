@@ -17,18 +17,25 @@ message AudioMetaRes {
     uint32 size = 5;
     uint32 offset = 6;
     uint32 block_size = 7;
-
 }
 
 message AudioDataReq {
-    // string filename = 1;
     string audio_tag_id = 1;
-    uint32 byte_start = 2;
-    uint32 byte_end = 3;
+    uint32 samples_size = 2;
+    uint32 samples_start_idx = 3;
+    uint32 samples_end_idx = 4;
 }
 
+message AudioChannelData {
+    // bytes content = 1;
+    // ref: https://stackoverflow.com/questions/6825196/protocol-buffers-store-an-double-array-1d-2d-and-3d
+    repeated float content = 1 [packed=true];
+}
+
+
 message AudioDataRes {
-    bytes content = 1;
+    // bytes content = 1;
+    repeated AudioChannelData audio_channel_data = 1;
 }
 
 message AudioLibraryReq {

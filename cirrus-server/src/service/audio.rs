@@ -5,7 +5,7 @@ use tonic::{Code, Request, Response, Status};
 use tokio_stream::wrappers::ReceiverStream;
 
 use cirrus_protobuf::{
-    api::{AudioMetaReq, AudioMetaRes, AudioDataReq, AudioDataRes, AudioLibraryReq, AudioTagRes},
+    api::{AudioMetaReq, AudioMetaRes, AudioDataReq, AudioDataRes, AudioLibraryReq, AudioTagRes, AudioChannelData},
     common::{RequestAction, Response as Res, ListRequest},
 
     audio_data_svc_server::AudioDataSvc,
@@ -51,26 +51,65 @@ impl AudioDataSvc for AudioDataSvcImpl {
         &self,
         request: Request<AudioDataReq>
     ) -> Result<Response<Self::GetDataStream>, Status> {
-        let (tx, rx) = mpsc::channel(64);
+        let (tx, rx) = mpsc::channel(16);
         
         let audio_tag_id = &request.get_ref().audio_tag_id;
-        let byte_start = request.get_ref().byte_start as usize;
-        let byte_end = request.get_ref().byte_end as usize;
+        let samples_size = request.get_ref().samples_size as usize;
+        let samples_start_idx = request.get_ref().samples_start_idx as usize;
+        let samples_end_idx = request.get_ref().samples_end_idx as usize;
 
-        let res = match logic::AudioFile::read_data(self.mongodb_client.clone(), audio_tag_id, byte_start, byte_end).await {
-            Ok(res) => Response::new(res),
+        let audio_data = match logic::AudioFile::read_data(
+            self.mongodb_client.clone(), 
+            audio_tag_id,
+            samples_size,
+            samples_start_idx, 
+            samples_end_idx
+        ).await {
+            Ok(res) => res,
             Err(err) => return Err(Status::new(tonic::Code::Internal, err)),
         };
 
         tokio::spawn(async move {
-            let content = res.into_inner().content;
-            let mut data_chunk_iter = content.chunks(1024);
+            // let a = AudioDataRes {
+            //     audio_channel_data: Vec::new()
+            // };
+            // let audio_channel_data = res.into_inner().audio_channel_data;
+            // let mut data_chunk_iter = content.chunks(1024);
+            let mut audio_data_ch_chunks = audio_data.iter().map(|item| item.chunks(samples_size)).collect::<Vec<_>>();
 
-            while let Some(chunk_item) = data_chunk_iter.next() {
-                tx.send(Ok(AudioDataRes {
-                    content: chunk_item.to_vec()
-                })).await.unwrap();
+            loop {
+                // let mut audio_channel_data: Vec<Vec<f32>> = Vec::with_capacity(2);
+                let mut audio_channel_data: Vec<AudioChannelData> = Vec::with_capacity(2);
+                // for _ in 0..2 {
+                //     // audio_channel_data.push(Vec::with_capacity(1024));
+                //     audio_channel_data.push(AudioChannelData {
+                //         content: None
+                //     });
+                // }
+
+                for ch_chunk in audio_data_ch_chunks.iter_mut() {
+                    match ch_chunk.next() {
+                        Some(item) => audio_channel_data.push(AudioChannelData {
+                            content: item.to_vec()
+                        }),
+                        None => return
+                    }
+                }
+
+                if let Err(_) = tx.send(Ok(AudioDataRes {
+                    audio_channel_data: audio_channel_data.to_vec()
+                })).await {
+                    // println!("WARN: closed the stream of send audio data");
+                }
             }
+
+            // while let Some(chunk_item) = data_chunk_iter.next() {
+            //     if let Err(_) = tx.send(Ok(AudioDataRes {
+            //         content: chunk_item.to_vec()
+            //     })).await {
+            //         // println!("WARN: closed the stream of send audio data");
+            //     }
+            // }
         });
 
         Ok(Response::new(ReceiverStream::new(rx)))

@@ -7,9 +7,9 @@ use aiff::reader::AiffReader;
 use bson::oid::ObjectId;
 use chrono::{DateTime, NaiveDateTime, Utc, TimeZone};
 use cirrus_protobuf::api::{
-    AudioDataRes, AudioMetaRes, AudioTagRes
+    AudioDataRes, AudioMetaRes, AudioTagRes, AudioChannelData
 };
-// use futures::{TryStreamExt};
+
 use mongodb::{bson::{Document, doc}, options::FindOptions, results::DeleteResult};
 use tokio::sync::{Mutex, MutexGuard};
 use walkdir::{DirEntry, WalkDir};
@@ -72,9 +72,10 @@ impl AudioFile {
     pub async fn read_data(
         mongodb_client: mongodb::Client,
         audio_tag_id: &str,
-        byte_start: usize, 
-        byte_end: usize
-    ) -> Result<AudioDataRes, String> {
+        samples_size: usize,
+        samples_start_idx: usize, 
+        samples_end_idx: usize
+    ) -> Result<Vec<Vec<f32>>, String> {
         // let file = File::open(filepath)?;
         let audio_tag_id = ObjectId::parse_str(audio_tag_id).unwrap();
         let audio_file = model::AudioFile::find_by_audio_tag_id(mongodb_client.clone(), audio_tag_id).await.unwrap();
@@ -104,12 +105,33 @@ impl AudioFile {
     
         let reader_form_ref = reader.form().as_ref().unwrap();
         let data = reader_form_ref.sound().as_ref().unwrap();
+        
+        let peek_sound_data_start_idx = 4 * samples_size * samples_start_idx;
+        let peek_sound_data_end_idx = std::cmp::min(4 * samples_size * samples_end_idx, data.sound_data.len());
         let mut audio_data_part = Vec::<u8>::new();
-        audio_data_part.extend_from_slice(&data.sound_data[4*byte_start..4*byte_end]);
+        audio_data_part.extend_from_slice(&data.sound_data[peek_sound_data_start_idx..peek_sound_data_end_idx]);
+        
+        let audio_data_part = audio_data_part
+            .chunks(2)
+            .map(|item| i16::from_be_bytes(item.try_into().unwrap()) as f32 / 44100 as f32)
+            .collect::<Vec<f32>>();
+
+        let mut peek_sound_data = Vec::with_capacity(2);
+        for _ in 0..2 {
+            peek_sound_data.push(Vec::with_capacity(samples_size * (samples_end_idx - samples_start_idx)));
+        }
+
+        for ch_audio_data_part in audio_data_part.chunks(2) {
+            for channel_idx in 0..2 {
+                peek_sound_data[channel_idx].push(ch_audio_data_part[channel_idx]);
+            }
+        }
     
-        Ok(AudioDataRes {
-            content: audio_data_part
-        })
+        // Ok(AudioDataRes {
+        //     content: audio_data_part
+        // })
+
+        Ok(peek_sound_data)
     }
 }
 
