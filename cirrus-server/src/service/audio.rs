@@ -81,9 +81,11 @@ impl AudioDataSvc for AudioDataSvcImpl {
                     })
                     .collect::<Vec<_>>();
 
-                if let Err(_) = tx.send(Ok(AudioDataRes {
+                if let Err(_err) = tx.send(Ok(AudioDataRes {
                     audio_channel_data
                 })).await {
+                    break;
+                    // return Err(Status::new(tonic::Code::Aborted, err))
                     // println!("WARN: closed the stream of send audio data");
                 }
             }
