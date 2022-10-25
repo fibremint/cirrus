@@ -321,27 +321,6 @@ impl AudioStream {
             thread::sleep(Duration::from_millis(10));
         });
 
-        // tokio::spawn(async move {
-        //     loop {
-        //         if !thread_run_state_2_clone.load(Ordering::Relaxed) {
-        //             println!("stop thread: audio stream playback management, source id: {}", source_id_2);
-        //             break;
-        //         }
-
-        //         // let mut inner_guard = inner_1_clone.blocking_lock();
-        //         let mut inner_guard = inner_1_clone.lock().await;
-        //         // match inner_guard.update().await {
-        //         match inner_guard.update() {
-        //             Ok("stop") => thread_run_state_2_clone.store(false, Ordering::Relaxed),
-        //             Ok(&_) => (),
-        //             Err(e) => println!("error at manage playback: {}, source id: {}", e, source_id_2),
-        //         }
-
-        //         drop(inner_guard);
-
-        //         thread::sleep(Duration::from_millis(10));
-        //     }
-        // });
         thread_run_states.push(thread_run_state_2);
 
         drop(inner_guard);
@@ -436,25 +415,11 @@ impl AudioStreamInner {
     pub fn set_playback_position(&mut self, position_sec: f32) -> Result<(), anyhow::Error> {
         println!("set stream playback position: {}", position_sec);
 
-        self.audio_sample.buffer_status.store(AudioSampleStatus::DoneFillBuffer as usize, Ordering::Relaxed);
-        self.audio_player_status.store(PlaybackStatus::Pause as usize, Ordering::Relaxed);
-        // self.set_stream_playback(PlaybackStatus::Pause)?;
-
-        let position_sample_idx = self.audio_sample.get_sample_idx_from_sec(position_sec);
-        let drain_buffer_len = {
-            if position_sec - self.audio_sample.get_current_playback_position_sec() > 0.0 {
-                position_sample_idx - self.audio_sample.get_current_sample_idx()
-            } else {
-                self.audio_sample.get_remain_sample_buffer_len()
-            }
-        };
-
-        self.audio_sample.drain_sample_buffer(drain_buffer_len);
         self.set_stream_playback(PlaybackStatus::Pause)?;
+        self.audio_player_status.store(PlaybackStatus::Pause as usize, Ordering::Relaxed);
 
-        self.audio_sample.set_current_sample_frame_idx(position_sample_idx);
+        self.audio_sample.set_playback_position(position_sec);
 
-        // self.audio_sample.buffer_status.store(AudioSampleStatus::FillBuffer as usize, Ordering::Relaxed);
         self.audio_player_status.store(PlaybackStatus::Play as usize, Ordering::Relaxed);
         self.set_stream_playback(PlaybackStatus::Play)?;
 

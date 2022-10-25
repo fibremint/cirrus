@@ -15,8 +15,6 @@ use futures::StreamExt;
 
 use rubato::Resampler;
 
-// use ndarray::{prelude::*, AssignElem};
-
 use crate::{dto::AudioSource, request};
 
 use super::state::AudioSampleStatus;
@@ -76,7 +74,7 @@ impl AudioSample {
         self.sample_buffer.read().unwrap()[0].len()
     }
 
-    pub fn get_current_sample_idx(&self) -> usize {
+    pub fn get_playback_sample_idx(&self) -> usize {
         self.current_sample_frame.load(Ordering::SeqCst)
     }
 
@@ -84,24 +82,63 @@ impl AudioSample {
         sample_len as f32 / self.host_sample_rate as f32
     }
 
-    pub fn get_sample_idx_from_sec(&self, sec: f32) -> usize {
+    pub fn get_playback_sample_idx_from_sec(&self, sec: f32) -> usize {
         (sec * self.host_sample_rate as f32).floor() as usize
     }
 
     pub fn get_current_playback_position_sec(&self) -> f32 {
-        self.get_sec_from_sample_len(self.get_current_sample_idx())
+        self.get_sec_from_sample_len(self.get_playback_sample_idx())
     }
 
     pub fn get_remain_sample_buffer_sec(&self) -> f32 {
         self.get_sec_from_sample_len(self.get_remain_sample_buffer_len())   
     }
 
+    fn get_audio_source_sample_idx(&self, sec: f32) -> usize {
+        ((sec * self.source.metadata.sample_rate as f32) / self.resampler_frames_input_next as f32).floor() as usize
+    }
+
     pub fn set_current_sample_frame_idx(&self, sample_frame_idx: usize) {
         self.current_sample_frame.store(sample_frame_idx, Ordering::SeqCst);
     }
 
-    pub fn set_playback_position(&mut self) {
-        todo!()
+    // fn get_last_buf_req_pos(&self) -> usize {
+    //     self.last_buf_req_pos.load(Ordering::SeqCst)
+    // }
+
+    // fn set_last_buf_req_pos(&mut self, pos: usize) {
+    //     self.last_buf_req_pos.store(
+    //         pos, 
+    //         Ordering::SeqCst
+    //     );
+    // }
+
+    pub fn set_playback_position(&self, position_sec: f32) {
+        self.buffer_status.store(AudioSampleStatus::DoneFillBuffer as usize, Ordering::Relaxed);
+
+        let position_sample_idx = self.get_playback_sample_idx_from_sec(position_sec);
+
+        let position_sec_delta = position_sec - self.get_current_playback_position_sec();
+        let drain_buffer_len = {
+            if position_sec_delta > 0.0 {
+                position_sample_idx - self.get_playback_sample_idx()
+                // position_sec_delta * self.host_sample_rate as f32 
+            } else {
+                self.get_remain_sample_buffer_len()
+            }
+        };
+        self.drain_sample_buffer(drain_buffer_len);
+        
+        let buf_req_start_pos = self.get_audio_source_sample_idx(position_sec);
+        // self.set_last_buf_req_pos(buf_req_start_pos);
+        self.last_buf_req_pos.store(
+            buf_req_start_pos, 
+            Ordering::SeqCst
+        );
+
+        // let position_sample_idx = self.get_playback_sample_idx_from_sec(position_sec);
+        self.set_current_sample_frame_idx(position_sample_idx);
+
     }
 
     pub fn drain_sample_buffer(&self, drain_len: usize) {
@@ -141,15 +178,12 @@ impl AudioSample {
 
     pub async fn get_buffer_for(&self, sec: f32) -> Result<(), anyhow::Error> {
         let buf_req_start_idx = self.last_buf_req_pos.load(Ordering::SeqCst) as u32;
-        let buf_req_len = (
-            (sec * self.source.metadata.sample_rate as f32) / self.resampler_frames_input_next as f32
-        ).floor() as u32;
-        
+
         let mut audio_data_stream = request::get_audio_data_stream(
             &self.source.id,
             self.resampler_frames_input_next as u32,
             buf_req_start_idx,
-            buf_req_start_idx + buf_req_len
+            buf_req_start_idx + self.get_audio_source_sample_idx(sec) as u32
         ).await?;
 
         // ref: https://users.rust-lang.org/t/convert-slice-u8-to-u8-4/63836
@@ -163,6 +197,14 @@ impl AudioSample {
 
             let mut resampler = self.resampler.lock().unwrap();
             let mut resampler_output_buffer = resampler.output_buffer_allocate();
+
+            // zero pad for final sample data
+            if sample_items[0].len() < self.resampler_frames_input_next {
+                let zero_pad_len = self.resampler_frames_input_next - sample_items[0].len();
+                for sample_items_ch in sample_items.iter_mut() {
+                    sample_items_ch.extend_from_slice(&vec![0.; zero_pad_len]);
+                }
+            }
 
             resampler.process_into_buffer(&sample_items, &mut resampler_output_buffer, None).unwrap();
 
@@ -183,46 +225,15 @@ impl AudioSample {
                 buf_req_start_idx + 1, 
                 Ordering::SeqCst
             );
+
+            // let buf_req_start_idx = self.get_last_buf_req_pos();
+            // self.set_last_buf_req_pos(buf_req_start_idx+1);
         }
 
         Ok(())
     }
     
     pub fn play_for(&self, output: &mut [f32]) {
-        // let mut sample_buffer = self.sample_buffer.write().unwrap();
-        // let ch_drain_len = std::cmp::min(sample_buffer[0].len(), output.len()/2);
-        // // ref: https://github.com/rust-ndarray/ndarray/issues/419#issuecomment-368352024
-        // // let t = sample_buffer.into_iter().take(ch_drain_len).collect::<Vec<_>>();
-        // // let mut t = Array::from_iter(output.iter().cloned());
-        // // drop(sample_buffer);
-        // let mut o = ArrayViewMut2::from_shape(
-        //     (2, output.len()/2).strides((1, 2)),
-        //     output
-        // ).unwrap();
-
-        // for ch_idx in 0..2 {
-        //     // let d = sample_buffer[ch_idx].drain(..ch_drain_len).collect::<&[f32]>();
-            
-        //     let a = sample_buffer[ch_idx]
-        //         .drain(..ch_drain_len)
-        //         .map(|item| item);
-        //     let mut a2 = Array::from_iter(a);
-        //     let mut ch = o.slice_mut(s![ch_idx, ..]);
-        //     ch.assign_elem(a2.view_mut());
-        //     // o.slice_mut(s![[ch_idx, ..]]) = a;
-        //     // o[s![ch_idx, ..]] = sample_buffer[ch_idx].drain(..ch_drain_len).collect::<&[f32]>();
-        // }
-
-        // let current_sample_frame = self.current_sample_frame.load(Ordering::SeqCst);
-        // self.current_sample_frame.store(
-        //     current_sample_frame + ch_drain_len, 
-        //     Ordering::SeqCst
-        // );
-
-        // for ch in o.axis_chunks_iter(axis, size) {
-
-        // }
-
         for output_channel_frame in output.chunks_mut(self.host_output_channels) {  
             let mut channel_sample_read: u8 = 0;
             let mut sample_buffer = self.sample_buffer.write().unwrap();
@@ -233,7 +244,6 @@ impl AudioSample {
                     channel_sample_read += 1;
                 } else {
                     output_channel_frame[channel_idx] = 0.0;
-                    // break;
                 }
             }
 
