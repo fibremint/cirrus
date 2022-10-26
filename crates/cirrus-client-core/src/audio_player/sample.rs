@@ -2,7 +2,7 @@ use std::{
     sync::{
         Arc, 
         RwLock, 
-        atomic::{AtomicUsize, Ordering}, Mutex
+        atomic::{AtomicUsize, Ordering}, Mutex, Condvar
     }, 
     collections::VecDeque
 };
@@ -27,6 +27,7 @@ pub struct AudioSample {
     host_output_channels: usize,
     pub content_length: f32,
     buf_req_pos: Arc<AtomicUsize>,
+    done_fill_buf_condvar: Arc<(Mutex<bool>, Condvar)>
 }
 
 impl AudioSample {
@@ -60,7 +61,8 @@ impl AudioSample {
             host_sample_rate,
             host_output_channels,
             content_length,
-            buf_req_pos: Arc::new(AtomicUsize::new(0))
+            buf_req_pos: Arc::new(AtomicUsize::new(0)),
+            done_fill_buf_condvar: Arc::new((Mutex::new(false), Condvar::new()))
         }
     }
 
@@ -114,6 +116,16 @@ impl AudioSample {
 
     pub fn set_playback_position(&self, position_sec: f32) {
         self.buffer_status.store(AudioSampleStatus::DoneFillBuffer as usize, Ordering::Relaxed);
+        
+        let done_fill_buf_condvar_clone = self.done_fill_buf_condvar.clone();
+        let (done_fill_buf_condvar_lock, done_fill_buf_cv) = &*done_fill_buf_condvar_clone;
+        let mut done_fill_buf = done_fill_buf_condvar_lock.lock().unwrap();
+
+        while !*done_fill_buf {
+            done_fill_buf = done_fill_buf_cv.wait(done_fill_buf).unwrap();
+        }
+        
+        *done_fill_buf = false;
 
         let position_sample_idx = self.get_playback_sample_frame_idx_from_sec(position_sec);
         let position_sec_delta = position_sec - self.get_current_playback_position_sec();
@@ -174,6 +186,19 @@ impl AudioSample {
         let channels = 2;
 
         while let Some(data) = audio_data_stream.next().await {
+            if AudioSampleStatus::DoneFillBuffer == AudioSampleStatus::from(self.buffer_status.load(Ordering::Relaxed)) {
+                println!("stop fill buffer");
+
+                let done_fill_buf_condvar_clone = self.done_fill_buf_condvar.clone();
+                let (done_fill_buf_condvar_lock, done_fill_buf_cv) = &*done_fill_buf_condvar_clone;
+                let mut done_fill_buf = done_fill_buf_condvar_lock.lock().unwrap();
+                
+                *done_fill_buf = true;
+                done_fill_buf_cv.notify_one();
+                
+                return Err(anyhow!("fill buffer interrupted"));
+            }
+
             let mut sample_items = Vec::with_capacity(channels);
             for ch_data in data.unwrap().audio_channel_data.into_iter() {
                 sample_items.push(ch_data.content);
@@ -192,16 +217,12 @@ impl AudioSample {
 
             resampler.process_into_buffer(&sample_items, &mut resampler_output_buffer, None).unwrap();
 
-            if  AudioSampleStatus::DoneFillBuffer == AudioSampleStatus::from(self.buffer_status.load(Ordering::Relaxed)) {
-                println!("stop fill buffer");
-                
-                return Err(anyhow!("fill buffer interrupted"));
-            }
-
             let mut sample_buffer = self.sample_buffer.write().unwrap();
             for (ch_idx, channel_sample_buffer) in sample_buffer.iter_mut().enumerate() {
                 channel_sample_buffer.extend(resampler_output_buffer.get(ch_idx).unwrap())
             }
+
+            drop(sample_buffer);
 
             let buf_req_start_idx = self.get_buf_req_pos();
             self.set_buf_req_pos(buf_req_start_idx+1);
