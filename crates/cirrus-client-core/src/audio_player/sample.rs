@@ -2,7 +2,7 @@ use std::{
     sync::{
         Arc, 
         RwLock, 
-        atomic::{AtomicUsize, Ordering}, Mutex, Condvar
+        atomic::{AtomicUsize, Ordering, AtomicBool}, Mutex, Condvar
     }, 
     collections::VecDeque
 };
@@ -11,11 +11,95 @@ use std::iter::Iterator;
 use anyhow::anyhow;
 use futures::StreamExt;
 use rubato::Resampler;
+use tokio::sync::mpsc;
 
 use crate::{dto::AudioSource, request};
 use super::state::AudioSampleStatus;
 
 pub struct AudioSample {
+    pub inner: Arc<AudioSampleInner>,
+    pub tx: mpsc::Sender<f32>,
+    thread_run_states: Vec<Arc<AtomicBool>>,
+}
+
+impl AudioSample {
+    pub fn new(source: AudioSource, host_sample_rate: u32, host_output_channels: usize) -> Self {
+        let (tx, mut rx) = mpsc::channel(64);
+
+        let inner = Arc::new(
+            AudioSampleInner::new(
+                source, 
+                host_sample_rate, 
+                host_output_channels
+            )
+        );
+
+        let inner_1_clone = inner.clone();
+
+        let mut thread_run_states: Vec<Arc<AtomicBool>> = Vec::new();
+        let thread_run_state_1 = Arc::new(AtomicBool::new(true));
+        let thread_run_state_1_clone = thread_run_state_1.clone();
+
+        tokio::spawn(async move {
+            loop {
+                if !thread_run_state_1_clone.load(Ordering::Relaxed) {
+                    // println!("stop thread: fetch buffer, source id: {}", source_id_1);
+                    println!("stop thread: fetch buffer, source id");
+
+                    break;
+                }
+
+                while let Some(fetch_buf_sec) = rx.recv().await {
+                    inner_1_clone.fetch_buffer(fetch_buf_sec).await.unwrap();
+                }
+            }
+        });
+
+        thread_run_states.push(thread_run_state_1);
+
+        Self {
+            inner,
+            tx,
+            thread_run_states
+        }
+    }
+
+    pub fn get_current_playback_position_sec(&self) -> f32 {
+        self.inner.get_current_playback_position_sec()
+    }
+
+    pub fn get_remain_sample_buffer_sec(&self) -> f32 {
+        self.inner.get_remain_sample_buffer_sec()
+    }
+
+    pub fn set_playback_position(&self, position_sec: f32) {
+        self.inner.set_playback_position(position_sec)
+    }
+
+    pub fn get_buffer_status(&self) -> AudioSampleStatus {
+        self.inner.get_buffer_status()
+    }
+
+    pub fn set_buffer_status(&self, status: AudioSampleStatus) {
+        self.inner.set_buffer_status(status);
+    }
+
+    // pub fn play_for(self: Arc<AudioSample>, output: &mut [f32]) -> impl Fn() -> () {
+    //     self.inner.play_for(output)
+    // }
+
+}
+
+impl Drop for AudioSample {
+    fn drop(&mut self) {
+        for thread_run_state in &self.thread_run_states {
+            thread_run_state.store(false, Ordering::Relaxed);
+        }
+    }
+}
+
+
+pub struct AudioSampleInner {
     pub source: AudioSource,
     sample_buffer: RwLock<Vec<VecDeque<f32>>>,
     playback_sample_frame_idx: Arc<AtomicUsize>,
@@ -30,7 +114,7 @@ pub struct AudioSample {
     done_fill_buf_condvar: Arc<(Mutex<bool>, Condvar)>
 }
 
-impl AudioSample {
+impl AudioSampleInner {
     pub fn new(source: AudioSource, host_sample_rate: u32, host_output_channels: usize) -> Self {
         let resampler = rubato::FftFixedInOut::new(
             source.metadata.sample_rate as usize, 
@@ -114,8 +198,16 @@ impl AudioSample {
         );
     }
 
+    pub fn get_buffer_status(&self) -> AudioSampleStatus {
+        AudioSampleStatus::from(self.buffer_status.load(Ordering::SeqCst))
+    } 
+
+    pub fn set_buffer_status(&self, status: AudioSampleStatus) {
+        self.buffer_status.store(status as usize, Ordering::SeqCst);
+    }
+
     pub fn set_playback_position(&self, position_sec: f32) {
-        self.buffer_status.store(AudioSampleStatus::DoneFillBuffer as usize, Ordering::Relaxed);
+        self.buffer_status.store(AudioSampleStatus::DoneFillBuffer as usize, Ordering::SeqCst);
         
         let done_fill_buf_condvar_clone = self.done_fill_buf_condvar.clone();
         let (done_fill_buf_condvar_lock, done_fill_buf_cv) = &*done_fill_buf_condvar_clone;
@@ -158,14 +250,14 @@ impl AudioSample {
         &self,
         playback_buffer_margin_sec: f32,
     ) -> Result<(), anyhow::Error> {
-        self.buffer_status.store(AudioSampleStatus::StartFillBuffer as usize, Ordering::SeqCst);
+        self.set_buffer_status(AudioSampleStatus::StartFillBuffer);
 
         let fetch_buffer_sec = playback_buffer_margin_sec - self.get_remain_sample_buffer_sec();
         if let Err(_err) = self.get_buffer_for(fetch_buffer_sec).await {
             // println!("fetch buffer error: {:?}", err);
         }
 
-        self.buffer_status.store(AudioSampleStatus::DoneFillBuffer as usize, Ordering::SeqCst);
+        self.set_buffer_status(AudioSampleStatus::DoneFillBuffer);
         
         Ok(())
     }
