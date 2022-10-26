@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    path::{Path, PathBuf}, collections::{HashMap, HashSet}, io::{BufReader, Read},
+    path::{Path, PathBuf}, collections::{HashMap, HashSet}, io::{BufReader, Read, Seek},
 };
 use itertools::Itertools;
 
@@ -100,7 +100,11 @@ pub struct AudioSampleIterator {
     raw_data_buffer: Vec<u8>,
     num_seek_samples: u64,
     sample_idx: u64,
-    sample_rate: u32
+    sample_rate: u32,
+    // samples_start_idx: u64,
+    // samples_end_idx: u64,
+    last_buf_pos: u64,
+    // num_total_samples: u64
 }
 
 impl AudioSampleIterator {
@@ -114,12 +118,14 @@ impl AudioSampleIterator {
         sample_rate: u32,
         data_offset: u64,
     ) -> Self {
+        println!("sample iterator: total length of samples: {}", num_total_samples);
+
         let num_seek_samples = std::cmp::min(
-            samples_size * (samples_end_idx - samples_start_idx),
-            num_total_samples.try_into().unwrap()
+            (samples_end_idx - samples_start_idx) * samples_size,
+            num_total_samples - (samples_start_idx * samples_size)
         );
 
-        assert!(samples_start_idx <= num_seek_samples);
+        assert!(samples_size * samples_start_idx + num_seek_samples <= num_total_samples);
 
         let mut sample_buf = Vec::with_capacity(channel_size);
         for _ in 0..channel_size {
@@ -138,8 +144,12 @@ impl AudioSampleIterator {
             file_reader,
             raw_data_buffer: Vec::with_capacity((samples_size*4).try_into().unwrap()),
             num_seek_samples,
-            sample_idx: samples_start_idx,
-            sample_rate
+            sample_idx: 0,
+            sample_rate,
+            // samples_start_idx,
+            // samples_end_idx,
+            last_buf_pos: 0,
+            // num_total_samples
         }
     }
 
@@ -175,7 +185,11 @@ impl Iterator for AudioSampleIterator {
         self.raw_data_buffer = vec![0; (read_sample_len*2*2).try_into().unwrap()];
         self.reset_buf(read_sample_len.try_into().unwrap());
 
-        self.file_reader.read_exact(&mut self.raw_data_buffer).unwrap();
+        // self.file_reader.read_exact(&mut self.raw_data_buffer).unwrap();
+        self.last_buf_pos = self.file_reader.stream_position().unwrap();
+        if let Err(err) = self.file_reader.read_exact(&mut self.raw_data_buffer) {
+            println!("{:?}", err);
+        }
         self.sample_idx += read_sample_len;
 
         let sample_iter = self.raw_data_buffer
