@@ -56,22 +56,14 @@ impl AudioDataSvc for AudioDataSvcImpl {
         let samples_size = request.get_ref().samples_size as usize;
         let samples_start_idx = request.get_ref().samples_start_idx as usize;
         let samples_end_idx = request.get_ref().samples_end_idx as usize;
-        let channel_size = 2;
 
-        let mut audio_sample_iter = match logic::AudioFile::read_data(
-                self.mongodb_client.clone(), 
-                audio_tag_id,
-                samples_size,
-                samples_start_idx, 
-                samples_end_idx
-            ).await {
-                Ok(audio_raw_data) => logic::AudioSampleIterator::new(
-                    samples_size, 
-                    channel_size, 
-                    audio_raw_data
-                ),
-                Err(err) => return Err(Status::new(tonic::Code::Internal, err)),
-            };
+        let mut audio_sample_iter = logic::AudioFile::get_audio_sample_iterator(
+            self.mongodb_client.clone(), 
+            audio_tag_id, 
+            samples_size, 
+            samples_start_idx,
+            samples_end_idx
+        ).await.unwrap();
 
         tokio::spawn(async move {
             while let Some(sample_data) = audio_sample_iter.next() {
@@ -85,8 +77,6 @@ impl AudioDataSvc for AudioDataSvcImpl {
                     audio_channel_data
                 })).await {
                     break;
-                    // return Err(Status::new(tonic::Code::Aborted, err))
-                    // println!("WARN: closed the stream of send audio data");
                 }
             }
         });
