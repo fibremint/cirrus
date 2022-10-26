@@ -167,15 +167,14 @@ impl Iterator for AudioSampleIterator {
         self.reset_buf(drain_len/(self.channel_size*2));
 
         {
-            let drain_raw_audio_data = self.audio_raw_data.drain(..drain_len);
-            // ref: https://stackoverflow.com/a/66449378
-            let binding = drain_raw_audio_data
-                .into_iter()
-                .chunks(2);
-            let sample_iter = binding
-                .into_iter()
+            let drain_raw_audio_data = self.audio_raw_data
+                .drain(..drain_len)
+                .collect::<Vec<_>>();
+
+            let sample_iter = drain_raw_audio_data
+                .chunks(2)
                 .map(|item| 
-                    i16::from_be_bytes(item.collect_vec().try_into().unwrap()) as f32 / 44100 as f32);
+                    i16::from_be_bytes(item.try_into().unwrap()) as f32 / 44100 as f32);
             
             for (sample_item_idx, sample_item) in sample_iter.enumerate() {
                 let ch_idx = sample_item_idx % self.channel_size;
