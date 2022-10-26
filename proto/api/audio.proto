@@ -14,9 +14,6 @@ message AudioMetaRes {
     uint32 channels = 2;
     uint32 sample_frames = 3;
     uint32 sample_rate = 4;
-    uint32 size = 5;
-    uint32 offset = 6;
-    uint32 block_size = 7;
 }
 
 message AudioDataReq {
