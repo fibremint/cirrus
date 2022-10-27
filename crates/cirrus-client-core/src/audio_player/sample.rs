@@ -209,12 +209,18 @@ impl AudioSampleInner {
 
         let position_sample_idx = self.get_playback_sample_frame_idx_from_sec(position_sec);
         let position_sec_delta = position_sec - self.get_current_playback_position_sec();
-        let buf_req_start_pos = self.get_audio_source_sample_idx(position_sec);
+
         let drain_buffer_len = 
             if position_sec_delta > 0.0 { position_sample_idx - self.get_playback_sample_frame_idx() } 
             else { self.get_remain_sample_buffer_len() };
 
         self.drain_sample_buffer(drain_buffer_len);
+
+        let sample_req_start_sec = 
+            if position_sec_delta > 0.0 { position_sec + self.get_remain_sample_buffer_sec() }
+            else { position_sec };
+
+        let buf_req_start_pos = self.get_audio_source_sample_idx(sample_req_start_sec);
         self.set_buf_req_pos(buf_req_start_pos);
         self.set_playback_sample_frame_idx(position_sample_idx);
 
