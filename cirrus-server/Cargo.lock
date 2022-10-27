@@ -213,6 +213,7 @@ dependencies = [
  "cirrus-protobuf",
  "futures",
  "http",
+ "itertools",
  "mongodb",
  "notify",
  "prost",

@@ -1,17 +1,17 @@
 use std::{
     fs::File,
-    path::{Path, PathBuf}, collections::{HashMap, HashSet, hash_map::DefaultHasher}, hash::{Hash, Hasher}, ops::{Deref, DerefMut}, borrow::{BorrowMut, Borrow}, rc::Rc, sync::Arc,
+    path::{Path, PathBuf}, collections::{HashMap, HashSet}, io::{BufReader, Read, Seek},
 };
+use itertools::Itertools;
 
 use aiff::reader::AiffReader;
 use bson::oid::ObjectId;
-use chrono::{DateTime, NaiveDateTime, Utc, TimeZone};
+use chrono::{Utc, TimeZone};
 use cirrus_protobuf::api::{
-    AudioDataRes, AudioMetaRes, AudioTagRes
+    AudioMetaRes, AudioTagRes
 };
-// use futures::{TryStreamExt};
-use mongodb::{bson::{Document, doc}, options::FindOptions, results::DeleteResult};
-use tokio::sync::{Mutex, MutexGuard};
+
+use mongodb::bson;
 use walkdir::{DirEntry, WalkDir};
 
 use crate::{
@@ -26,7 +26,6 @@ impl AudioFile {
         mongodb_client: mongodb::Client,
         audio_tag_id: &str
     ) -> Result<AudioMetaRes, String> {
-        // let file = File::open(filepath)?;
         let audio_tag_id = ObjectId::parse_str(audio_tag_id).unwrap();
         let audio_file = model::AudioFile::find_by_audio_tag_id(mongodb_client.clone(), audio_tag_id).await.unwrap();
 
@@ -35,47 +34,31 @@ impl AudioFile {
             None => return Err(String::from("failed to retrieve audio file information")),
         };
 
-        // let audio_file_path = util::path::materialized_to_path(audio_file.get_path())
-
         let file = match File::open(audio_file.get_path()) {
             Ok(file) => file,
-            Err(err) => return Err(String::from("failed to load file")),
+            Err(_) => return Err(String::from("failed to load file")),
         };
 
-        let mut reader = AiffReader::new(file);
-        // reader.read().unwrap();
-        match reader.read() {
-            Ok(_) => (),
-            Err(err) => match err {
-                aiff::chunks::ChunkError::InvalidID(id) => return Err(String::from("invalid id")),
-                aiff::chunks::ChunkError::InvalidFormType(id) => return Err(String::from("invalid form type")),
-                aiff::chunks::ChunkError::InvalidID3Version(ver) => return Err(String::from("invalid id3 version")),
-                aiff::chunks::ChunkError::InvalidSize(exp, actual) => return Err(format!("invalid size, expected: {}, actual: {}", exp, actual)),
-                aiff::chunks::ChunkError::InvalidData(msg) => return Err(msg.to_string()),
-            },
-        }
-
-        let common = reader.form().as_ref().unwrap().common().as_ref().unwrap();
-        let sound = reader.form().as_ref().unwrap().sound().as_ref().unwrap();
+        let mut reader = AiffReader::new(&file);
+        reader.parse().unwrap();
+       
+        let common = reader.read_chunk::<aiff::chunks::CommonChunk>(true, false, aiff::ids::COMMON).unwrap();
 
         Ok(AudioMetaRes {
             bit_rate: common.bit_rate as u32,
-            block_size: sound.block_size,
             channels: common.num_channels as u32,
-            offset: sound.offset,
             sample_frames: common.num_sample_frames,
             sample_rate: common.sample_rate as u32,
-            size: sound.size as u32,
         })
     }
 
-    pub async fn read_data(
+    pub async fn get_audio_sample_iterator(
         mongodb_client: mongodb::Client,
         audio_tag_id: &str,
-        byte_start: usize, 
-        byte_end: usize
-    ) -> Result<AudioDataRes, String> {
-        // let file = File::open(filepath)?;
+        request_samples_size: usize,
+        samples_start_idx: usize, 
+        samples_end_idx: usize
+    ) -> Result<AudioSampleIterator, String> {
         let audio_tag_id = ObjectId::parse_str(audio_tag_id).unwrap();
         let audio_file = model::AudioFile::find_by_audio_tag_id(mongodb_client.clone(), audio_tag_id).await.unwrap();
 
@@ -86,30 +69,142 @@ impl AudioFile {
 
         let file = match File::open(audio_file.get_path()) {
             Ok(file) => file,
-            Err(err) => return Err(String::from("failed to load file")),
+            Err(_err) => return Err(String::from("failed to load file")),
         };
     
-        let mut reader = AiffReader::new(file);
-        // reader.read().unwrap();
-        match reader.read() {
-            Ok(_) => (),
-            Err(err) => match err {
-                aiff::chunks::ChunkError::InvalidID(id) => return Err(String::from("invalid id")),
-                aiff::chunks::ChunkError::InvalidFormType(id) => return Err(String::from("invalid form type")),
-                aiff::chunks::ChunkError::InvalidID3Version(ver) => return Err(String::from("invalid id3 version")),
-                aiff::chunks::ChunkError::InvalidSize(exp, actual) => return Err(format!("invalid size, expected: {}, actual: {}", exp, actual)),
-                aiff::chunks::ChunkError::InvalidData(msg) => return Err(msg.to_string()),
-            },
+        let mut reader = AiffReader::new(&file);
+        reader.parse().unwrap();
+
+        let sound_data_meta = reader.get_sound_data_metadata();
+
+        let audio_sample_iter = AudioSampleIterator::new(
+            file,
+            sound_data_meta.metadata.num_sample_frames.try_into().unwrap(),
+            request_samples_size.try_into().unwrap(),
+            samples_start_idx.try_into().unwrap(),
+            samples_end_idx.try_into().unwrap(),
+            sound_data_meta.metadata.num_channels.try_into().unwrap(),
+            sound_data_meta.metadata.sample_rate as u32,
+            sound_data_meta.data_offset,
+        );
+
+        Ok(audio_sample_iter)
+    }
+}
+
+pub struct AudioSampleIterator {
+    samples_size: u64,
+    channel_size: usize,
+    sample_buf: Vec<Vec<f32>>,
+    file_reader: BufReader<File>,
+    raw_data_buffer: Vec<u8>,
+    num_seek_samples: u64,
+    sample_idx: u64,
+    sample_rate: u32,
+    // samples_start_idx: u64,
+    // samples_end_idx: u64,
+    last_buf_pos: u64,
+    // num_total_samples: u64
+}
+
+impl AudioSampleIterator {
+    pub fn new(
+        source: File,
+        num_total_samples: u64,
+        samples_size: u64,
+        samples_start_idx: u64,
+        samples_end_idx: u64,
+        channel_size: usize,
+        sample_rate: u32,
+        data_offset: u64,
+    ) -> Self {
+        println!("sample iterator: total length of samples: {}", num_total_samples);
+
+        let num_seek_samples = std::cmp::min(
+            (samples_end_idx - samples_start_idx) * samples_size,
+            num_total_samples - (samples_start_idx * samples_size)
+        );
+
+        assert!(samples_size * samples_start_idx + num_seek_samples <= num_total_samples);
+
+        let mut sample_buf = Vec::with_capacity(channel_size);
+        for _ in 0..channel_size {
+            sample_buf.push(vec![0.; 0]);
+        }
+
+        let mut file_reader = BufReader::new(source);
+        
+        let seek_start_pos = data_offset + (samples_start_idx * samples_size * 2 * 2);
+        file_reader.seek_relative(seek_start_pos.try_into().unwrap()).unwrap();
+
+        Self {
+            samples_size,
+            channel_size,
+            sample_buf,
+            file_reader,
+            raw_data_buffer: Vec::with_capacity((samples_size*4).try_into().unwrap()),
+            num_seek_samples,
+            sample_idx: 0,
+            sample_rate,
+            // samples_start_idx,
+            // samples_end_idx,
+            last_buf_pos: 0,
+            // num_total_samples
+        }
+    }
+
+    fn reset_buf(&mut self, ch_buf_size: usize) {
+        for sample_ch_buf in self.sample_buf.iter_mut() {
+            *sample_ch_buf = vec![0.; ch_buf_size];
+        }
+    }
+
+    fn drain_sample_buffer(&mut self) -> Vec<Vec<f32>> {
+        let mut drained_sample_buf = Vec::with_capacity(self.channel_size);
+        for sample_ch_buf in self.sample_buf.iter_mut() {
+            drained_sample_buf.push(sample_ch_buf.drain(..).collect_vec());
+        }
+
+        drained_sample_buf
+    }
+}
+
+impl Iterator for AudioSampleIterator {
+    type Item = Vec<Vec<f32>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let read_sample_len = std::cmp::min(
+            self.samples_size, 
+            self.num_seek_samples - self.sample_idx
+        );
+
+        if read_sample_len == 0 {
+            return None
+        }
+
+        self.raw_data_buffer = vec![0; (read_sample_len*2*2).try_into().unwrap()];
+        self.reset_buf(read_sample_len.try_into().unwrap());
+
+        // self.file_reader.read_exact(&mut self.raw_data_buffer).unwrap();
+        self.last_buf_pos = self.file_reader.stream_position().unwrap();
+        if let Err(err) = self.file_reader.read_exact(&mut self.raw_data_buffer) {
+            println!("{:?}", err);
+        }
+        self.sample_idx += read_sample_len;
+
+        let sample_iter = self.raw_data_buffer
+            .chunks(2)
+            .map(|ref mut item| 
+                aiff::reader::read_i16_be(item) as f32 / self.sample_rate as f32);
+            
+        for (sample_item_idx, sample_item) in sample_iter.enumerate() {
+            let ch_idx = sample_item_idx % self.channel_size;
+            let sample_idx = sample_item_idx / self.channel_size;
+            self.sample_buf[ch_idx][sample_idx] = sample_item;
         }
     
-        let reader_form_ref = reader.form().as_ref().unwrap();
-        let data = reader_form_ref.sound().as_ref().unwrap();
-        let mut audio_data_part = Vec::<u8>::new();
-        audio_data_part.extend_from_slice(&data.sound_data[4*byte_start..4*byte_end]);
-    
-        Ok(AudioDataRes {
-            content: audio_data_part
-        })
+        Some(self.drain_sample_buffer())
+        
     }
 }
 
@@ -200,7 +295,7 @@ impl AudioLibrary {
 
         match library_create_res {
             Ok(res) => return Ok(format!("{:?}", res.inserted_id)),
-            Err(err) => return Err(format!("failed to create library {:?}", library_root)),
+            Err(_err) => return Err(format!("failed to create library {:?}", library_root)),
         }
     }
 
@@ -329,11 +424,11 @@ impl AudioLibrary {
                         .filter_map(|item| item.audio_tag_refer)
                         .collect();
 
-                    let audio_tag_delete_res = model::AudioTag::delete_by_ids(mongodb_client.clone(), &delete_audio_tag_ids).await.unwrap();
+                    let _audio_tag_delete_res = model::AudioTag::delete_by_ids(mongodb_client.clone(), &delete_audio_tag_ids).await.unwrap();
 
-                    let audio_file_delete_res = model::AudioFile::delete_by_selfs(mongodb_client.clone(), &audio_files).await.unwrap();
+                    let _audio_file_delete_res = model::AudioFile::delete_by_selfs(mongodb_client.clone(), &audio_files).await.unwrap();
 
-                    let library_delete_res = model::AudioLibrary::delete_by_path(mongodb_client.clone(), delted_library_path).await.unwrap();
+                    let _library_delete_res = model::AudioLibrary::delete_by_path(mongodb_client.clone(), delted_library_path).await.unwrap();
                 }
             }
 
@@ -425,7 +520,7 @@ impl AudioLibrary {
                     }
 
                     let local_library_modified_timestamp = util::path::get_timestamp(&local_library_path);
-                    let update_local_library_res = model::AudioLibrary::update_modified_timestamp(mongodb_client.clone(), &updated_local_library.id, local_library_modified_timestamp).await;
+                    let _update_local_library_res = model::AudioLibrary::update_modified_timestamp(mongodb_client.clone(), &updated_local_library.id, local_library_modified_timestamp).await;
                 }
             }
 
@@ -450,15 +545,18 @@ impl AudioLibrary {
 
         let audio_file = File::open(audio_file_path).unwrap();
         let mut aiff = AiffReader::new(audio_file);
-        aiff.read().unwrap();
+        // aiff.read().unwrap();
+        aiff.parse().unwrap();
+
+        // let id3v2 = aiff.read_chunk::<aiff::chunks::ID3v2Chunk>(true, false, aiff::ids::AIFF).unwrap();
 
         let id = match id {
             Some(id) => Some(id),
             None => Some(ObjectId::new())
         };
 
-        let audio_metadata = if let Some(id3v2_tag) = aiff.id3v2_tag {
-            let date_recorded = match id3v2_tag.date_recorded() {
+        let _audio_metadata = if let Some(id3v2) = aiff.read_chunk::<aiff::chunks::ID3v2Chunk>(true, false, aiff::ids::AIFF) {
+            let date_recorded = match id3v2.tag.date_recorded() {
                 Some(datetime) => {
                     let month = datetime.month.unwrap_or_else(|| 1u8);
                     let day = datetime.day.unwrap_or_else(|| 1u8);
@@ -471,7 +569,7 @@ impl AudioLibrary {
                 None => None,
             };
 
-            let date_released = match id3v2_tag.date_released() {
+            let date_released = match id3v2.tag.date_released() {
                 Some(datetime) => {
                     let month = datetime.month.unwrap_or_else(|| 1u8);
                     let day = datetime.day.unwrap_or_else(|| 1u8);
@@ -484,7 +582,7 @@ impl AudioLibrary {
                 None => None,
             };
 
-            let pictures: Vec<_> = id3v2_tag.pictures()
+            let pictures: Vec<_> = id3v2.tag.pictures()
                 .into_iter()
                 .map(|item| document::AudioFileMetadataPicture {
                     description: item.description.clone(),
@@ -494,27 +592,27 @@ impl AudioLibrary {
                 })
                 .collect();
 
-            let artist = match id3v2_tag.artist() {
+            let artist = match id3v2.tag.artist() {
                 Some(item) => Some(item.to_owned()),
                 None => None,
             };
 
-            let album = match id3v2_tag.album() {
+            let album = match id3v2.tag.album() {
                 Some(item) => Some(item.to_owned()),
                 None => None,
             };
 
-            let album_artist = match id3v2_tag.album_artist() {
+            let album_artist = match id3v2.tag.album_artist() {
                 Some(item) => Some(item.to_owned()),
                 None => None,
             };
 
-            let genre = match id3v2_tag.genre() {
+            let genre = match id3v2.tag.genre() {
                 Some(item) => Some(item.to_owned()),
                 None => None,
             };
 
-            let title = match id3v2_tag.title() {
+            let title = match id3v2.tag.title() {
                 Some(item) => Some(item.to_owned()),
                 None => None,
             };
@@ -527,15 +625,15 @@ impl AudioLibrary {
                 album_artist: album_artist,
                 date_recorded,
                 date_released,
-                disc: id3v2_tag.disc(),
-                duration: id3v2_tag.duration(),
+                disc: id3v2.tag.disc(),
+                duration: id3v2.tag.duration(),
                 genre: genre,
                 pictures: pictures,
                 title: title,
-                total_discs: id3v2_tag.total_discs(),
-                total_tracks: id3v2_tag.total_tracks(),
-                track: id3v2_tag.track(),
-                year: id3v2_tag.year(),
+                total_discs: id3v2.tag.total_discs(),
+                total_tracks: id3v2.tag.total_tracks(),
+                track: id3v2.tag.track(),
+                year: id3v2.tag.year(),
             };
 
             audio_tag.property_hash = Some(util::hash::get_hashed_value(&audio_tag));

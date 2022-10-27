@@ -21,17 +21,22 @@ impl From<usize> for PlaybackStatus {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum AudioSampleStatus {
-    FillBuffer,
+pub enum AudioSampleBufferStatus {
+    StartFillBuffer,
+    StartedFillBuffer,
     StopFillBuffer,
+    StoppedFillBuffer,
+    // StopFillBuffer,
 }
 
-impl From<usize> for AudioSampleStatus {
+impl From<usize> for AudioSampleBufferStatus {
     fn from(value: usize) -> Self {
-        use self::AudioSampleStatus::*;
+        use self::AudioSampleBufferStatus::*;
         match value {
-            0 => FillBuffer,
-            1 => StopFillBuffer,
+            0 => StartFillBuffer,
+            1 => StartedFillBuffer,
+            2 => StopFillBuffer,
+            3 => StoppedFillBuffer,
             _ => unreachable!(),
         }
     }

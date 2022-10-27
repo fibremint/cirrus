@@ -5,6 +5,14 @@
     "version": "0.2.0",
     "configurations": [
       {
+        "type": "cppvsdbg",
+        "request": "launch",
+        "name": "Tauri Development Debug (MSVC)",
+        "program": "${workspaceRoot}/cirrus-app/src-tauri/target/debug/app.exe",
+        "externalConsole": false,
+        "preLaunchTask": "ui:dev"
+      },
+      {
         "type": "lldb",
         "request": "launch",
         "name": "Tauri Development Debug",
@@ -30,6 +38,29 @@
         },
         // task for the `beforeBuildCommand` if used, must be configured in `.vscode/tasks.json`
         "preLaunchTask": "ui:build"
-      }
+      },
+      {
+        "type": "lldb",
+        "request": "launch",
+        "name": "Server Development Debug (lldb)",
+        "cargo": {
+          "args": [
+            "build",
+            "--manifest-path=./cirrus-server/Cargo.toml",
+          ]
+        },
+        // "program": "${workspaceRoot}/cirrus-server/target/debug/cirrus-server",
+        "env": {
+          "RUST_BACKTRACE": "1"
+        },
+        "cwd": "${workspaceRoot}/cirrus-server"
+      },
+      {
+        "type": "cppvsdbg",
+        "request": "launch",
+        "name": "Server Development Debug (MSVC)",
+        "program": "${workspaceRoot}/cirrus-server/target/debug/cirrus-server.exe",
+        "externalConsole": false
+      },
     ]
   }
