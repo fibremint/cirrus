@@ -14,7 +14,7 @@ use tokio::{
     sync::{mpsc, RwLock},
 };
 
-use crate::audio_player::state::{AudioSampleStatus, PlaybackStatus};
+use crate::audio_player::state::{AudioSampleBufferStatus, PlaybackStatus};
 use crate::dto::AudioSource;
 
 use super::sample::AudioSample;
@@ -456,7 +456,7 @@ impl AudioStreamInner {
         playback_buffer_sec: f32,
         fetch_buffer_margin_sec: f32
     ) -> Result<(), anyhow::Error> {
-        if AudioSampleStatus::StartFillBuffer == self.audio_sample.get_buffer_status() {
+        if self.audio_sample.get_buffer_status() != AudioSampleBufferStatus::StartFillBuffer {
             return Ok(());
         }
 
@@ -499,7 +499,6 @@ impl AudioStreamInner {
 
 impl Drop for AudioStreamInner {
     fn drop(&mut self) {
-        self.audio_sample.set_buffer_status(AudioSampleStatus::DoneFillBuffer);
         self.set_stream_playback_status(PlaybackStatus::Stop).unwrap();
     }
 }

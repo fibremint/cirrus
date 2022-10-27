@@ -2,19 +2,19 @@ use std::{
     sync::{
         Arc, 
         RwLock, 
-        atomic::{AtomicUsize, Ordering, AtomicBool}, Mutex, Condvar
+        atomic::{AtomicUsize, Ordering, AtomicBool}, Condvar, Mutex
     }, 
     collections::VecDeque
 };
 use std::iter::Iterator;
 
-use anyhow::anyhow;
+// use anyhow::anyhow;
 use futures::StreamExt;
 use rubato::Resampler;
 use tokio::sync::mpsc;
 
 use crate::{dto::AudioSource, request};
-use super::state::AudioSampleStatus;
+use super::state::AudioSampleBufferStatus;
 
 pub struct AudioSample {
     pub inner: Arc<AudioSampleInner>,
@@ -44,8 +44,7 @@ impl AudioSample {
             loop {
                 if !thread_run_state_1_clone.load(Ordering::Relaxed) {
                     // println!("stop thread: fetch buffer, source id: {}", source_id_1);
-                    println!("stop thread: fetch buffer, source id");
-
+                    println!("stop thread: fetch buffer");
                     break;
                 }
 
@@ -76,17 +75,9 @@ impl AudioSample {
         self.inner.set_playback_position(position_sec)
     }
 
-    pub fn get_buffer_status(&self) -> AudioSampleStatus {
+    pub fn get_buffer_status(&self) -> AudioSampleBufferStatus {
         self.inner.get_buffer_status()
     }
-
-    pub fn set_buffer_status(&self, status: AudioSampleStatus) {
-        self.inner.set_buffer_status(status);
-    }
-
-    // pub fn play_for(self: Arc<AudioSample>, output: &mut [f32]) -> impl Fn() -> () {
-    //     self.inner.play_for(output)
-    // }
 
 }
 
@@ -97,7 +88,6 @@ impl Drop for AudioSample {
         }
     }
 }
-
 
 pub struct AudioSampleInner {
     pub source: AudioSource,
@@ -138,7 +128,7 @@ impl AudioSampleInner {
             source,
             sample_buffer: RwLock::new(sample_buffer),
             playback_sample_frame_idx: Arc::new(AtomicUsize::new(0)),
-            buffer_status: Arc::new(AtomicUsize::new(AudioSampleStatus::DoneFillBuffer as usize)),
+            buffer_status: Arc::new(AtomicUsize::new(AudioSampleBufferStatus::StartFillBuffer as usize)),
             resampler: Mutex::new(resampler),
             resampler_frames_input_next,
             resampler_frames_output_next,
@@ -146,15 +136,15 @@ impl AudioSampleInner {
             host_output_channels,
             content_length,
             buf_req_pos: Arc::new(AtomicUsize::new(0)),
-            done_fill_buf_condvar: Arc::new((Mutex::new(false), Condvar::new()))
+            done_fill_buf_condvar: Arc::new((Mutex::new(true), Condvar::new()))
         }
     }
 
-    pub fn get_remain_sample_buffer_len(&self) -> usize {
+    fn get_remain_sample_buffer_len(&self) -> usize {
         self.sample_buffer.read().unwrap()[0].len()
     }
 
-    pub fn get_playback_sample_frame_idx(&self) -> usize {
+    fn get_playback_sample_frame_idx(&self) -> usize {
         self.playback_sample_frame_idx.load(Ordering::SeqCst)
     }
 
@@ -166,15 +156,15 @@ impl AudioSampleInner {
         (sec * sample_rate as f32).floor() as usize
     }
 
-    pub fn get_current_playback_position_sec(&self) -> f32 {
+    fn get_current_playback_position_sec(&self) -> f32 {
         self.convert_sample_frame_idx_to_sec(self.get_playback_sample_frame_idx(), self.host_sample_rate)
     }
 
-    pub fn get_remain_sample_buffer_sec(&self) -> f32 {
+    fn get_remain_sample_buffer_sec(&self) -> f32 {
         self.convert_sample_frame_idx_to_sec(self.get_remain_sample_buffer_len(), self.host_sample_rate)
     }
 
-    pub fn get_playback_sample_frame_idx_from_sec(&self, sec: f32) -> usize {
+    fn get_playback_sample_frame_idx_from_sec(&self, sec: f32) -> usize {
         self.convert_sec_to_sample_frame_idx(sec, self.host_sample_rate)
     }
 
@@ -183,7 +173,7 @@ impl AudioSampleInner {
             self.resampler_frames_input_next as f32).floor() as usize
     }
 
-    pub fn set_playback_sample_frame_idx(&self, sample_frame_idx: usize) {
+    fn set_playback_sample_frame_idx(&self, sample_frame_idx: usize) {
         self.playback_sample_frame_idx.store(sample_frame_idx, Ordering::SeqCst);
     }
 
@@ -198,16 +188,16 @@ impl AudioSampleInner {
         );
     }
 
-    pub fn get_buffer_status(&self) -> AudioSampleStatus {
-        AudioSampleStatus::from(self.buffer_status.load(Ordering::SeqCst))
+    fn get_buffer_status(&self) -> AudioSampleBufferStatus {
+        AudioSampleBufferStatus::from(self.buffer_status.load(Ordering::Relaxed))
     } 
 
-    pub fn set_buffer_status(&self, status: AudioSampleStatus) {
-        self.buffer_status.store(status as usize, Ordering::SeqCst);
+    fn set_buffer_status(&self, status: AudioSampleBufferStatus) {
+        self.buffer_status.store(status as usize, Ordering::Relaxed);
     }
 
-    pub fn set_playback_position(&self, position_sec: f32) {
-        self.buffer_status.store(AudioSampleStatus::DoneFillBuffer as usize, Ordering::SeqCst);
+    fn set_playback_position(&self, position_sec: f32) {
+        self.set_buffer_status(AudioSampleBufferStatus::StopFillBuffer);
         
         let done_fill_buf_condvar_clone = self.done_fill_buf_condvar.clone();
         let (done_fill_buf_condvar_lock, done_fill_buf_cv) = &*done_fill_buf_condvar_clone;
@@ -216,27 +206,22 @@ impl AudioSampleInner {
         while !*done_fill_buf {
             done_fill_buf = done_fill_buf_cv.wait(done_fill_buf).unwrap();
         }
-        
-        *done_fill_buf = false;
 
         let position_sample_idx = self.get_playback_sample_frame_idx_from_sec(position_sec);
         let position_sec_delta = position_sec - self.get_current_playback_position_sec();
-        let drain_buffer_len = {
-            if position_sec_delta > 0.0 {
-                position_sample_idx - self.get_playback_sample_frame_idx()
-            } else {
-                self.get_remain_sample_buffer_len()
-            }
-        };
-        self.drain_sample_buffer(drain_buffer_len);
-        
         let buf_req_start_pos = self.get_audio_source_sample_idx(position_sec);
-        self.set_buf_req_pos(buf_req_start_pos);
+        let drain_buffer_len = 
+            if position_sec_delta > 0.0 { position_sample_idx - self.get_playback_sample_frame_idx() } 
+            else { self.get_remain_sample_buffer_len() };
 
+        self.drain_sample_buffer(drain_buffer_len);
+        self.set_buf_req_pos(buf_req_start_pos);
         self.set_playback_sample_frame_idx(position_sample_idx);
+
+        self.set_buffer_status(AudioSampleBufferStatus::StartFillBuffer);
     }
 
-    pub fn drain_sample_buffer(&self, drain_len: usize) {
+    fn drain_sample_buffer(&self, drain_len: usize) {
         let mut sample_buffer = self.sample_buffer.write().unwrap();
 
         let min_drain_buffer_len = std::cmp::min(sample_buffer[0].len(), drain_len);
@@ -246,23 +231,45 @@ impl AudioSampleInner {
         }
     }
 
-    pub async fn fetch_buffer(
+    async fn fetch_buffer(
         &self,
         playback_buffer_margin_sec: f32,
     ) -> Result<(), anyhow::Error> {
-        self.set_buffer_status(AudioSampleStatus::StartFillBuffer);
+        if self.get_buffer_status() != AudioSampleBufferStatus::StartFillBuffer {
+            return Ok(());
+        }
+
+        println!("start fill buffer");
+
+        self.set_buffer_status(AudioSampleBufferStatus::StartedFillBuffer);
+
+        let done_fill_buf_condvar_clone = self.done_fill_buf_condvar.clone();
+        let (done_fill_buf_condvar_lock, done_fill_buf_cv) = &*done_fill_buf_condvar_clone;
+
+        {
+            let mut done_fill_buf = done_fill_buf_condvar_lock.lock().unwrap();
+            *done_fill_buf = false;
+        }
 
         let fetch_buffer_sec = playback_buffer_margin_sec - self.get_remain_sample_buffer_sec();
         if let Err(_err) = self.get_buffer_for(fetch_buffer_sec).await {
             // println!("fetch buffer error: {:?}", err);
         }
 
-        self.set_buffer_status(AudioSampleStatus::DoneFillBuffer);
+        let mut done_fill_buf = done_fill_buf_condvar_lock.lock().unwrap();
+        *done_fill_buf = true;
+        done_fill_buf_cv.notify_one();
+
+        if self.get_buffer_status() == AudioSampleBufferStatus::StartedFillBuffer {
+            self.set_buffer_status(AudioSampleBufferStatus::StartFillBuffer);        
+        }
+
+        println!("done fill buffer");
         
         Ok(())
     }
 
-    pub async fn get_buffer_for(&self, sec: f32) -> Result<(), anyhow::Error> {
+    async fn get_buffer_for(&self, sec: f32) -> Result<(), anyhow::Error> {
         let buf_req_start_idx = self.get_buf_req_pos() as u32;
 
         let mut audio_data_stream = request::get_audio_data_stream(
@@ -274,24 +281,13 @@ impl AudioSampleInner {
 
         drop(buf_req_start_idx);
 
-        // ref: https://users.rust-lang.org/t/convert-slice-u8-to-u8-4/63836
-        let channels = 2;
-
         while let Some(data) = audio_data_stream.next().await {
-            if AudioSampleStatus::DoneFillBuffer == AudioSampleStatus::from(self.buffer_status.load(Ordering::Relaxed)) {
-                println!("stop fill buffer");
-
-                let done_fill_buf_condvar_clone = self.done_fill_buf_condvar.clone();
-                let (done_fill_buf_condvar_lock, done_fill_buf_cv) = &*done_fill_buf_condvar_clone;
-                let mut done_fill_buf = done_fill_buf_condvar_lock.lock().unwrap();
-                
-                *done_fill_buf = true;
-                done_fill_buf_cv.notify_one();
-                
-                return Err(anyhow!("fill buffer interrupted"));
+            if AudioSampleBufferStatus::StopFillBuffer == self.get_buffer_status() {
+                self.set_buffer_status(AudioSampleBufferStatus::StoppedFillBuffer);
+                break;
             }
 
-            let mut sample_items = Vec::with_capacity(channels);
+            let mut sample_items = Vec::with_capacity(self.source.metadata.channels);
             for ch_data in data.unwrap().audio_channel_data.into_iter() {
                 sample_items.push(ch_data.content);
             }
@@ -324,7 +320,7 @@ impl AudioSampleInner {
     }
     
     pub fn play_for(&self, output: &mut [f32]) {
-        for output_channel_frame in output.chunks_mut(self.host_output_channels) {  
+        for output_channel_frame in output.chunks_mut(self.source.metadata.channels) {  
             let mut channel_sample_read: u8 = 0;
             let mut sample_buffer = self.sample_buffer.write().unwrap();
           
@@ -340,7 +336,7 @@ impl AudioSampleInner {
             drop(sample_buffer);
 
             let playback_sample_frame_idx = self.get_playback_sample_frame_idx();
-            let next_playback_frame_idx = playback_sample_frame_idx + (channel_sample_read / self.host_output_channels as u8) as usize;
+            let next_playback_frame_idx = playback_sample_frame_idx + (channel_sample_read / self.source.metadata.channels as u8) as usize;
             self.set_playback_sample_frame_idx(next_playback_frame_idx);
         }
     }
