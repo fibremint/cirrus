@@ -166,7 +166,7 @@
     }
 
     try {
-      if (isAudioPlay) {
+      if (selectedAudioTagId !== null) {
         await command.stopAudio();
       }
 
