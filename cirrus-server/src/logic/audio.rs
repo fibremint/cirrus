@@ -555,7 +555,10 @@ impl AudioLibrary {
             None => Some(ObjectId::new())
         };
 
-        let _audio_metadata = if let Some(id3v2) = aiff.read_chunk::<aiff::chunks::ID3v2Chunk>(true, false, aiff::ids::AIFF) {
+        let mut id_id3v2 = aiff::ids::ID3.to_vec();
+        id_id3v2.push(0);
+
+        let _audio_metadata = if let Some(id3v2) = aiff.read_chunk::<aiff::chunks::ID3v2Chunk>(true, false, &id_id3v2) {
             let date_recorded = match id3v2.tag.date_recorded() {
                 Some(datetime) => {
                     let month = datetime.month.unwrap_or_else(|| 1u8);
