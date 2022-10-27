@@ -1,10 +1,12 @@
 # Cirrus
 
-Cirrus is an audio player that reads audio file from remote server.
+Cirrus is an open source audio streaming service.
 
-This repository provides:
+![demo-audio-player](assets/demo-audio-player.png)
 
-* cirrus-app: desktop application
+This repository contains:
+
+* cirrus-app: desktop application that plays audio
 * cirrus-server: manage audio library and serve audio data
 
 At now, supported audio format is restricted as `AIFF` and `16-bit, 2-channel`.
@@ -13,33 +15,43 @@ At now, supported audio format is restricted as `AIFF` and `16-bit, 2-channel`.
 
 ### Server
 
-* Install MongoDB
+* Configure address
+  * MongoDB: (**Warning: Cirrus will create and write documents under `cirrus` collection**) Set your MongoDB address to the variable in `get_mongodb_client` function (located at `cirrus-server/src/model/mod.rs`). default address is `127.0.0.1:27017`
+  * Server: Set your listen address (located at `cirrus-server/src/main.rs`). default address is `127.0.0.1:50000`
 * Build Cirrus server with `cargo build --release` under `cirrus-server` directory
 * Run Cirrus server with `cargo run --release`
-* Add/Analyze/Refresh audio library with gRPC client (e.g. BloomRPC)
+* Add your musics to Cirrus
+  * At now, gRPC client (e.g. BloomRPC) is required to request audio management actions. You can import proto file that defines API in Cirrus (located at `proto/cirrus.proto`)
+  * Add audio directory with `cirrus.AudioLibrarySvc/AddAudioLibrary`
+  * Read ID3 tags in audio file with `cirrus.AudioLibrarySvc/AnalyzeAudioLibrary`
 
 ### Client
 
+* Configure address
+  * Set your address of the Cirrus server to each of the arguments in `crates/cirrus-client-core/src/request.rs`. default address is `http://127.0.0.1:50000`
 * Move to `cirrus-app` directory
-* Install dependencies with `yarn`
-* Build client with `yarn tauri build`
-* Run client located at `src-tauri/target/release/cirrus`
+* Install dependencies by run `yarn`
+* Build and run client
+  * Debug build: run `yarn tauri dev`
+  * Release build:
+    * Build client by run `yarn tauri build`
+    * Run client located at `src-tauri/target/release/`
 
 ## Architecture
 
 ### Overview
+
 ![architecture](assets/architecture-overview.png)
 
 ### Project Strucutre
 
 * cirrus-app: Cirrus client frontend that provides UI and interact backend with Tauri plugin
-* cirrus-lib/crates
+* crates
   * aiff-rs: read idv3 tags and audio data from AIFF audio file
-  * client: implementation of core audio player
-  * grpc: contains protobuf definition and provide interoperability with Rust
-  * server: implementation of server
-  * tauri-plugin: Tauri plugin that initialize and utilize core audio player
-* cirrus-server: Cirrus server wrapper
+  * cirrus-client-core: implementation of core audio player
+  * cirrus-protobuf: contains protobuf definition and provide interoperability with Rust
+  * cirrus-tauri-plugin: Tauri plugin that initialize and utilize core audio player
+* cirrus-server: manages audio metadata and serves audio data
 
 ### Stack
 
@@ -74,10 +86,12 @@ And an audio buffer is filled by audio buffer thread that fetch data, process an
 In most cases, an audio directory has sub-directories that contain audio files. And Cirrus reads audio files from audio directories. Cirrus thinks that there is root (`library-root`) of sub-directories and sub-directory contains metadata of audio contents (`library`) such as timestamp of directory that used for check modification of directory at library refresh. An audio file metadata (`audio`) has field filename and path of audio sub-directory to point the actual path of audio file, and timestamp for check update of this one. And audio has tags such as title, artist, genre and so on. This information is stored at (`audio-tags`) collection.
 
 A Cirrus server manages audio libraries with these behaviors:
+
 * `add_audio_library`: insert `library-root` and `library` document to database
 * `remove_audio_library`: remove documents of audio `library-root`, `library` and related audio data (`audio`) from database
-* `analyze_audio_library`: create `audio-tags` document from `audio` and insert to database 
+* `analyze_audio_library`: create `audio-tags` document from `audio` and insert to database
 * `refesh_audio_library`: update `library`, `audio`, `audio-tags` documents.
 
 ## License
+
 This project is licensed under the terms of the MIT license.

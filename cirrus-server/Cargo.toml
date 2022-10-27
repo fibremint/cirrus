@@ -1,23 +1,37 @@
 [package]
 name = "cirrus-server"
-version = "0.1.0"
+version = "0.2.0"
+description = "Cirrus server"
+authors = ["fibremint"]
+license = "MIT"
+repository = "https://github.com/fibremint/cirrus"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+#[dev-dependencies]
+#structopt = "0.3.0"
+
 [dependencies]
 #aiff = {git = "https://github.com/julientregoat/aiff-rs.git"}
-#bytes = "1.1"
-#futures = "0.3"
-#http = "0.2"
+aiff = { path = "../crates/aiff-rs" }
+bson = { version = "2.1", features = ["chrono-0_4"] }
+bytes = "1.1"
+chrono = { version = "0.4", features = ["serde"] }
+futures = "0.3"
+cirrus-protobuf = { path = "../crates/cirrus-protobuf", features = ["server"] }
+http = "0.2"
+notify = "4"
+mongodb = { version = "2.1", default-features = false, features = ["tokio-runtime"] }
+serde = "1"
+# symphonia = "0.5"
 tonic = "0.6"
-tokio = {version = "1.0", features = ["rt-multi-thread", "time", "macros", "fs"]}
+tokio = { version = "1.0", features = ["rt-multi-thread", "time", "macros", "fs"] }
+tokio-stream = "0.1"
 prost = "0.9"
+walkdir = "2"
+# ndarray = { version = "0.15", features = ["serde"] }
+itertools = "0.10"
 
-cirrus-server-lib = { path = "../cirrus-lib/crates/server" }
-
-[dev-dependencies]
-structopt = "0.3.0"
-
-#[build-dependencies]
-#tonic-build = "0.6"
+[build-dependencies]
+tonic-build = "0.6"
