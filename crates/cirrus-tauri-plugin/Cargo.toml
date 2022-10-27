@@ -1,6 +1,10 @@
 [package]
 name = "cirrus-tauri-plugin"
 version = "0.2.0"
+description = "Cirrus client plugin for Tauri"
+authors = ["fibremint"]
+license = "MIT"
+repository = "https://github.com/fibremint/cirrus"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
