@@ -10,7 +10,8 @@
         "name": "Tauri Development Debug (MSVC)",
         "program": "${workspaceRoot}/cirrus-app/src-tauri/target/debug/app.exe",
         "externalConsole": false,
-        "preLaunchTask": "ui:dev"
+        "preLaunchTask": "ui:dev",
+        "cwd": "${workspaceRoot}"
       },
       {
         "type": "lldb",
@@ -60,7 +61,8 @@
         "request": "launch",
         "name": "Server Development Debug (MSVC)",
         "program": "${workspaceRoot}/cirrus-server/target/debug/cirrus-server.exe",
-        "externalConsole": false
+        "externalConsole": false,
+        "cwd": "${workspaceRoot}"
       },
     ]
   }

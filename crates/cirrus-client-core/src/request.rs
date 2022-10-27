@@ -7,9 +7,12 @@ use cirrus_protobuf::{
     audio_data_svc_client::AudioDataSvcClient,
     audio_tag_svc_client::AudioTagSvcClient,
 };
+use super::settings::Settings;
 
 pub async fn get_audio_meta(audio_tag_id: &str) -> Result<Response<AudioMetaRes>, anyhow::Error> {
-    let mut client = AudioDataSvcClient::connect("http://127.0.0.1:50000").await?;
+    let settings = Settings::new().unwrap();
+
+    let mut client = AudioDataSvcClient::connect(settings.server.address).await?;
 
     let request = Request::new({
         AudioMetaReq {
@@ -28,7 +31,9 @@ pub async fn get_audio_data_stream(
     samples_start_idx: u32, 
     samples_end_idx: u32
 ) -> Result<Streaming<AudioDataRes>, anyhow::Error> {
-    let mut client = AudioDataSvcClient::connect("http://127.0.0.1:50000").await?;
+    let settings = Settings::new().unwrap();
+
+    let mut client = AudioDataSvcClient::connect(settings.server.address).await?;
 
     let request = Request::new({
         AudioDataReq {
@@ -47,7 +52,9 @@ pub async fn get_audio_data_stream(
 }
 
 pub async fn get_audio_tags(items_per_page: u64, page: u64) -> Result<Vec<AudioTagRes>, Box<dyn std::error::Error>> {
-    let mut client = AudioTagSvcClient::connect("http://127.0.0.1:50000").await?;
+    let settings = Settings::new().unwrap();
+
+    let mut client = AudioTagSvcClient::connect(settings.server.address).await?;
 
     let request = Request::new( {
         ListRequest {

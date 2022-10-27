@@ -2,6 +2,7 @@ mod logic;
 mod model;
 mod service;
 mod util;
+mod settings;
 
 use std::sync::Arc;
 use std::sync::mpsc::channel;
@@ -17,6 +18,7 @@ use cirrus_protobuf::{
     audio_library_svc_server::AudioLibrarySvcServer,
     audio_tag_svc_server::AudioTagSvcServer,
 };
+use settings::Settings;
 
 use crate::model::get_mongodb_client;
 
@@ -86,9 +88,15 @@ pub async fn run_server(addr: &str) -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let addr = "127.0.0.1:50000";
+    let settings = Settings::new().unwrap();
 
-    run_server(addr).await?;
+    let server_listen_address = format!(
+        "{}:{}", 
+        settings.server.listen_address, 
+        settings.server.listen_port
+    );
+
+    run_server(&server_listen_address).await?;
 
     Ok(())
 }

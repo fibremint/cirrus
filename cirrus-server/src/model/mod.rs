@@ -4,9 +4,12 @@ pub mod document;
 pub use audio::*;
 
 use mongodb::{Client, options::ClientOptions};
+use super::settings::Settings;
 
 pub async fn get_mongodb_client() -> Result<mongodb::Client, Box<dyn std::error::Error>> {
-    let client_options = ClientOptions::parse("mongodb://localhost:27017").await?;
+    let settings = Settings::new().unwrap();
+
+    let client_options = ClientOptions::parse(settings.mongodb.address).await?;
 
     let client = Client::with_options(client_options)?;
 
