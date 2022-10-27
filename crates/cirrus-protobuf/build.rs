@@ -13,7 +13,7 @@ fn main() -> Result<(), anyhow::Error> {
         .iter()
         .collect::<PathBuf>();
     let project_path = dunce::canonicalize(&project_path).unwrap();
-    let proto_path = project_path.join("proto");
+    let proto_path = project_path.join("protobuf");
 
     let mut tonic_builder = tonic_build::configure()
         .type_attribute(".cirrus.api.AudioTagRes", "#[derive(serde::Serialize, serde::Deserialize)]")
