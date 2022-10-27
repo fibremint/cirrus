@@ -43,8 +43,8 @@ impl AudioSample {
         tokio::spawn(async move {
             loop {
                 if !thread_run_state_1_clone.load(Ordering::Relaxed) {
-                    // println!("stop thread: fetch buffer, source id: {}", source_id_1);
-                    println!("stop thread: fetch buffer");
+                    println!("stop thread: fetch buffer, source id: {}", inner_1_clone.source.id);
+
                     break;
                 }
 
@@ -83,6 +83,8 @@ impl AudioSample {
 
 impl Drop for AudioSample {
     fn drop(&mut self) {
+        self.inner.set_buffer_status(AudioSampleBufferStatus::StopFillBuffer);
+
         for thread_run_state in &self.thread_run_states {
             thread_run_state.store(false, Ordering::Relaxed);
         }
@@ -290,6 +292,9 @@ impl AudioSampleInner {
         while let Some(data) = audio_data_stream.next().await {
             if AudioSampleBufferStatus::StopFillBuffer == self.get_buffer_status() {
                 self.set_buffer_status(AudioSampleBufferStatus::StoppedFillBuffer);
+
+                println!("stopped fill buffer");
+
                 break;
             }
 
