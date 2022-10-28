@@ -61,7 +61,7 @@ pub async fn load_audio(
 
     println!("got load audio command");
 
-    match state.audio_player.add_audio(&audio_tag_id).await {
+    match state.audio_player.add_audio(&state.settings.server.address, &audio_tag_id).await {
         Ok(content_length) => return Ok(content_length),
         Err(_) => return Err("tauri-plugin: failed to add audio"),
     }
@@ -98,7 +98,6 @@ pub fn pause_audio(
 ) -> Result<(), &'static str> {
     println!("got pause audio command");
 
-
     match state.audio_player.pause() {
         Ok(_) => Ok(()),
         Err(_) => Err("failed to pause audio"),
@@ -107,12 +106,13 @@ pub fn pause_audio(
 
 #[tauri::command]
 pub async fn get_audio_tags(
+    state: State<'_, AppState>,
     items_per_page: u64,
     page: u32,
 ) -> Result<Vec<AudioTagRes>, &'static str> {
     println!("got get-audio-tags command");
 
-    match request::get_audio_tags(items_per_page, page as u64).await {
+    match request::get_audio_tags(state.settings.server.address.clone(), items_per_page, page as u64).await {
         Ok(audio_tags) => Ok(audio_tags),
         Err(_) => return Err("failed to get audio tags from server"),
     }

@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, path::PathBuf};
 use config::{Config, File, ConfigError};
 use serde_derive::{Serialize, Deserialize};
 
@@ -15,12 +15,9 @@ pub struct Settings {
 }
 
 impl Settings {
-    pub fn new() -> Result<Self, ConfigError> {
-        let current_dir = env::current_dir().unwrap();
-        let server_config_path = current_dir.join("configs/client.toml");
-
+    pub fn new(config_path: &PathBuf) -> Result<Self, ConfigError> {
         let s = Config::builder()
-            .add_source(File::with_name(server_config_path.to_str().unwrap()))
+            .add_source(File::with_name(config_path.to_str().unwrap()))
             .build()?;
 
         s.try_deserialize()
