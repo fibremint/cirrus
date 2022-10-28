@@ -4,7 +4,8 @@ mod service;
 mod util;
 mod settings;
 
-use std::sync::Arc;
+use std::env;
+use std::{sync::Arc, path::Path};
 use std::sync::mpsc::channel;
 use std::time::Duration;
 
@@ -74,12 +75,12 @@ fn run_fs_notify() -> Result<(), ()> {
 //         });
 // }
 
-pub async fn run_server(addr: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run_server(addr: &str, mongodb_addr: &str) -> Result<(), Box<dyn std::error::Error>> {
     // std::thread::spawn(|| {
     //     run_fs_notify()
     // });
 
-    let mongodb_client = get_mongodb_client().await?;
+    let mongodb_client = get_mongodb_client(mongodb_addr).await?;
 
     grpc_server_task(addr, mongodb_client.clone()).await?;
 
@@ -88,7 +89,10 @@ pub async fn run_server(addr: &str) -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let settings = Settings::new().unwrap();
+    let current_dir = env::current_dir().unwrap();
+    let server_config_path = current_dir.join("configs/cirrus/server.toml");
+    
+    let settings = Settings::new(&server_config_path).unwrap();
 
     let server_listen_address = format!(
         "{}:{}", 
@@ -96,7 +100,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         settings.server.listen_port
     );
 
-    run_server(&server_listen_address).await?;
+    run_server(&server_listen_address, &settings.mongodb.address).await?;
 
     Ok(())
 }
