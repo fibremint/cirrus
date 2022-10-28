@@ -5,8 +5,8 @@ pub use audio::*;
 
 use mongodb::{Client, options::ClientOptions};
 
-pub async fn get_mongodb_client() -> Result<mongodb::Client, Box<dyn std::error::Error>> {
-    let client_options = ClientOptions::parse("mongodb://localhost:27017").await?;
+pub async fn get_mongodb_client(address: &str) -> Result<mongodb::Client, Box<dyn std::error::Error>> {
+    let client_options = ClientOptions::parse(address).await?;
 
     let client = Client::with_options(client_options)?;
 

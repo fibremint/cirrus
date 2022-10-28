@@ -66,8 +66,8 @@ impl AudioPlayer {
         }
     }
 
-    pub async fn add_audio(&self, audio_tag_id: &str) -> Result<f32, anyhow::Error> {
-        self.inner.write().await.add_audio(audio_tag_id).await
+    pub async fn add_audio(&self, server_address: &str, audio_tag_id: &str) -> Result<f32, anyhow::Error> {
+        self.inner.write().await.add_audio(server_address, audio_tag_id).await
     }
 
     pub fn play(&self) -> Result<(), anyhow::Error> {
@@ -129,8 +129,8 @@ impl AudioPlayerInner {
         }
     }
 
-    pub async fn add_audio(&mut self, audio_tag_id: &str) -> Result<f32, anyhow::Error> {
-        let audio_source = AudioSource::new(audio_tag_id).await?;
+    pub async fn add_audio(&mut self, server_address: &str, audio_tag_id: &str) -> Result<f32, anyhow::Error> {
+        let audio_source = AudioSource::new(server_address, audio_tag_id).await?;
 
         let audio_ctx_1_clone = self.ctx.clone();
         let tx_1_clone = self.tx.clone();
@@ -266,7 +266,7 @@ impl AudioStream {
         let source_id = source.id.clone();
 
         let inner = AudioStreamInner::new(
-            ctx, 
+            ctx,
             source, 
             tx,
             audio_player_status
@@ -335,7 +335,7 @@ unsafe impl Sync for AudioStreamInner {}
 
 impl AudioStreamInner {
     pub fn new(
-        ctx: Arc<AudioContext>, 
+        ctx: Arc<AudioContext>,
         source: AudioSource, 
         tx: mpsc::Sender<&'static str>,
         audio_player_status: Arc<AtomicUsize>,
@@ -365,7 +365,6 @@ impl AudioStreamInner {
             sample_play_err_fn
         )?;
         stream.pause().unwrap();
-
 
         let audio_stream = Self {
             stream,

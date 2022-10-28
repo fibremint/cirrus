@@ -15,15 +15,18 @@ edition = "2021"
 [dependencies]
 #aiff = {git = "https://github.com/julientregoat/aiff-rs.git"}
 aiff = { path = "../crates/aiff-rs" }
+anyhow = "1"
 bson = { version = "2.1", features = ["chrono-0_4"] }
 bytes = "1.1"
 chrono = { version = "0.4", features = ["serde"] }
+config = "0.13.1"
 futures = "0.3"
 cirrus-protobuf = { path = "../crates/cirrus-protobuf", features = ["server"] }
 http = "0.2"
 notify = "4"
 mongodb = { version = "2.1", default-features = false, features = ["tokio-runtime"] }
 serde = "1"
+serde_derive = "1"
 # symphonia = "0.5"
 tonic = "0.6"
 tokio = { version = "1.0", features = ["rt-multi-thread", "time", "macros", "fs"] }

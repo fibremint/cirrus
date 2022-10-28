@@ -1,5 +1,5 @@
 use futures::StreamExt;
-use tonic::{Request, Response, Streaming};
+use tonic::{Request, Response, Streaming, codegen::StdError};
 
 use cirrus_protobuf::{
     api::{AudioDataReq, AudioDataRes, AudioMetaReq, AudioMetaRes, AudioTagRes},
@@ -8,8 +8,9 @@ use cirrus_protobuf::{
     audio_tag_svc_client::AudioTagSvcClient,
 };
 
-pub async fn get_audio_meta(audio_tag_id: &str) -> Result<Response<AudioMetaRes>, anyhow::Error> {
-    let mut client = AudioDataSvcClient::connect("http://127.0.0.1:50000").await?;
+pub async fn get_audio_meta(server_address: String, audio_tag_id: &str) -> Result<Response<AudioMetaRes>, anyhow::Error> 
+{
+    let mut client = AudioDataSvcClient::connect(server_address).await?;
 
     let request = Request::new({
         AudioMetaReq {
@@ -23,12 +24,13 @@ pub async fn get_audio_meta(audio_tag_id: &str) -> Result<Response<AudioMetaRes>
 }
 
 pub async fn get_audio_data_stream(
+    server_address: String,
     audio_tag_id: &str,
     samples_size: u32,
     samples_start_idx: u32, 
     samples_end_idx: u32
 ) -> Result<Streaming<AudioDataRes>, anyhow::Error> {
-    let mut client = AudioDataSvcClient::connect("http://127.0.0.1:50000").await?;
+    let mut client = AudioDataSvcClient::connect(server_address).await?;
 
     let request = Request::new({
         AudioDataReq {
@@ -46,8 +48,8 @@ pub async fn get_audio_data_stream(
     Ok(stream)
 }
 
-pub async fn get_audio_tags(items_per_page: u64, page: u64) -> Result<Vec<AudioTagRes>, Box<dyn std::error::Error>> {
-    let mut client = AudioTagSvcClient::connect("http://127.0.0.1:50000").await?;
+pub async fn get_audio_tags(server_address: String, items_per_page: u64, page: u64) -> Result<Vec<AudioTagRes>, Box<dyn std::error::Error>> {
+    let mut client = AudioTagSvcClient::connect(server_address).await?;
 
     let request = Request::new( {
         ListRequest {

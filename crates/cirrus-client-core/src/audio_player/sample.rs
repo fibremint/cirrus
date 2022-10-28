@@ -23,12 +23,12 @@ pub struct AudioSample {
 }
 
 impl AudioSample {
-    pub fn new(source: AudioSource, host_sample_rate: u32, host_output_channels: usize) -> Self {
+    pub fn new(audio_source: AudioSource, host_sample_rate: u32, host_output_channels: usize) -> Self {
         let (tx, mut rx) = mpsc::channel(64);
 
         let inner = Arc::new(
             AudioSampleInner::new(
-                source, 
+                audio_source,
                 host_sample_rate, 
                 host_output_channels
             )
@@ -49,7 +49,7 @@ impl AudioSample {
                 }
 
                 while let Some(fetch_buf_sec) = rx.recv().await {
-                    inner_1_clone.fetch_buffer(fetch_buf_sec).await.unwrap();
+                    inner_1_clone.fetch_buffer(&inner_1_clone.source.server_address, fetch_buf_sec).await.unwrap();
                 }
             }
         });
@@ -241,6 +241,7 @@ impl AudioSampleInner {
 
     async fn fetch_buffer(
         &self,
+        server_address: &str,
         playback_buffer_margin_sec: f32,
     ) -> Result<(), anyhow::Error> {
         if self.get_buffer_status() != AudioSampleBufferStatus::StartFillBuffer {
@@ -260,7 +261,7 @@ impl AudioSampleInner {
         }
 
         let fetch_buffer_sec = playback_buffer_margin_sec - self.get_remain_sample_buffer_sec();
-        if let Err(_err) = self.get_buffer_for(fetch_buffer_sec).await {
+        if let Err(_err) = self.get_buffer_for(server_address, fetch_buffer_sec).await {
             // println!("fetch buffer error: {:?}", err);
         }
 
@@ -277,10 +278,11 @@ impl AudioSampleInner {
         Ok(())
     }
 
-    async fn get_buffer_for(&self, sec: f32) -> Result<(), anyhow::Error> {
+    async fn get_buffer_for(&self, server_address: &str, sec: f32) -> Result<(), anyhow::Error> {
         let buf_req_start_idx = self.get_buf_req_pos() as u32;
 
         let mut audio_data_stream = request::get_audio_data_stream(
+            server_address.to_string(),
             &self.source.id,
             self.resampler_frames_input_next as u32,
             buf_req_start_idx,
