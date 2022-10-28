@@ -1,1 +1,4 @@
 target/
+
+configs/cirrus/*
+!configs/cirrus/server.sample.toml

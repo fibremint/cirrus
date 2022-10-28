@@ -25,9 +25,3 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-
-# Configs
-# !config/*.sample.toml
-configs/*
-!configs/server.sample.toml
-!configs/client.sample.toml
