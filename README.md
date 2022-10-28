@@ -19,10 +19,10 @@ At now, supported audio format is restricted as `AIFF` and `16-bit, 2-channel`.
 
 * Requirements
   * MongoDB
-* Configuration
-  * Copy `server.sample.toml` to `server.toml` at `cirrus-server/configs/cirrus`
-  * Set your configuration values in `server.toml` 
 * Build Cirrus server with `cargo build --release` under `cirrus-server` directory
+* Configuration
+  * Copy the `configs` directory from `cirrus-server` to the working directory where you're launch `cirrus-server` (e.g. `cirrus-server/target/release`)
+  * Copy configuration file `server.sample.toml` to `server.toml` at `configs/cirrus`, and set your configuration values in `server.toml` 
 * Run Cirrus server with `cargo run --release`
 * Add your musics to Cirrus
   * At now, gRPC client (e.g. BloomRPC) is required to request audio management actions. You can import proto file that defines API in Cirrus (located at `protobuf/cirrus.proto`)
