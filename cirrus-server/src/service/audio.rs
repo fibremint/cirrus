@@ -5,7 +5,7 @@ use tonic::{Code, Request, Response, Status};
 use tokio_stream::wrappers::ReceiverStream;
 
 use cirrus_protobuf::{
-    api::{AudioMetaReq, AudioMetaRes, AudioDataReq, AudioDataRes, AudioLibraryReq, AudioTagRes, AudioChannelData},
+    api::{AudioMetaReq, AudioMetaRes, AudioDataReq, AudioDataRes, AudioLibraryReq, AudioTagRes, AudioChannelSampleFrames},
     common::{RequestAction, Response as Res, ListRequest},
 
     audio_data_svc_server::AudioDataSvc,
@@ -51,30 +51,29 @@ impl AudioDataSvc for AudioDataSvcImpl {
         request: Request<AudioDataReq>
     ) -> Result<Response<Self::GetDataStream>, Status> {
         let (tx, rx) = mpsc::channel(16);
-        
-        let audio_tag_id = &request.get_ref().audio_tag_id;
-        let samples_size = request.get_ref().samples_size as usize;
-        let samples_start_idx = request.get_ref().samples_start_idx as usize;
-        let samples_end_idx = request.get_ref().samples_end_idx as usize;
+        let req = request.get_ref();
 
         let mut audio_sample_iter = logic::AudioFile::get_audio_sample_iterator(
             self.mongodb_client.clone(), 
-            audio_tag_id, 
-            samples_size, 
-            samples_start_idx,
-            samples_end_idx
+            &req.audio_tag_id, 
+            req.sample_rate, 
+            req.channels,
+            req.sample_frame_start_pos,
+            req.sample_frames
         ).await.unwrap();
 
         tokio::spawn(async move {
             while let Some(sample_data) = audio_sample_iter.next() {
-                let audio_channel_data = sample_data.iter()
-                    .map(|item| AudioChannelData {
-                        content: item.to_owned()
+                let ch_sample_frames = sample_data.iter().enumerate()
+                    .map(|(ch_idx, item)| AudioChannelSampleFrames {
+                        ch_idx: ch_idx.try_into().unwrap(),
+                        samples: item.to_owned()
                     })
                     .collect::<Vec<_>>();
 
                 if let Err(_err) = tx.send(Ok(AudioDataRes {
-                    audio_channel_data
+                    num_frames: ch_sample_frames[0].samples.len().try_into().unwrap(),
+                    ch_sample_frames
                 })).await {
                     break;
                 }

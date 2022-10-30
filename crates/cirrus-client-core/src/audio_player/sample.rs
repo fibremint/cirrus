@@ -222,7 +222,8 @@ impl AudioSampleInner {
             if position_sec_delta > 0.0 { position_sec + self.get_remain_sample_buffer_sec() }
             else { position_sec };
 
-        let buf_req_start_pos = self.get_audio_source_sample_idx(sample_req_start_sec);
+        // let buf_req_start_pos = self.get_audio_source_sample_idx(sample_req_start_sec);
+        let buf_req_start_pos = (sample_req_start_sec * self.host_sample_rate as f32) as usize;
         self.set_buf_req_pos(buf_req_start_pos);
         self.set_playback_sample_frame_idx(position_sample_idx);
 
@@ -279,19 +280,31 @@ impl AudioSampleInner {
     }
 
     async fn get_buffer_for(&self, server_address: &str, sec: f32) -> Result<(), anyhow::Error> {
-        let buf_req_start_idx = self.get_buf_req_pos() as u32;
+        // let buf_req_start_idx = self.get_buf_req_pos() as u32;
+
+        let req_sample_frames_len = (sec * self.host_sample_rate as f32) as u32;
 
         let mut audio_data_stream = request::get_audio_data_stream(
             server_address.to_string(),
             &self.source.id,
-            self.resampler_frames_input_next as u32,
-            buf_req_start_idx,
-            buf_req_start_idx + self.get_audio_source_sample_idx(sec) as u32
+            self.host_sample_rate,
+            self.host_output_channels.try_into().unwrap(),
+            self.get_buf_req_pos() as u32,
+            req_sample_frames_len,
         ).await?;
 
-        drop(buf_req_start_idx);
+        // drop(buf_req_start_idx);
 
-        while let Some(data) = audio_data_stream.next().await {
+        while let Some(res) = audio_data_stream.next().await {
+            let audio_data = match res {
+                Ok(data) => data,
+                Err(e) => {
+                    println!("err: {}", e);
+
+                    break;
+                },
+            };
+
             if AudioSampleBufferStatus::StopFillBuffer == self.get_buffer_status() {
                 self.set_buffer_status(AudioSampleBufferStatus::StoppedFillBuffer);
 
@@ -300,33 +313,47 @@ impl AudioSampleInner {
                 break;
             }
 
-            let mut sample_items = Vec::with_capacity(self.source.metadata.channels);
-            for ch_data in data.unwrap().audio_channel_data.into_iter() {
-                sample_items.push(ch_data.content);
-            }
+            // let mut sample_items = Vec::with_capacity(self.source.metadata.channels);
+            // for ch_data in data.unwrap().channel_samples.into_iter() {
+            //     sample_items.push(ch_data.samples);
+            // }
 
-            let mut resampler = self.resampler.lock().unwrap();
-            let mut resampler_output_buffer = resampler.output_buffer_allocate();
+            // let mut resampler = self.resampler.lock().unwrap();
+            // let mut resampler_output_buffer = resampler.output_buffer_allocate();
 
-            // zero pad for final sample data
-            if sample_items[0].len() < self.resampler_frames_input_next {
-                let zero_pad_len = self.resampler_frames_input_next - sample_items[0].len();
-                for sample_items_ch in sample_items.iter_mut() {
-                    sample_items_ch.extend_from_slice(&vec![0.; zero_pad_len]);
-                }
-            }
+            // // zero pad for final sample data
+            // if sample_items[0].len() < self.resampler_frames_input_next {
+            //     let zero_pad_len = self.resampler_frames_input_next - sample_items[0].len();
+            //     for sample_items_ch in sample_items.iter_mut() {
+            //         sample_items_ch.extend_from_slice(&vec![0.; zero_pad_len]);
+            //     }
+            // }
 
-            resampler.process_into_buffer(&sample_items, &mut resampler_output_buffer, None).unwrap();
+            // resampler.process_into_buffer(&sample_items, &mut resampler_output_buffer, None).unwrap();
+
+            // let mut sample_buffer = self.sample_buffer.write().unwrap();
+            // for (ch_idx, channel_sample_buffer) in sample_buffer.iter_mut().enumerate() {
+            //     channel_sample_buffer.extend(resampler_output_buffer.get(ch_idx).unwrap())
+            // }
+
+            // data.channel_samples[]
 
             let mut sample_buffer = self.sample_buffer.write().unwrap();
+
             for (ch_idx, channel_sample_buffer) in sample_buffer.iter_mut().enumerate() {
-                channel_sample_buffer.extend(resampler_output_buffer.get(ch_idx).unwrap())
+                channel_sample_buffer.extend(&audio_data.ch_sample_frames.get(ch_idx).unwrap().samples);
             }
+            // let mut sample_items = Vec::with_capacity(self.source.metadata.channels);
+            // for ch_data in data.unwrap().channel_samples.into_iter() {
+            //     // sample_items.push(ch_data.samples);
+            //     channel_sample_buffer.extend(ch_data.samples);
+            // }
 
-            drop(sample_buffer);
+            // drop(sample_buffer);
 
-            let buf_req_start_idx = self.get_buf_req_pos();
-            self.set_buf_req_pos(buf_req_start_idx+1);
+            let curr_buf_req_start_idx = self.get_buf_req_pos();
+            self.set_buf_req_pos(curr_buf_req_start_idx + audio_data.num_frames as usize);
+            // self.set_buf_req_pos(buf_req_start_idx+1);
         }
 
         Ok(())
