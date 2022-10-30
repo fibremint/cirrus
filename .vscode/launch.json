@@ -14,14 +14,24 @@
         "postDebugTask": "task:terminate-all",
         "cwd": "${workspaceRoot}"
       },
+      // {
+      //   "type": "cppvsdbg",
+      //   "request": "launch",
+      //   "name": "Debug Server (MSVC)",
+      //   "program": "${workspaceRoot}/target/debug/cirrus-server.exe",
+      //   "externalConsole": false,
+      //   "cwd": "${workspaceRoot}/cirrus-server",
+      //   "preLaunchTask": "server:build-rust-debug"
+      // },
       {
         "type": "cppvsdbg",
         "request": "launch",
         "name": "Debug Server (MSVC)",
-        "program": "${workspaceRoot}/cirrus-server/target/debug/cirrus-server.exe",
+        "program": "${workspaceRoot}/target/debug/cirrus-server.exe",
         "externalConsole": false,
-        "cwd": "${workspaceRoot}/cirrus-server",
-        "preLaunchTask": "server:build-rust-debug"
+        "cwd": "${workspaceRoot}",
+        "preLaunchTask": "server:build-rust-debug",
+        // "requireExactSource": false
       },
       {
         "type": "cppvsdbg",
@@ -31,7 +41,8 @@
         "externalConsole": false,
         "preLaunchTask": "client:release",
         // "postDebugTask": "task:terminate-all",
-        "cwd": "${workspaceRoot}"
+        "cwd": "${workspaceRoot}",
+        "requireExactSource": true
       },
       {
         "type": "cppvsdbg",

@@ -41,14 +41,29 @@
           "close": true
         }
       },
+      // {
+      //   "label": "server:build-rust-debug",
+      //   "type": "shell",
+      //   "isBackground": false,
+      //   "command": "cargo",
+      //   "args": ["build", "--bin", "cirrus-server"],
+      //   "options": {
+      //     "cwd": "${workspaceFolder}"
+      //   },
+      //   "presentation": {
+      //     "reveal": "always",
+      //     "revealProblems": "onProblem",
+      //     "close": true
+      //   }
+      // },
       {
         "label": "server:build-rust-debug",
         "type": "shell",
         "isBackground": false,
         "command": "cargo",
-        "args": ["build"],
+        "args": ["build", "--bin", "cirrus-server"],
         "options": {
-          "cwd": "${workspaceFolder}/cirrus-server"
+          "cwd": "${workspaceFolder}"
         },
         "presentation": {
           "reveal": "always",

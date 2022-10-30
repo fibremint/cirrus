@@ -1,0 +1,6 @@
+[server]
+listen_address = "127.0.0.1"
+listen_port = 50000
+
+[mongodb]
+address = "mongodb://localhost:27017"

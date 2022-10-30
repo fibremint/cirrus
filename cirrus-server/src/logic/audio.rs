@@ -19,6 +19,13 @@ use crate::{
     model::{self, document}
 };
 
+use symphonia::core::{codecs::{CODEC_TYPE_NULL, DecoderOptions, Decoder}, audio::{AudioBufferRef, Signal, SampleBuffer, RawSampleBuffer}, formats::FormatReader};
+use symphonia::core::errors::Error;
+use symphonia::core::formats::FormatOptions;
+use symphonia::core::meta::MetadataOptions;
+use symphonia::core::io::MediaSourceStream;
+use symphonia::core::probe::Hint;
+
 pub struct AudioFile {}
 
 impl AudioFile {
@@ -59,6 +66,10 @@ impl AudioFile {
         samples_start_idx: usize, 
         samples_end_idx: usize
     ) -> Result<AudioSampleIterator, String> {
+        // let test_audio_source_path = "d://tmp//file_example_OOG_5MG.ogg";
+        // let test_audio_source_path = "d://tmp//file_example_WAV_10MG.wav";
+        // let test_audio_source_path = "d://tmp//Above & Beyond - Another Angel (Extended Mix).aiff";
+
         let audio_tag_id = ObjectId::parse_str(audio_tag_id).unwrap();
         let audio_file = model::AudioFile::find_by_audio_tag_id(mongodb_client.clone(), audio_tag_id).await.unwrap();
 
@@ -71,97 +82,132 @@ impl AudioFile {
             Ok(file) => file,
             Err(_err) => return Err(String::from("failed to load file")),
         };
-    
-        let mut reader = AiffReader::new(&file);
-        reader.parse().unwrap();
-
-        let sound_data_meta = reader.get_sound_data_metadata();
+        // let test_audio_source = std::fs::File::open(test_audio_source_path).unwrap();
 
         let audio_sample_iter = AudioSampleIterator::new(
             file,
-            sound_data_meta.metadata.num_sample_frames.try_into().unwrap(),
-            request_samples_size.try_into().unwrap(),
-            samples_start_idx.try_into().unwrap(),
-            samples_end_idx.try_into().unwrap(),
-            sound_data_meta.metadata.num_channels.try_into().unwrap(),
-            sound_data_meta.metadata.sample_rate as u32,
-            sound_data_meta.data_offset,
+            2,
+            request_samples_size.try_into().unwrap()
         );
 
         Ok(audio_sample_iter)
     }
 }
 
+
+
 pub struct AudioSampleIterator {
     samples_size: u64,
     channel_size: usize,
-    sample_buf: Vec<Vec<f32>>,
-    file_reader: BufReader<File>,
-    raw_data_buffer: Vec<u8>,
-    num_seek_samples: u64,
-    sample_idx: u64,
-    sample_rate: u32,
+    ch_sample_buf: Vec<Vec<f32>>,
+    // file_reader: BufReader<File>,
+    // raw_data_buffer: Vec<u8>,
+    // num_seek_samples: u64,
+    // sample_idx: u64,
+    // sample_rate: u32,
     // samples_start_idx: u64,
     // samples_end_idx: u64,
-    last_buf_pos: u64,
+    // last_buf_pos: u64,
     // num_total_samples: u64
+
+    // mss: MediaSourceStream,
+    decoder: Box<dyn Decoder>,
+    format: Box<dyn FormatReader>,
 }
 
 impl AudioSampleIterator {
     pub fn new(
         source: File,
-        num_total_samples: u64,
-        samples_size: u64,
-        samples_start_idx: u64,
-        samples_end_idx: u64,
         channel_size: usize,
-        sample_rate: u32,
-        data_offset: u64,
+        // num_total_samples: u64,
+        samples_size: u64,
+        // samples_start_idx: u64,
+        // samples_end_idx: u64,
+        // channel_size: usize,
+        // sample_rate: u32,
+        // data_offset: u64,
     ) -> Self {
-        println!("sample iterator: total length of samples: {}", num_total_samples);
+        // println!("sample iterator: total length of samples: {}", num_total_samples);
 
-        let num_seek_samples = std::cmp::min(
-            (samples_end_idx - samples_start_idx) * samples_size,
-            num_total_samples - (samples_start_idx * samples_size)
-        );
+        let mss = MediaSourceStream::new(Box::new(source), Default::default());
+        let mut hint = Hint::new();
 
-        assert!(samples_size * samples_start_idx + num_seek_samples <= num_total_samples);
+        let meta_opts: MetadataOptions = Default::default();
+        let fmt_opts: FormatOptions = Default::default();
 
-        let mut sample_buf = Vec::with_capacity(channel_size);
+        let probed = symphonia::default::get_probe().format(&hint, mss, &fmt_opts, &meta_opts).unwrap();
+
+        let mut format = probed.format;
+
+            // Find the first audio track with a known (decodeable) codec.
+        let track = format.tracks()
+            .iter()
+            .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+            .expect("no supported audio tracks");
+
+        // Use the default options for the decoder.
+        let dec_opts: DecoderOptions = Default::default();
+        // Create a decoder for the track.
+        let mut decoder = symphonia::default::get_codecs().make(&track.codec_params, &dec_opts)
+                                            .expect("unsupported codec");
+
+        let mut ch_sample_buf = Vec::with_capacity(channel_size);
         for _ in 0..channel_size {
-            sample_buf.push(vec![0.; 0]);
+            ch_sample_buf.push(vec![0.; 0]);
         }
-
-        let mut file_reader = BufReader::new(source);
-        
-        let seek_start_pos = data_offset + (samples_start_idx * samples_size * 2 * 2);
-        file_reader.seek_relative(seek_start_pos.try_into().unwrap()).unwrap();
 
         Self {
             samples_size,
+            ch_sample_buf,
             channel_size,
-            sample_buf,
-            file_reader,
-            raw_data_buffer: Vec::with_capacity((samples_size*4).try_into().unwrap()),
-            num_seek_samples,
-            sample_idx: 0,
-            sample_rate,
-            // samples_start_idx,
-            // samples_end_idx,
-            last_buf_pos: 0,
-            // num_total_samples
+            // mss,
+            decoder,
+            format
         }
+        
+
+        // let num_seek_samples = std::cmp::min(
+        //     (samples_end_idx - samples_start_idx) * samples_size,
+        //     num_total_samples - (samples_start_idx * samples_size)
+        // );
+
+        // assert!(samples_size * samples_start_idx + num_seek_samples <= num_total_samples);
+
+        // let mut sample_buf = Vec::with_capacity(channel_size);
+        // for _ in 0..channel_size {
+        //     sample_buf.push(vec![0.; 0]);
+        // }
+
+        // let mut file_reader = BufReader::new(source);
+        
+        // let seek_start_pos = data_offset + (samples_start_idx * samples_size * 2 * 2);
+        // file_reader.seek_relative(seek_start_pos.try_into().unwrap()).unwrap();
+
+        // Self {
+        //     samples_size,
+        //     channel_size,
+        //     sample_buf,
+        //     file_reader,
+        //     raw_data_buffer: Vec::with_capacity((samples_size*4).try_into().unwrap()),
+        //     num_seek_samples,
+        //     sample_idx: 0,
+        //     sample_rate,
+        //     // samples_start_idx,
+        //     // samples_end_idx,
+        //     last_buf_pos: 0,
+        //     // num_total_samples
+        // }
     }
 
-    fn reset_buf(&mut self, ch_buf_size: usize) {
-        for sample_ch_buf in self.sample_buf.iter_mut() {
+    fn reset_ch_sample_buf(&mut self, ch_buf_size: usize) {
+        for sample_ch_buf in self.ch_sample_buf.iter_mut() {
             *sample_ch_buf = vec![0.; ch_buf_size];
         }
     }
 
     fn drain_sample_buffer(&mut self) -> Vec<Vec<f32>> {
         let mut drained_sample_buf = Vec::with_capacity(self.channel_size);
-        for sample_ch_buf in self.sample_buf.iter_mut() {
+        for sample_ch_buf in self.ch_sample_buf.iter_mut() {
             drained_sample_buf.push(sample_ch_buf.drain(..).collect_vec());
         }
 
@@ -173,40 +219,200 @@ impl Iterator for AudioSampleIterator {
     type Item = Vec<Vec<f32>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let read_sample_len = std::cmp::min(
-            self.samples_size, 
-            self.num_seek_samples - self.sample_idx
-        );
+        let packet = match self.format.next_packet() {
+            Ok(packet) => packet,
+            Err(Error::ResetRequired) => {
+                // The track list has been changed. Re-examine it and create a new set of decoders,
+                // then restart the decode loop. This is an advanced feature and it is not
+                // unreasonable to consider this "the end." As of v0.5.0, the only usage of this is
+                // for chained OGG physical streams.
+                unimplemented!();
+            },
+            Err(Error::DecodeError(_)) => unimplemented!(),
+            Err(Error::SeekError(_)) => unimplemented!(),
+            Err(Error::Unsupported(_)) => unimplemented!(),
+            Err(Error::LimitError(_)) => unimplemented!(),
+            Err(Error::IoError(err)) => {
+                // A unrecoverable error occured, halt decoding.
+                let a = "foo";
+                // panic!("{}", err);
+                println!("{:?}", err);
 
-        if read_sample_len == 0 {
-            return None
-        }
+                return None;
+            }
+        };
 
-        self.raw_data_buffer = vec![0; (read_sample_len*2*2).try_into().unwrap()];
-        self.reset_buf(read_sample_len.try_into().unwrap());
+        let decoded = match self.decoder.decode(&packet) {
+            Ok(decoded) => decoded,
+            Err(_) => todo!(),
+        };
 
-        // self.file_reader.read_exact(&mut self.raw_data_buffer).unwrap();
-        self.last_buf_pos = self.file_reader.stream_position().unwrap();
-        if let Err(err) = self.file_reader.read_exact(&mut self.raw_data_buffer) {
-            println!("{:?}", err);
-        }
-        self.sample_idx += read_sample_len;
+        let mut sample_buf = SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
+        sample_buf.copy_interleaved_ref(decoded);
 
-        let sample_iter = self.raw_data_buffer
-            .chunks(2)
-            .map(|ref mut item| 
-                aiff::reader::read_i16_be(item) as f32 / self.sample_rate as f32);
-            
-        for (sample_item_idx, sample_item) in sample_iter.enumerate() {
+        let samples = sample_buf.samples();
+        self.reset_ch_sample_buf((samples.len() / 2).try_into().unwrap());
+
+        for (sample_item_idx, sample_item) in samples.iter().enumerate() {
             let ch_idx = sample_item_idx % self.channel_size;
             let sample_idx = sample_item_idx / self.channel_size;
-            self.sample_buf[ch_idx][sample_idx] = sample_item;
+            self.ch_sample_buf[ch_idx][sample_idx] = *sample_item;
         }
+
+        // let samples = sample_buf.samples();
+
+        // let read_sample_len = std::cmp::min(
+        //     self.samples_size, 
+        //     self.num_seek_samples - self.sample_idx
+        // );
+
+        // if read_sample_len == 0 {
+        //     return None
+        // }
+
+        // self.raw_data_buffer = vec![0; (read_sample_len*2*2).try_into().unwrap()];
+        // self.reset_buf(read_sample_len.try_into().unwrap());
+
+        // // self.file_reader.read_exact(&mut self.raw_data_buffer).unwrap();
+        // self.last_buf_pos = self.file_reader.stream_position().unwrap();
+        // if let Err(err) = self.file_reader.read_exact(&mut self.raw_data_buffer) {
+        //     println!("{:?}", err);
+        // }
+        // self.sample_idx += read_sample_len;
+
+        // let sample_iter = self.raw_data_buffer
+        //     .chunks(2)
+        //     .map(|ref mut item| 
+        //         aiff::reader::read_i16_be(item) as f32 / self.sample_rate as f32);
+            
+        // for (sample_item_idx, sample_item) in sample_iter.enumerate() {
+        //     let ch_idx = sample_item_idx % self.channel_size;
+        //     let sample_idx = sample_item_idx / self.channel_size;
+        //     self.sample_buf[ch_idx][sample_idx] = sample_item;
+        // }
     
         Some(self.drain_sample_buffer())
         
     }
 }
+
+
+
+// pub struct AudioSampleIterator {
+//     samples_size: u64,
+//     channel_size: usize,
+//     sample_buf: Vec<Vec<f32>>,
+//     file_reader: BufReader<File>,
+//     raw_data_buffer: Vec<u8>,
+//     num_seek_samples: u64,
+//     sample_idx: u64,
+//     sample_rate: u32,
+//     // samples_start_idx: u64,
+//     // samples_end_idx: u64,
+//     last_buf_pos: u64,
+//     // num_total_samples: u64
+// }
+
+// impl AudioSampleIterator {
+//     pub fn new(
+//         source: File,
+//         num_total_samples: u64,
+//         samples_size: u64,
+//         samples_start_idx: u64,
+//         samples_end_idx: u64,
+//         channel_size: usize,
+//         sample_rate: u32,
+//         data_offset: u64,
+//     ) -> Self {
+//         println!("sample iterator: total length of samples: {}", num_total_samples);
+
+//         let num_seek_samples = std::cmp::min(
+//             (samples_end_idx - samples_start_idx) * samples_size,
+//             num_total_samples - (samples_start_idx * samples_size)
+//         );
+
+//         assert!(samples_size * samples_start_idx + num_seek_samples <= num_total_samples);
+
+//         let mut sample_buf = Vec::with_capacity(channel_size);
+//         for _ in 0..channel_size {
+//             sample_buf.push(vec![0.; 0]);
+//         }
+
+//         let mut file_reader = BufReader::new(source);
+        
+//         let seek_start_pos = data_offset + (samples_start_idx * samples_size * 2 * 2);
+//         file_reader.seek_relative(seek_start_pos.try_into().unwrap()).unwrap();
+
+//         Self {
+//             samples_size,
+//             channel_size,
+//             sample_buf,
+//             file_reader,
+//             raw_data_buffer: Vec::with_capacity((samples_size*4).try_into().unwrap()),
+//             num_seek_samples,
+//             sample_idx: 0,
+//             sample_rate,
+//             // samples_start_idx,
+//             // samples_end_idx,
+//             last_buf_pos: 0,
+//             // num_total_samples
+//         }
+//     }
+
+//     fn reset_buf(&mut self, ch_buf_size: usize) {
+//         for sample_ch_buf in self.sample_buf.iter_mut() {
+//             *sample_ch_buf = vec![0.; ch_buf_size];
+//         }
+//     }
+
+//     fn drain_sample_buffer(&mut self) -> Vec<Vec<f32>> {
+//         let mut drained_sample_buf = Vec::with_capacity(self.channel_size);
+//         for sample_ch_buf in self.sample_buf.iter_mut() {
+//             drained_sample_buf.push(sample_ch_buf.drain(..).collect_vec());
+//         }
+
+//         drained_sample_buf
+//     }
+// }
+
+// impl Iterator for AudioSampleIterator {
+//     type Item = Vec<Vec<f32>>;
+
+//     fn next(&mut self) -> Option<Self::Item> {
+//         let read_sample_len = std::cmp::min(
+//             self.samples_size, 
+//             self.num_seek_samples - self.sample_idx
+//         );
+
+//         if read_sample_len == 0 {
+//             return None
+//         }
+
+//         self.raw_data_buffer = vec![0; (read_sample_len*2*2).try_into().unwrap()];
+//         self.reset_buf(read_sample_len.try_into().unwrap());
+
+//         // self.file_reader.read_exact(&mut self.raw_data_buffer).unwrap();
+//         self.last_buf_pos = self.file_reader.stream_position().unwrap();
+//         if let Err(err) = self.file_reader.read_exact(&mut self.raw_data_buffer) {
+//             println!("{:?}", err);
+//         }
+//         self.sample_idx += read_sample_len;
+
+//         let sample_iter = self.raw_data_buffer
+//             .chunks(2)
+//             .map(|ref mut item| 
+//                 aiff::reader::read_i16_be(item) as f32 / self.sample_rate as f32);
+            
+//         for (sample_item_idx, sample_item) in sample_iter.enumerate() {
+//             let ch_idx = sample_item_idx % self.channel_size;
+//             let sample_idx = sample_item_idx / self.channel_size;
+//             self.sample_buf[ch_idx][sample_idx] = sample_item;
+//         }
+    
+//         Some(self.drain_sample_buffer())
+        
+//     }
+// }
 
 pub struct AudioLibrary {}
 
