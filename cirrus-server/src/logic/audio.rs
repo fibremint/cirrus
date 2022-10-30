@@ -47,16 +47,31 @@ impl AudioFile {
             Err(_) => return Err(String::from("failed to load file")),
         };
 
-        let mut reader = AiffReader::new(&file);
-        reader.parse().unwrap();
-       
-        let common = reader.read_chunk::<aiff::chunks::CommonChunk>(true, false, aiff::ids::COMMON).unwrap();
+        let mss = MediaSourceStream::new(Box::new(file), Default::default());
+        let hint = Hint::new();
 
+        let meta_opts: MetadataOptions = Default::default();
+        let fmt_opts: FormatOptions = Default::default();
+
+        let probed = symphonia::default::get_probe().format(&hint, mss, &fmt_opts, &meta_opts).unwrap();
+
+        let format = probed.format;
+        let track = format.tracks()
+            .iter()
+            .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+            .expect("no supported audio tracks");
+
+        let bit_rate = track.codec_params.bits_per_sample.unwrap();
+        let channels = track.codec_params.channels.unwrap().count();
+        let sample_rate = track.codec_params.sample_rate.unwrap();
+        let length = 
+            track.codec_params.n_frames.unwrap() as f64 / sample_rate as f64;
+    
         Ok(AudioMetaRes {
-            bit_rate: common.bit_rate as u32,
-            channels: common.num_channels as u32,
-            sample_frames: common.num_sample_frames,
-            sample_rate: common.sample_rate as u32,
+            bit_rate: bit_rate.try_into().unwrap(),
+            channels: channels.try_into().unwrap(),
+            length: length as f32,
+            sample_rate,
         })
     }
 
@@ -80,11 +95,6 @@ impl AudioFile {
             Ok(file) => file,
             Err(_err) => return Err(String::from("failed to load file")),
         };
-
-        // let test_audio_source_path = "d://tmp//file_example_OOG_5MG.ogg";
-        // let test_audio_source_path = "d://tmp//file_example_WAV_10MG.wav";
-        // let test_audio_source_path = "d://tmp//Above & Beyond - Another Angel (Extended Mix).aiff";
-        // let file = std::fs::File::open(test_audio_source_path).unwrap();
 
         let audio_sample_iter = AudioSampleIterator::new(
             file,
@@ -127,14 +137,6 @@ impl AudioSampleIterator {
         let probed = symphonia::default::get_probe().format(&hint, mss, &fmt_opts, &meta_opts).unwrap();
 
         let mut format = probed.format;
-
-        format.seek(
-            SeekMode::Accurate, 
-            SeekTo::TimeStamp {
-                ts: sample_frame_start_pos.try_into().unwrap(),
-                track_id: 0, 
-            }
-        ).unwrap();
             // Find the first audio track with a known (decodeable) codec.
         let track = format.tracks()
             .iter()
@@ -157,6 +159,19 @@ impl AudioSampleIterator {
             sample_rate as usize, 
             1024, 
             channel_size
+        ).unwrap();
+
+        let source_sample_frame_start_pos = (
+            (sample_frame_start_pos as f64 / resampler.output_frames_max() as f64) 
+                * resampler.input_frames_max() as f64
+        ).ceil();
+
+        format.seek(
+            SeekMode::Accurate, 
+            SeekTo::TimeStamp {
+                ts: source_sample_frame_start_pos as u64,
+                track_id: 0, 
+            }
         ).unwrap();
 
         let resampler_out_buf = resampler.output_buffer_allocate();

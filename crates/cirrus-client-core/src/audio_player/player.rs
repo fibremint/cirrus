@@ -378,7 +378,7 @@ impl AudioStreamInner {
     }
 
     pub fn get_content_length(&self) -> f32 {
-        self.audio_sample.inner.content_length
+        self.audio_sample.get_content_length()
     }
 
     pub fn set_playback_position(&mut self, position_sec: f32) -> Result<(), anyhow::Error> {
@@ -416,7 +416,7 @@ impl AudioStreamInner {
 
     fn check_end_of_content(&self) -> Result<&'static str, anyhow::Error> {
         // reach end of the content
-        if self.audio_sample.inner.content_length - self.audio_sample.get_current_playback_position_sec() <= 0.5 {
+        if self.audio_sample.get_content_length() - self.audio_sample.get_current_playback_position_sec() <= 0.5 {
             println!("reach end of content");
             self.set_stream_playback_status(PlaybackStatus::Pause)?;
 
@@ -460,7 +460,7 @@ impl AudioStreamInner {
         }
 
         if self.audio_sample.get_remain_sample_buffer_sec() > playback_buffer_sec - fetch_buffer_margin_sec ||
-            self.audio_sample.get_current_playback_position_sec() + self.audio_sample.get_remain_sample_buffer_sec() + 0.1 > self.audio_sample.inner.content_length {
+            self.audio_sample.get_current_playback_position_sec() + self.audio_sample.get_remain_sample_buffer_sec() + 0.1 > self.audio_sample.get_content_length() {
                 return Ok(());
             }
 

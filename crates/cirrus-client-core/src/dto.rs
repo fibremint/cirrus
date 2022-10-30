@@ -1,16 +1,12 @@
 use crate::request;
 
-pub struct AudioSourceMetadata {
-    pub bit_rate: u32,
-    pub sample_rate: u32,
-    pub channels: usize,
-    pub sample_frames: usize,
-}
-
 pub struct AudioSource {
     pub server_address: String,
     pub id: String,
-    pub metadata: AudioSourceMetadata,
+    pub length: f32,
+    pub channels: usize,
+    pub bit_rate: u32,
+    pub sample_rate: usize,
 }
 
 impl AudioSource {
@@ -18,21 +14,18 @@ impl AudioSource {
         let server_address = server_address.to_string();
 
         let metadata_res = request::get_audio_meta(
-            server_address.clone(), 
+            server_address.clone(),
             audio_tag_id
         ).await.unwrap().into_inner();
 
-        let metadata = AudioSourceMetadata {
-            bit_rate: metadata_res.bit_rate,
-            sample_rate: metadata_res.sample_rate,
-            channels: metadata_res.channels as usize,
-            sample_frames: metadata_res.sample_frames as usize,
-        };
-
         Ok(Self {
-            server_address,
+            server_address: server_address.to_string(),
             id: audio_tag_id.to_string(),
-            metadata,
+            length: metadata_res.length,
+            channels: metadata_res.channels.try_into().unwrap(),
+            bit_rate: metadata_res.bit_rate,
+            sample_rate: metadata_res.sample_rate as usize,
         })
+
     }
 }

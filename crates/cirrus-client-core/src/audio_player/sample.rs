@@ -10,7 +10,6 @@ use std::iter::Iterator;
 
 // use anyhow::anyhow;
 use futures::StreamExt;
-use rubato::Resampler;
 use tokio::sync::mpsc;
 
 use crate::{dto::AudioSource, request};
@@ -79,6 +78,10 @@ impl AudioSample {
         self.inner.get_buffer_status()
     }
 
+    pub fn get_content_length(&self) -> f32 {
+        self.inner.source.length
+    }
+
 }
 
 impl Drop for AudioSample {
@@ -96,47 +99,26 @@ pub struct AudioSampleInner {
     sample_buffer: RwLock<Vec<VecDeque<f32>>>,
     playback_sample_frame_idx: Arc<AtomicUsize>,
     pub buffer_status: Arc<AtomicUsize>,
-    resampler: Mutex<rubato::FftFixedInOut<f32>>,
-    pub resampler_frames_input_next: usize,
-    pub resampler_frames_output_next: usize,
     host_sample_rate: u32,
     host_output_channels: usize,
-    pub content_length: f32,
     buf_req_pos: Arc<AtomicUsize>,
     done_fill_buf_condvar: Arc<(Mutex<bool>, Condvar)>
 }
 
 impl AudioSampleInner {
     pub fn new(source: AudioSource, host_sample_rate: u32, host_output_channels: usize) -> Self {
-        let resampler = rubato::FftFixedInOut::new(
-            source.metadata.sample_rate as usize, 
-            host_sample_rate as usize, 
-            1024, 
-            2
-        ).unwrap();
-
-        let resampler_frames_input_next = resampler.input_frames_next();
-        let resampler_frames_output_next = resampler.output_frames_next();
-
         let mut sample_buffer: Vec<VecDeque<f32>> = Vec::with_capacity(2);
         for _ in 0..host_output_channels {
             sample_buffer.push(VecDeque::new());
         }
-
-        let resampled_sample_frames = (source.metadata.sample_frames as f32 * (host_sample_rate as f32 / source.metadata.sample_rate as f32)).ceil() as usize;
-        let content_length = resampled_sample_frames as f32 / host_sample_rate as f32;
 
         Self {
             source,
             sample_buffer: RwLock::new(sample_buffer),
             playback_sample_frame_idx: Arc::new(AtomicUsize::new(0)),
             buffer_status: Arc::new(AtomicUsize::new(AudioSampleBufferStatus::StartFillBuffer as usize)),
-            resampler: Mutex::new(resampler),
-            resampler_frames_input_next,
-            resampler_frames_output_next,
             host_sample_rate,
             host_output_channels,
-            content_length,
             buf_req_pos: Arc::new(AtomicUsize::new(0)),
             done_fill_buf_condvar: Arc::new((Mutex::new(true), Condvar::new()))
         }
@@ -168,11 +150,6 @@ impl AudioSampleInner {
 
     fn get_playback_sample_frame_idx_from_sec(&self, sec: f32) -> usize {
         self.convert_sec_to_sample_frame_idx(sec, self.host_sample_rate)
-    }
-
-    fn get_audio_source_sample_idx(&self, sec: f32) -> usize {
-        (self.convert_sec_to_sample_frame_idx(sec, self.source.metadata.sample_rate) as f32 / 
-            self.resampler_frames_input_next as f32).floor() as usize
     }
 
     fn set_playback_sample_frame_idx(&self, sample_frame_idx: usize) {
@@ -222,7 +199,6 @@ impl AudioSampleInner {
             if position_sec_delta > 0.0 { position_sec + self.get_remain_sample_buffer_sec() }
             else { position_sec };
 
-        // let buf_req_start_pos = self.get_audio_source_sample_idx(sample_req_start_sec);
         let buf_req_start_pos = (sample_req_start_sec * self.host_sample_rate as f32) as usize;
         self.set_buf_req_pos(buf_req_start_pos);
         self.set_playback_sample_frame_idx(position_sample_idx);
@@ -280,8 +256,6 @@ impl AudioSampleInner {
     }
 
     async fn get_buffer_for(&self, server_address: &str, sec: f32) -> Result<(), anyhow::Error> {
-        // let buf_req_start_idx = self.get_buf_req_pos() as u32;
-
         let req_sample_frames_len = (sec * self.host_sample_rate as f32) as u32;
 
         let mut audio_data_stream = request::get_audio_data_stream(
@@ -292,8 +266,6 @@ impl AudioSampleInner {
             self.get_buf_req_pos() as u32,
             req_sample_frames_len,
         ).await?;
-
-        // drop(buf_req_start_idx);
 
         while let Some(res) = audio_data_stream.next().await {
             let audio_data = match res {
@@ -313,54 +285,21 @@ impl AudioSampleInner {
                 break;
             }
 
-            // let mut sample_items = Vec::with_capacity(self.source.metadata.channels);
-            // for ch_data in data.unwrap().channel_samples.into_iter() {
-            //     sample_items.push(ch_data.samples);
-            // }
-
-            // let mut resampler = self.resampler.lock().unwrap();
-            // let mut resampler_output_buffer = resampler.output_buffer_allocate();
-
-            // // zero pad for final sample data
-            // if sample_items[0].len() < self.resampler_frames_input_next {
-            //     let zero_pad_len = self.resampler_frames_input_next - sample_items[0].len();
-            //     for sample_items_ch in sample_items.iter_mut() {
-            //         sample_items_ch.extend_from_slice(&vec![0.; zero_pad_len]);
-            //     }
-            // }
-
-            // resampler.process_into_buffer(&sample_items, &mut resampler_output_buffer, None).unwrap();
-
-            // let mut sample_buffer = self.sample_buffer.write().unwrap();
-            // for (ch_idx, channel_sample_buffer) in sample_buffer.iter_mut().enumerate() {
-            //     channel_sample_buffer.extend(resampler_output_buffer.get(ch_idx).unwrap())
-            // }
-
-            // data.channel_samples[]
-
             let mut sample_buffer = self.sample_buffer.write().unwrap();
 
             for (ch_idx, channel_sample_buffer) in sample_buffer.iter_mut().enumerate() {
                 channel_sample_buffer.extend(&audio_data.ch_sample_frames.get(ch_idx).unwrap().samples);
             }
-            // let mut sample_items = Vec::with_capacity(self.source.metadata.channels);
-            // for ch_data in data.unwrap().channel_samples.into_iter() {
-            //     // sample_items.push(ch_data.samples);
-            //     channel_sample_buffer.extend(ch_data.samples);
-            // }
-
-            // drop(sample_buffer);
 
             let curr_buf_req_start_idx = self.get_buf_req_pos();
             self.set_buf_req_pos(curr_buf_req_start_idx + audio_data.num_frames as usize);
-            // self.set_buf_req_pos(buf_req_start_idx+1);
         }
 
         Ok(())
     }
     
     pub fn play_for(&self, output: &mut [f32]) {
-        for output_channel_frame in output.chunks_mut(self.source.metadata.channels) {  
+        for output_channel_frame in output.chunks_mut(self.source.channels) {  
             let mut channel_sample_read: u8 = 0;
             let mut sample_buffer = self.sample_buffer.write().unwrap();
           
@@ -376,7 +315,7 @@ impl AudioSampleInner {
             drop(sample_buffer);
 
             let playback_sample_frame_idx = self.get_playback_sample_frame_idx();
-            let next_playback_frame_idx = playback_sample_frame_idx + (channel_sample_read / self.source.metadata.channels as u8) as usize;
+            let next_playback_frame_idx = playback_sample_frame_idx + (channel_sample_read / self.source.channels as u8) as usize;
             self.set_playback_sample_frame_idx(next_playback_frame_idx);
         }
     }
