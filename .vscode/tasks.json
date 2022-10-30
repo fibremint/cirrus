@@ -16,9 +16,9 @@
         "type": "shell",
         "isBackground": false,
         "command": "cargo",
-        "args": ["build"],
+        "args": ["build", "--bin", "app"],
         "options": {
-          "cwd": "${workspaceFolder}/cirrus-app/src-tauri"
+          "cwd": "${workspaceFolder}"
         },
         "presentation": {
           "reveal": "always",
@@ -76,9 +76,9 @@
         "type": "shell",
         "isBackground": false,
         "command": "cargo",
-        "args": ["build", "--release"],
+        "args": ["build", "--bin", "cirrus-server", "--release"],
         "options": {
-          "cwd": "${workspaceFolder}/cirrus-server"
+          "cwd": "${workspaceFolder}"
         },
         "presentation": {
           "reveal": "always",
