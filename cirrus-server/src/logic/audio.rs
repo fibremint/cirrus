@@ -116,8 +116,8 @@ impl AudioFile {
 pub struct OpusEncodedSample {
     pub original_frame_len: u16,
     pub padded_frame_pos: u16,
-    pub encoded_data: Vec<Vec<u8>>
-    // pub encoded_data: Vec<u8>
+    // pub encoded_data: Vec<Vec<u8>>
+    pub encoded_data: Vec<u8>
 }
 
 pub struct AudioSampleIterator {
@@ -198,7 +198,7 @@ impl AudioSampleIterator {
 
         let resampler_out_buf = resampler.output_buffer_allocate();
 
-        let opus_encoder = opus::Encoder::new(48000, opus::Channels::Mono, opus::Application::Audio).unwrap();
+        let opus_encoder = opus::Encoder::new(48000, opus::Channels::Stereo, opus::Application::Audio).unwrap();
 
         Self {
             samples_size,
@@ -240,172 +240,90 @@ impl AudioSampleIterator {
         drained_sample_buf
     }
 
-    // fn get_opus_encoded_data(&mut self) -> OpusEncodedSample {
-    //     // let ch_opus_output = [0u8; 0];
-    //     let mut opus_encoded_output = Vec::with_capacity(2);
-
-    //     let mut original_frame_len = 0;
-    //     let mut padded_frame_pos = 0;
-
-    //     // let mut ch_encoded_sample = 
-    //     // let mut buf = [0u8; 1120];
-    //     // let test = [1000 as i16; 1024];
-    //     // let mut encoded: Vec<u8> = Vec::new();
-
-    //     for sample_ch_buf in &self.resampler_out_buf {
-    //         let encoded = self.opus_encoder.encode_vec_float(&sample_ch_buf, 2880).unwrap();
-    //         opus_encoded_output.push(encoded);
-
-    //         ////////////////
-    //         // let mut encoded: Vec<u8> = Vec::new();
-
-    //         // original_frame_len = sample_ch_buf.len();
-
-    //         // let data = &sample_ch_buf[..480];
-    //         // let ch_encoded = self.opus_encoder.encode_vec_float(&data, 480).unwrap();
-    //         // encoded.extend(ch_encoded);
-
-    //         // let data = &sample_ch_buf[480..960];
-    //         // let ch_encoded = self.opus_encoder.encode_vec_float(&data, 480).unwrap();
-    //         // encoded.extend(ch_encoded);
-
-    //         // let data = &mut sample_ch_buf[960..].to_vec();
-    //         // let len = data.len();
-
-    //         // padded_frame_pos = 480 + 480 + len;
-
-    //         // let len_delta = 240 - len;
-    //         // let ext = vec![0.; len_delta];
-    //         // data.extend_from_slice(&ext);
-
-    //         // let ch_encoded = self.opus_encoder.encode_vec_float(&data, 240).unwrap();
-    //         // encoded.extend(ch_encoded);
-
-    //         // opus_encoded_output.push(encoded);
-
-    //         //////////////////
-
-    //         // opus_encoded_output.push(
-    //         //     OpusEncodedSample {
-    //         //         original_frame_len: orig_frame_len.try_into().unwrap(),
-    //         //         padded_frame_pos: pad_start_pos.try_into().unwrap(),
-    //         //         encoded_data: encoded,
-    //         //     }
-    //         // )
-
-    //         // opus_encoded_output.push(ch_encoded);
-    //         // let res = self.opus_encoder.encode_float(&sample_ch_buf.as_slice(), &mut buf).unwrap();
-    //         // let res = self.opus_encoder.encode(&test, &mut buf).unwrap();
-    //     }
-
-    //     OpusEncodedSample {
-    //         original_frame_len: original_frame_len.try_into().unwrap(),
-    //         padded_frame_pos: padded_frame_pos.try_into().unwrap(),
-    //         encoded_data: opus_encoded_output,
-    //     }
-
-    //     // opus_encoded_output
-    // }
 }
 
 impl Iterator for AudioSampleIterator {
-    // type Item = Vec<Vec<f32>>;
-    // type Item = Vec<Vec<u8>>;
     type Item = OpusEncodedSample;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let mut opus_encoded_output = Vec::with_capacity(2);
-        for _ in 0..2 {
-            opus_encoded_output.push(vec![0u8; 0]);
+        let mut enc_output = Vec::new();
+
+        let packet = match self.format.next_packet() {
+            Ok(packet) => packet,
+            Err(Error::ResetRequired) => {
+                // The track list has been changed. Re-examine it and create a new set of decoders,
+                // then restart the decode loop. This is an advanced feature and it is not
+                // unreasonable to consider this "the end." As of v0.5.0, the only usage of this is
+                // for chained OGG physical streams.
+                unimplemented!();
+            },
+            Err(Error::DecodeError(_)) => unimplemented!(),
+            Err(Error::SeekError(_)) => unimplemented!(),
+            Err(Error::Unsupported(_)) => unimplemented!(),
+            Err(Error::LimitError(_)) => unimplemented!(),
+            Err(Error::IoError(err)) => {
+                // case of react end of content
+                return None;
+            }
+        };
+
+        let decoded = match self.decoder.decode(&packet) {
+            Ok(decoded) => decoded,
+            Err(_) => todo!(),
+        };
+
+        let mut sample_buf = SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
+        sample_buf.copy_planar_ref(decoded);
+
+        let mut resampler_input = Vec::with_capacity(2);
+        let samples = sample_buf.samples();
+        
+        let frame_len = samples.len() / 2;
+        resampler_input.push(samples[..frame_len].to_vec());
+        resampler_input.push(samples[frame_len..].to_vec());
+
+        // zero pad for final sample data
+        if frame_len < self.resampler.input_frames_next() {
+            let zero_pad_len = self.resampler.input_frames_next() - frame_len;
+            for sample_items_ch in resampler_input.iter_mut() {
+                sample_items_ch.extend_from_slice(&vec![0.; zero_pad_len]);
+            }
         }
 
-        // let mut enc_output = Vec::new();
+        self.resampler.process_into_buffer(
+            &resampler_input, 
+            &mut self.resampler_out_buf, 
+            None
+        ).unwrap();
 
-        for _ in 0..1 {
-            let packet = match self.format.next_packet() {
-                Ok(packet) => packet,
-                Err(Error::ResetRequired) => {
-                    // The track list has been changed. Re-examine it and create a new set of decoders,
-                    // then restart the decode loop. This is an advanced feature and it is not
-                    // unreasonable to consider this "the end." As of v0.5.0, the only usage of this is
-                    // for chained OGG physical streams.
-                    unimplemented!();
-                },
-                Err(Error::DecodeError(_)) => unimplemented!(),
-                Err(Error::SeekError(_)) => unimplemented!(),
-                Err(Error::Unsupported(_)) => unimplemented!(),
-                Err(Error::LimitError(_)) => unimplemented!(),
-                Err(Error::IoError(err)) => {
-                    // case of react end of content
-                    return None;
-                }
-            };
-    
-            let decoded = match self.decoder.decode(&packet) {
-                Ok(decoded) => decoded,
-                Err(_) => todo!(),
-            };
-    
-            let mut sample_buf = SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
-            sample_buf.copy_planar_ref(decoded);
-    
-            let samples = sample_buf.samples();
-            let frame_len = samples.len() / 2;
+        let mut resampled_output = audio::Interleaved::<f32>::with_topology(2, 2880);
 
-            let mut resampler_input = Vec::with_capacity(2);
-            resampler_input.push(&samples[..frame_len]);
-            resampler_input.push(&samples[frame_len..]);
-
-            self.resampler.process_into_buffer(
-                &resampler_input, 
-                &mut self.resampler_out_buf, 
-                None
-            ).unwrap();
-
-            let mut resampled_output = audio::Interleaved::<f32>::with_topology(2, 2880);
-
-            for (c, s) in resampled_output
-                .get_mut(0)
-                .unwrap()
-                .iter_mut()
-                .zip(&self.resampler_out_buf[0])
-            {
-                *c = *s;
-            }
-
-            for (c, s) in resampled_output
-                .get_mut(1)
-                .unwrap()
-                .iter_mut()
-                .zip(&self.resampler_out_buf[1])
-            {
-                *c = *s;
-            }
-
-            // let encoded = self.opus_encoder.encode_vec_float(resampled_output.as_slice(), 2048).unwrap();
-            // enc_output.extend(encoded);
-
-            for ch_idx in 0..2 {
-                let ch_encoded = self.opus_encoder.encode_vec_float(&self.resampler_out_buf[ch_idx], 1024).unwrap();
-                opus_encoded_output[ch_idx].extend(ch_encoded);
-            }
-    
-            // for (idx, sample_ch_buf) in self.resampler_out_buf.iter_mut().enumerate() {
-            //     let encoded = self.opus_encoder.encode_vec_float(&sample_ch_buf, 1024).unwrap();
-            //     opus_encoded_output[idx].extend(encoded);
-            //     // opus_encoded_output[].extend(encoded);
-            // }
+        for (c, s) in resampled_output
+            .get_mut(0)
+            .unwrap()
+            .iter_mut()
+            .zip(&self.resampler_out_buf[0])
+        {
+            *c = *s;
         }
-   
 
-        // Some(self.drain_sample_buffer())
+        for (c, s) in resampled_output
+            .get_mut(1)
+            .unwrap()
+            .iter_mut()
+            .zip(&self.resampler_out_buf[1])
+        {
+            *c = *s;
+        }
 
-        // Some(self.get_opus_encoded_data())
+        let encoded = self.opus_encoder.encode_vec_float(resampled_output.as_slice(), 4000).unwrap();
+        enc_output.extend(encoded);
+
         Some(        
             OpusEncodedSample {
-                original_frame_len: 2880,
+                original_frame_len: self.resampler.input_frames_next().try_into().unwrap(),
                 padded_frame_pos: 0,
-                encoded_data: opus_encoded_output,
+                encoded_data: enc_output,
             }
         )
     }

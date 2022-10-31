@@ -297,24 +297,23 @@ impl AudioSampleInner {
 
             let mut sample_buffer = self.sample_buffer.write().unwrap();
 
-            for (ch_idx, channel_sample_buffer) in sample_buffer.iter_mut().enumerate() {
-                let mut decoded_samples = vec![0.; 2880];
+            let mut decoded_samples = vec![0.; 2880];
 
-                if let Err(err) = opus_decoder.decode_float(
-                    &audio_data.ch_sample_frames[ch_idx].encoded_samples, 
-                    &mut decoded_samples, false) {
-                        let a = "err";
+            if let Err(err) = opus_decoder.decode_float(
+                &audio_data.encoded_samples, 
+                &mut decoded_samples, 
+                false) {
+                    println!("{:?}", err);
+                }
 
-                        println!("{:?}", err);
-                    }
-
-                channel_sample_buffer.extend(decoded_samples);
+            for channel_sample_buffer in sample_buffer.iter_mut() {
+                channel_sample_buffer.extend(decoded_samples.iter().clone());
 
             }
 
             let curr_buf_req_start_idx = self.get_buf_req_pos();
-            self.set_buf_req_pos(curr_buf_req_start_idx + 2880 as usize);
-            // self.set_buf_req_pos(curr_buf_req_start_idx + audio_data.num_frames as usize);
+            // self.set_buf_req_pos(curr_buf_req_start_idx + 2880 as usize);
+            self.set_buf_req_pos(curr_buf_req_start_idx + audio_data.num_frames as usize);
         }
 
         Ok(())

@@ -64,20 +64,20 @@ impl AudioDataSvc for AudioDataSvcImpl {
 
         tokio::spawn(async move {
             while let Some(sample_data) = audio_sample_iter.next() {
-                let ch_sample_frames = sample_data.encoded_data.iter().enumerate()
-                    .map(|(ch_idx, item)| AudioChannelSampleFrames {
-                        ch_idx: ch_idx.try_into().unwrap(),
-                        encoded_samples: item.to_owned()
-                    })
-                    .collect::<Vec<_>>();
+                // let ch_sample_frames = sample_data.encoded_data.iter().enumerate()
+                //     .map(|(ch_idx, item)| AudioChannelSampleFrames {
+                //         ch_idx: ch_idx.try_into().unwrap(),
+                //         encoded_samples: item.to_owned()
+                //     })
+                //     .collect::<Vec<_>>();
 
                 if let Err(_err) = tx.send(Ok(AudioDataRes {
                     // num_frames: ch_sample_frames[0].encoded_samples.len().try_into().unwrap(),
                     // ch_sample_frames
                     num_frames: sample_data.original_frame_len.try_into().unwrap(),
                     padded_frame_pos: sample_data.padded_frame_pos.try_into().unwrap(),
-                    // encoded_samples: sample_data.encoded_data.to_owned()
-                    ch_sample_frames,
+                    encoded_samples: sample_data.encoded_data.to_owned()
+                    // ch_sample_frames,
                 })).await {
                     break;
                 }
