@@ -321,7 +321,7 @@ impl Iterator for AudioSampleIterator {
 
         Some(        
             OpusEncodedSample {
-                original_frame_len: self.resampler.input_frames_next().try_into().unwrap(),
+                original_frame_len: self.resampler.output_frames_max().try_into().unwrap(),
                 padded_frame_pos: 0,
                 encoded_data: enc_output,
             }

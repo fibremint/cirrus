@@ -12,6 +12,8 @@ use std::iter::Iterator;
 use futures::StreamExt;
 use tokio::sync::mpsc;
 use opus;
+use audio::{io, wrap, WriteBuf, ExactSizeBuf, ChannelMut, Channels, Channel, ReadBuf};
+
 
 use crate::{dto::AudioSource, request};
 use super::state::AudioSampleBufferStatus;
@@ -275,21 +277,19 @@ impl AudioSampleInner {
             req_sample_frames_len,
         ).await?;
 
-        let mut opus_decoder = opus::Decoder::new(self.host_sample_rate, opus::Channels::Mono).unwrap();
+        let mut opus_decoder = opus::Decoder::new(self.host_sample_rate, opus::Channels::Stereo).unwrap();
 
         while let Some(res) = audio_data_stream.next().await {
             let audio_data = match res {
                 Ok(data) => data,
                 Err(e) => {
                     println!("err: {}", e);
-
                     break;
                 },
             };
 
             if AudioSampleBufferStatus::StopFillBuffer == self.get_buffer_status() {
                 self.set_buffer_status(AudioSampleBufferStatus::StoppedFillBuffer);
-
                 println!("stopped fill buffer");
 
                 break;
@@ -297,7 +297,7 @@ impl AudioSampleInner {
 
             let mut sample_buffer = self.sample_buffer.write().unwrap();
 
-            let mut decoded_samples = vec![0.; 2880];
+            let mut decoded_samples = vec![0.; (audio_data.num_frames*2).try_into().unwrap()];
 
             if let Err(err) = opus_decoder.decode_float(
                 &audio_data.encoded_samples, 
@@ -305,14 +305,15 @@ impl AudioSampleInner {
                 false) {
                     println!("{:?}", err);
                 }
-
-            for channel_sample_buffer in sample_buffer.iter_mut() {
-                channel_sample_buffer.extend(decoded_samples.iter().clone());
-
+            
+            let data = audio::wrap::interleaved(decoded_samples.as_slice(), 2);
+            let r = audio::io::Read::new(data);
+            
+            for (ch_idx, channel_sample_buffer) in sample_buffer.iter_mut().enumerate() {
+                channel_sample_buffer.extend(r.channel(ch_idx));
             }
 
             let curr_buf_req_start_idx = self.get_buf_req_pos();
-            // self.set_buf_req_pos(curr_buf_req_start_idx + 2880 as usize);
             self.set_buf_req_pos(curr_buf_req_start_idx + audio_data.num_frames as usize);
         }
 
