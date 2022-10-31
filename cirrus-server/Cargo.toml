@@ -37,6 +37,8 @@ walkdir = "2"
 # ndarray = { version = "0.15", features = ["serde"] }
 itertools = "0.10"
 rubato = "0.12.0"
+opus = "0.3.0"
+audio = "0.2.0-alpha.3"
 
 [build-dependencies]
 tonic-build = "0.6"

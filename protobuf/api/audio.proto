@@ -26,14 +26,16 @@ message AudioDataReq {
 
 message AudioChannelSampleFrames {
     uint32 ch_idx = 1;
-    repeated float samples = 2 [packed=true];
+    // repeated float samples = 2 [packed=true];
+    bytes encoded_samples = 2;
 }
-
 
 message AudioDataRes {
     // bytes content = 1;
     uint32 num_frames = 1;
-    repeated AudioChannelSampleFrames ch_sample_frames = 2;
+    uint32 padded_frame_pos = 2;
+    //bytes encoded_samples = 3;
+    repeated AudioChannelSampleFrames ch_sample_frames = 3;
 }
 
 message AudioLibraryReq {

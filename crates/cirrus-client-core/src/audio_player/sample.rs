@@ -11,6 +11,7 @@ use std::iter::Iterator;
 // use anyhow::anyhow;
 use futures::StreamExt;
 use tokio::sync::mpsc;
+use opus;
 
 use crate::{dto::AudioSource, request};
 use super::state::AudioSampleBufferStatus;
@@ -102,7 +103,8 @@ pub struct AudioSampleInner {
     host_sample_rate: u32,
     host_output_channels: usize,
     buf_req_pos: Arc<AtomicUsize>,
-    done_fill_buf_condvar: Arc<(Mutex<bool>, Condvar)>
+    done_fill_buf_condvar: Arc<(Mutex<bool>, Condvar)>,
+    // opus_decoder: Arc<opus::Decoder>,
 }
 
 impl AudioSampleInner {
@@ -120,7 +122,8 @@ impl AudioSampleInner {
             host_sample_rate,
             host_output_channels,
             buf_req_pos: Arc::new(AtomicUsize::new(0)),
-            done_fill_buf_condvar: Arc::new((Mutex::new(true), Condvar::new()))
+            done_fill_buf_condvar: Arc::new((Mutex::new(true), Condvar::new())),
+            // opus_decoder: Arc::new(opus_decoder),
         }
     }
 
@@ -258,6 +261,11 @@ impl AudioSampleInner {
     async fn get_buffer_for(&self, server_address: &str, sec: f32) -> Result<(), anyhow::Error> {
         let req_sample_frames_len = (sec * self.host_sample_rate as f32) as u32;
 
+        let mut t = Vec::with_capacity(2);
+        for _ in 0..2 {
+            t.push(vec![0u8; 0]);
+        }
+
         let mut audio_data_stream = request::get_audio_data_stream(
             server_address.to_string(),
             &self.source.id,
@@ -266,6 +274,8 @@ impl AudioSampleInner {
             self.get_buf_req_pos() as u32,
             req_sample_frames_len,
         ).await?;
+
+        let mut opus_decoder = opus::Decoder::new(self.host_sample_rate, opus::Channels::Mono).unwrap();
 
         while let Some(res) = audio_data_stream.next().await {
             let audio_data = match res {
@@ -288,11 +298,23 @@ impl AudioSampleInner {
             let mut sample_buffer = self.sample_buffer.write().unwrap();
 
             for (ch_idx, channel_sample_buffer) in sample_buffer.iter_mut().enumerate() {
-                channel_sample_buffer.extend(&audio_data.ch_sample_frames.get(ch_idx).unwrap().samples);
+                let mut decoded_samples = vec![0.; 2880];
+
+                if let Err(err) = opus_decoder.decode_float(
+                    &audio_data.ch_sample_frames[ch_idx].encoded_samples, 
+                    &mut decoded_samples, false) {
+                        let a = "err";
+
+                        println!("{:?}", err);
+                    }
+
+                channel_sample_buffer.extend(decoded_samples);
+
             }
 
             let curr_buf_req_start_idx = self.get_buf_req_pos();
-            self.set_buf_req_pos(curr_buf_req_start_idx + audio_data.num_frames as usize);
+            self.set_buf_req_pos(curr_buf_req_start_idx + 2880 as usize);
+            // self.set_buf_req_pos(curr_buf_req_start_idx + audio_data.num_frames as usize);
         }
 
         Ok(())
