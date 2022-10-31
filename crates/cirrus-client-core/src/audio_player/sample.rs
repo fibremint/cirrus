@@ -12,7 +12,8 @@ use std::iter::Iterator;
 use futures::StreamExt;
 use tokio::sync::mpsc;
 use opus;
-use audio::{io, wrap, WriteBuf, ExactSizeBuf, ChannelMut, Channels, Channel, ReadBuf};
+use audio::{io, wrap, WriteBuf, ExactSizeBuf, ChannelMut, Channels, Channel, ReadBuf, AsInterleavedMut};
+use audio::Buf as _;
 
 
 use crate::{dto::AudioSource, request};
@@ -298,17 +299,17 @@ impl AudioSampleInner {
             let mut sample_buffer = self.sample_buffer.write().unwrap();
 
             let mut decoded_samples = vec![0.; (audio_data.num_frames*2).try_into().unwrap()];
+            let mut decoded_samples = audio::wrap::interleaved(decoded_samples.as_mut_slice(), 2);
 
             if let Err(err) = opus_decoder.decode_float(
                 &audio_data.encoded_samples, 
-                &mut decoded_samples, 
+                &mut decoded_samples.as_interleaved_mut(),
                 false) {
                     println!("{:?}", err);
                 }
             
-            let data = audio::wrap::interleaved(decoded_samples.as_slice(), 2);
-            let r = audio::io::Read::new(data);
-            
+            let r = audio::io::Read::new(decoded_samples);
+
             for (ch_idx, channel_sample_buffer) in sample_buffer.iter_mut().enumerate() {
                 channel_sample_buffer.extend(r.channel(ch_idx));
             }
