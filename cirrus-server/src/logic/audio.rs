@@ -101,6 +101,8 @@ impl AudioFile {
             Err(_err) => return Err(String::from("failed to load file")),
         };
 
+        // let file = File::open("D:\\tmp\\file_example_WAV_10MG.wav").unwrap();
+
         let audio_sample_iter = AudioSampleIterator::new(
             file,
             sample_rate,
@@ -128,9 +130,11 @@ pub struct AudioSampleIterator {
     format: Box<dyn FormatReader>,
     // resampler: rubato::FftFixedInOut<f32>,
     resampler: rubato::FftFixedOut<f32>,
+    resampler_in_buf: Vec<Vec<f32>>,
     resampler_out_buf: Vec<Vec<f32>>,
     
     opus_encoder: opus::Encoder,
+    decoded_samples: Vec<Vec<f32>>,
 }
 
 impl AudioSampleIterator {
@@ -167,13 +171,6 @@ impl AudioSampleIterator {
             ch_sample_buf.push(vec![0.; 0]);
         }
 
-        // let resampler = rubato::FftFixedInOut::new(
-        //     track.codec_params.sample_rate.unwrap().try_into().unwrap(), 
-        //     sample_rate as usize, 
-        //     1024, 
-        //     channel_size
-        // ).unwrap();
-
         let resampler = rubato::FftFixedOut::new(
             track.codec_params.sample_rate.unwrap().try_into().unwrap(), 
             sample_rate as usize, 
@@ -192,13 +189,19 @@ impl AudioSampleIterator {
             SeekMode::Accurate, 
             SeekTo::TimeStamp {
                 ts: source_sample_frame_start_pos as u64,
-                track_id: 0, 
+                track_id: track.id, 
             }
         ).unwrap();
 
+        let resampler_in_buf = resampler.input_buffer_allocate();
         let resampler_out_buf = resampler.output_buffer_allocate();
 
         let opus_encoder = opus::Encoder::new(48000, opus::Channels::Stereo, opus::Application::Audio).unwrap();
+
+        let mut decoded_samples = Vec::with_capacity(2);
+        for _ in 0..2 {
+            decoded_samples.push(Vec::new());
+        }
 
         Self {
             samples_size,
@@ -208,38 +211,13 @@ impl AudioSampleIterator {
             decoder,
             format,
             resampler,
+            resampler_in_buf,
             resampler_out_buf,
-            opus_encoder
+            opus_encoder,
+            decoded_samples,
         }
         
     }
-
-    fn reset_ch_sample_buf(&mut self, ch_buf_size: usize) {
-        for sample_ch_buf in self.ch_sample_buf.iter_mut() {
-            *sample_ch_buf = vec![0.; ch_buf_size];
-        }
-
-        // zero pad for final sample data
-        let input_frames_next_len = self.resampler.input_frames_next();
-
-        if self.ch_sample_buf[0].len() < input_frames_next_len {
-            let zero_pad_len = input_frames_next_len - self.ch_sample_buf[0].len();
-            for sample_items_ch in self.ch_sample_buf.iter_mut() {
-                sample_items_ch.extend_from_slice(&vec![0.; zero_pad_len]);
-            }
-        }
-    }
-
-    fn drain_sample_buffer(&mut self) -> Vec<Vec<f32>> {
-        let mut drained_sample_buf = Vec::with_capacity(self.channel_size);
-
-        for sample_ch_buf in self.resampler_out_buf.iter_mut() {
-            drained_sample_buf.push(sample_ch_buf.drain(..).collect_vec());
-        }
-
-        drained_sample_buf
-    }
-
 }
 
 impl Iterator for AudioSampleIterator {
@@ -247,73 +225,68 @@ impl Iterator for AudioSampleIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut enc_output = Vec::new();
+        let rs_input_frame_next = self.resampler.input_frames_next();
 
-        let packet = match self.format.next_packet() {
-            Ok(packet) => packet,
-            Err(Error::ResetRequired) => {
-                // The track list has been changed. Re-examine it and create a new set of decoders,
-                // then restart the decode loop. This is an advanced feature and it is not
-                // unreasonable to consider this "the end." As of v0.5.0, the only usage of this is
-                // for chained OGG physical streams.
-                unimplemented!();
-            },
-            Err(Error::DecodeError(_)) => unimplemented!(),
-            Err(Error::SeekError(_)) => unimplemented!(),
-            Err(Error::Unsupported(_)) => unimplemented!(),
-            Err(Error::LimitError(_)) => unimplemented!(),
-            Err(Error::IoError(err)) => {
-                // case of react end of content
-                return None;
-            }
-        };
+        while self.decoded_samples[0].len() < rs_input_frame_next {
+            let packet = match self.format.next_packet() {
+                Ok(packet) => packet,
+                Err(e) => {
+                    break
+                },
+            };
 
-        let decoded = match self.decoder.decode(&packet) {
-            Ok(decoded) => decoded,
-            Err(_) => todo!(),
-        };
+            let decoded = match self.decoder.decode(&packet) {
+                Ok(decoded) => decoded,
+                Err(_) => break,
+            };
 
-        let mut sample_buf = SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
-        sample_buf.copy_planar_ref(decoded);
+            let mut sample_buf = SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
+            sample_buf.copy_planar_ref(decoded);
 
-        let mut resampler_input = Vec::with_capacity(2);
-        let samples = sample_buf.samples();
+            let samples = sample_buf.samples();
+            let sample_frame_len = samples.len() / 2;
+
+            self.decoded_samples[0].extend_from_slice(&samples[..sample_frame_len]);
+            self.decoded_samples[1].extend_from_slice(&samples[sample_frame_len..]);
+        }
+
+        if self.decoded_samples[0].len() == 0 {
+            // println!("reach end of content");
+            return None;
+        }
+
+        let mut rs_input = Vec::with_capacity(2);
+        let sp_frame_len = self.decoded_samples[0].len() as i32;
+        let zero_pad_len = std::cmp::max(rs_input_frame_next as i32 - sp_frame_len, 0) ;
         
-        let frame_len = samples.len() / 2;
-        resampler_input.push(samples[..frame_len].to_vec());
-        resampler_input.push(samples[frame_len..].to_vec());
-
-        // zero pad for final sample data
-        if frame_len < self.resampler.input_frames_next() {
-            let zero_pad_len = self.resampler.input_frames_next() - frame_len;
-            for sample_items_ch in resampler_input.iter_mut() {
-                sample_items_ch.extend_from_slice(&vec![0.; zero_pad_len]);
+        for ch_idx in 0..2 {
+            let ch_sp_drain_len = std::cmp::min(rs_input_frame_next, sp_frame_len.try_into().unwrap());
+            let mut ch_rs_input = self.decoded_samples[ch_idx].drain(..ch_sp_drain_len).collect_vec();
+            
+            if zero_pad_len > 0 {
+                ch_rs_input.extend_from_slice(&vec![0.; zero_pad_len.try_into().unwrap()]);
             }
+
+            rs_input.push(ch_rs_input);
         }
 
         self.resampler.process_into_buffer(
-            &resampler_input, 
+            &rs_input, 
             &mut self.resampler_out_buf, 
             None
         ).unwrap();
 
-        let mut resampled_output = audio::Interleaved::<f32>::with_topology(2, 2880);
+        let mut resampled_output = audio::Interleaved::<f32>::with_topology(2, self.resampler.output_frames_max());
 
-        for (c, s) in resampled_output
-            .get_mut(0)
-            .unwrap()
-            .iter_mut()
-            .zip(&self.resampler_out_buf[0])
-        {
-            *c = *s;
-        }
-
-        for (c, s) in resampled_output
-            .get_mut(1)
-            .unwrap()
-            .iter_mut()
-            .zip(&self.resampler_out_buf[1])
-        {
-            *c = *s;
+        for ch_idx in 0..2 {
+            for (c, s) in resampled_output
+                .get_mut(ch_idx)
+                .unwrap()
+                .iter_mut()
+                .zip(&self.resampler_out_buf[ch_idx])
+            {
+                *c = *s;
+            }
         }
 
         let encoded = self.opus_encoder.encode_vec_float(resampled_output.as_slice(), 4000).unwrap();
