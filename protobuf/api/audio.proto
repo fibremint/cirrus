@@ -10,31 +10,36 @@ message AudioMetaReq {
 }
 
 message AudioMetaRes {
-    uint32 bit_rate = 1;
-    uint32 channels = 2;
-    float length = 3;
-    uint32 sample_rate = 4;
+    double content_length = 1;
+    uint32 sp_packets = 2;
+    double packet_dur = 3;
+    uint32 orig_sample_rate = 5;
+    uint32 orig_bit_rate = 4;
+    uint32 channels = 6;
 }
 
 message AudioDataReq {
     string audio_tag_id = 1;
-    uint32 sample_rate = 2;
-    uint32 channels = 3;
-    uint32 sample_frame_start_pos = 4;
-    uint32 sample_frames = 5;
+    uint32 packet_start_idx = 2;
+    uint32 packet_num = 3;
+    uint32 channels = 4;
+    //uint32 sample_frame_start_pos = 4;
+    //uint32 sample_frames = 5;
 }
 
-message AudioChannelSampleFrames {
-    uint32 ch_idx = 1;
-    // repeated float samples = 2 [packed=true];
-    bytes encoded_samples = 2;
-}
+//message AudioChannelSampleFrames {
+//    uint32 ch_idx = 1;
+//    repeated float samples = 2 [packed=true];
+//    bytes encoded_samples = 2;
+//}
 
 message AudioDataRes {
     // bytes content = 1;
-    uint32 num_frames = 1;
-    uint32 padded_frame_pos = 2;
-    bytes encoded_samples = 3;
+    uint32 packet_idx = 1;
+    double sp_frame_duration = 2;
+    uint32 sp_frame_num = 3;
+    bytes encoded_samples = 4;
+    //uint32 padded_frame_start_pos = 4;
     //repeated AudioChannelSampleFrames ch_sample_frames = 3;
 }
 

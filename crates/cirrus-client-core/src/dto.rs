@@ -3,10 +3,11 @@ use crate::request;
 pub struct AudioSource {
     pub server_address: String,
     pub id: String,
-    pub length: f32,
+    pub length: f64,
     pub channels: usize,
     pub bit_rate: u32,
     pub sample_rate: usize,
+    pub packet_dur: f64,
 }
 
 impl AudioSource {
@@ -21,10 +22,11 @@ impl AudioSource {
         Ok(Self {
             server_address: server_address.to_string(),
             id: audio_tag_id.to_string(),
-            length: metadata_res.length,
+            length: metadata_res.content_length,
             channels: metadata_res.channels.try_into().unwrap(),
-            bit_rate: metadata_res.bit_rate,
-            sample_rate: metadata_res.sample_rate as usize,
+            bit_rate: metadata_res.orig_bit_rate,
+            sample_rate: metadata_res.orig_sample_rate as usize,
+            packet_dur: metadata_res.packet_dur,
         })
 
     }

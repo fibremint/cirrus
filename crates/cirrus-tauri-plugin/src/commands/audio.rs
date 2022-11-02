@@ -13,14 +13,14 @@ use crate::state::AppState;
 #[serde(rename_all = "camelCase")]
 struct PlaybackPayload {
     status: PlaybackStatus,
-    pos: f32,
-    remain_buf: f32,
+    pos: f64,
+    remain_buf: f64,
 }
 
 #[tauri::command]
 pub fn set_playback_position(
     state: State<'_, AppState>,
-    playback_pos: f32
+    playback_pos: f64
 ) -> Result<(), &'static str> {
 
     println!("got set playback position command");
@@ -57,7 +57,7 @@ pub fn send_audio_player_status<R: Runtime>(
 pub async fn load_audio(
     state: State<'_, AppState>,
     audio_tag_id: String
-) -> Result<f32, &'static str> {
+) -> Result<f64, &'static str> {
 
     println!("got load audio command");
 
