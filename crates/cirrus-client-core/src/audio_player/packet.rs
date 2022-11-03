@@ -39,6 +39,7 @@ pub struct EncodedBuffer {
     pub buf_chunk_info: HashMap<u32, Arc<Mutex<BufChunkInfoNode>>>,
     pub seek_buf_chunk_node_idx: u32,
     first_node_id: u32,
+    pub next_packet_idx: u32,
 }
 
 impl EncodedBuffer {
@@ -57,6 +58,7 @@ impl EncodedBuffer {
             buf_chunk_info: buf_chunk_info,
             seek_buf_chunk_node_idx: bci_node_id,
             first_node_id: bci_node_id,
+            next_packet_idx: 0,
         }
     }
 }
@@ -280,9 +282,25 @@ impl EncodedBuffer {
         let next_node = bc.next_info.clone().unwrap();
         let nn = next_node.lock().unwrap();
 
-        if bc.end_idx -1 < nn.start_idx {
+        if bc.end_idx < nn.start_idx {
             return;
         }
+
+        // check integrity 
+        for bc_idx in bc.start_idx..bc.end_idx {
+            if let None = self.frame_buf.get(&bc_idx) {
+                println!("pre merge: bc detected none at idx: {}", bc_idx);
+            }
+        }
+
+        // check integrity 
+        for nn_idx in nn.start_idx..nn.end_idx {
+            if let None = self.frame_buf.get(&nn_idx) {
+                println!("pre merge: nn detected none at idx: {}", nn_idx);
+            }
+        }
+
+        println!("merge info: bc: ({}..{}), nn: ({}..{})", bc.start_idx, bc.end_idx, nn.start_idx, nn.end_idx);
 
         bc.next_info = nn.next_info.clone();
         bc.end_idx = nn.end_idx;
@@ -290,6 +308,15 @@ impl EncodedBuffer {
         if let Some(nn_next_node) = &bc.next_info {
             nn_next_node.lock().unwrap().prev_info = Some(Arc::clone(&bci_node));
         }
+
+        // check integrity 
+        for bc_idx in bc.start_idx..bc.end_idx {
+            if let None = self.frame_buf.get(&bc_idx) {
+                println!("post merge: detected none at idx: {}", bc_idx);
+            }
+        }
+
+        self.next_packet_idx = nn.end_idx;
 
         // if let Some(nn_next_node) = &nn.next_info {
         //     nn_next_node.lock().unwrap().prev_info = Some(Arc::clone(&bci_node));
@@ -304,9 +331,29 @@ impl EncodedBuffer {
         {
             let bci_node = self.buf_chunk_info.get(&self.seek_buf_chunk_node_idx).unwrap().to_owned();        
             let mut bc = bci_node.lock().unwrap();
+
+            let pkt_idx = audio_data.packet_idx;
+
+            if bc.next_info.is_some() {
+                if audio_data.packet_idx >= bc.next_info.as_ref().unwrap().lock().unwrap().start_idx {
+                    println!("current chunk exceeds next chunk");
+                }
+            }
     
-            self.frame_buf.insert(audio_data.packet_idx, audio_data);
-            bc.end_idx += 1;
+            if let Some(p) = self.frame_buf.insert(audio_data.packet_idx, audio_data) {
+                println!("duplicated item insert: prev: {:?}", p.packet_idx);
+            }
+
+            // check integrity 
+            for bc_idx in bc.start_idx..bc.end_idx {
+                if let None = self.frame_buf.get(&bc_idx) {
+                    println!("push: detected none at idx: {}", bc_idx);
+                }
+            }
+
+            // bc.end_idx += 1;
+            bc.end_idx = pkt_idx +1;
+            self.next_packet_idx = bc.end_idx;
         }
 
         self.merge_node_from_current();
@@ -354,10 +401,15 @@ impl EncodedBuffer {
             return default_val.try_into().unwrap();
         }
 
-        let nn_start_idx = nn.unwrap().lock().unwrap().start_idx;
-        
-        std::cmp::min(default_val.try_into().unwrap(), nn_start_idx - fetch_start_idx)
+        let nn_start_idx = nn.unwrap().lock().unwrap().start_idx as i32;
+        let fetch_start_idx = fetch_start_idx as i32;
 
+        if nn_start_idx - fetch_start_idx < 0 {
+            println!("fix me!");
+        }
+        
+        // std::cmp::min(default_val.try_into().unwrap(), nn_start_idx - fetch_start_idx + 1)
+        std::cmp::min(default_val.try_into().unwrap(), (nn_start_idx - fetch_start_idx).try_into().unwrap())
         // let r = {
         //     match &fc.unwrap().lock().unwrap().next_info {
         //         Some(nn) => nn.lock().unwrap().start_idx - fetch_start_idx,
@@ -402,7 +454,7 @@ impl EncodedBuffer {
         // }
     }
 
-    pub fn update_seek_buf_chunk_id(&mut self, position_sec: f64, direction: NodeSearchDirection) {
+    pub fn update_seek_position(&mut self, position_sec: f64, direction: NodeSearchDirection) {
         let packet_idx = get_packet_idx_from_sec(position_sec, 0.06) as u32;
 
         let bci_node = self.buf_chunk_info.get(&self.seek_buf_chunk_node_idx).unwrap();                
@@ -476,6 +528,8 @@ impl EncodedBuffer {
             self.seek_buf_chunk_node_idx = next_node.unwrap().lock().unwrap().id;
         }
 
+        self.set_buf_reqest_idx(position_sec);
+
         // let next_seek_chunk = self.find_fit_chunk(
         //     &bci_node, 
         //     packet_idx.try_into().unwrap(), 
@@ -512,7 +566,7 @@ impl EncodedBuffer {
         // }
     }
 
-    pub fn get_buf_reqest_idx(&self, position_sec: f64) -> u32 {
+    fn set_buf_reqest_idx(&mut self, position_sec: f64) {
         let bci_node = self.buf_chunk_info.get(&self.seek_buf_chunk_node_idx).unwrap().to_owned();        
         let bc = bci_node.lock().unwrap();
 
@@ -526,10 +580,11 @@ impl EncodedBuffer {
 
         if request_packet_idx > bc.end_idx || 
             request_packet_idx < bc.start_idx {
-                return request_packet_idx;
+                self.next_packet_idx = request_packet_idx;
+                return;
             }
 
-        bc.end_idx
+        self.next_packet_idx = bc.end_idx
     }
 }
 

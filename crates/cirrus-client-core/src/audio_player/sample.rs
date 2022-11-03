@@ -3,7 +3,7 @@ use std::{
         Arc, 
         atomic::{AtomicUsize, Ordering, AtomicBool}, Condvar, Mutex, MutexGuard
     }, 
-    collections::{VecDeque, HashMap},
+    collections::{VecDeque, HashMap}, any::Any,
 };
 use std::iter::Iterator;
 
@@ -106,7 +106,7 @@ pub struct AudioSampleInner {
     host_output_channels: usize,
 
     done_fill_buf_condvar: Arc<(Mutex<bool>, Condvar)>,
-    buf_req_start_idx: Arc<AtomicUsize>,
+    // buf_req_start_idx: Arc<AtomicUsize>,
     packet_playback_idx: Arc<AtomicUsize>,
 
     packet_buf: Arc<Mutex<EncodedBuffer>>,
@@ -134,7 +134,7 @@ impl AudioSampleInner {
             host_sample_rate,
             host_output_channels,
             done_fill_buf_condvar: Arc::new((Mutex::new(true), Condvar::new())),
-            buf_req_start_idx: Arc::new(AtomicUsize::new(0)),
+            // buf_req_start_idx: Arc::new(AtomicUsize::new(0)),
 
             packet_playback_idx: Arc::new(AtomicUsize::new(0)),
             packet_buf: Arc::new(Mutex::new(EncodedBuffer::new(content_pckts))),
@@ -219,15 +219,15 @@ impl AudioSampleInner {
                 { NodeSearchDirection::Backward };
 
         // let buf_req_idx = get_packet_idx_from_sec(sample_req_start_sec, 0.06);
-        // self.packet_buf.lock().unwrap().update_seek_buf_chunk_id(buf_req_idx.try_into().unwrap());
-        self.packet_buf.lock().unwrap().update_seek_buf_chunk_id(position_sec, packet_buf_update_dir);
+        // self.packet_buf.lock().unwrap().update_seek_position(buf_req_idx.try_into().unwrap());
+        self.packet_buf.lock().unwrap().update_seek_position(position_sec, packet_buf_update_dir);
 
         // let fit_chunk = self.packet_buf.lock().unwrap().find_fit_chunk(search_from, packet_idx, search_direction)
 
-        self.buf_req_start_idx.store(
-            self.packet_buf.lock().unwrap().get_buf_reqest_idx(position_sec).try_into().unwrap(), 
-            Ordering::SeqCst
-        );
+        // self.buf_req_start_idx.store(
+        //     self.packet_buf.lock().unwrap().get_buf_reqest_idx(position_sec).try_into().unwrap(), 
+        //     Ordering::SeqCst
+        // );
         self.set_playback_sample_frame_pos(position_sample_idx);
 
         let mut ds_buf = self.decoded_sample_frame_buf.lock().unwrap();
@@ -277,7 +277,8 @@ impl AudioSampleInner {
     }
 
     async fn get_buffer_for(&self, server_address: &str, duration_sec: f64) -> Result<(), anyhow::Error> {
-        let fetch_start_pkt_idx = self.buf_req_start_idx.load(Ordering::SeqCst);
+        // let fetch_start_pkt_idx = self.buf_req_start_idx.load(Ordering::SeqCst);
+        let fetch_start_pkt_idx = self.packet_buf.lock().unwrap().next_packet_idx;
         // let packet_num = std::cmp::min(
         //     get_packet_idx_from_sec(duration_sec, 0.06),
         //     self.packet_buf.lock().unwrap().get_fetch_required_packet_num(packet_start_idx.try_into().unwrap()).try_into().unwrap()
@@ -290,6 +291,12 @@ impl AudioSampleInner {
                 duration_sec,
             );
 
+        if fetch_packet_num == 0 {
+            println!("fetch packet num: zero");
+
+            return Ok(());
+        }
+
         let mut audio_data_stream = request::get_audio_data_stream(
             server_address.to_string(),
             &self.source.id,
@@ -297,6 +304,10 @@ impl AudioSampleInner {
             fetch_packet_num.try_into().unwrap(),
             2,
         ).await?;
+
+        println!("fetch packet: ({}..{})", fetch_start_pkt_idx, fetch_packet_num);
+
+        let mut last_idx = 0;
 
         while let Some(res) = audio_data_stream.next().await {
             let audio_data = match res {
@@ -315,11 +326,15 @@ impl AudioSampleInner {
             }
 
             let mut t = self.packet_buf.lock().unwrap();
+            last_idx = audio_data.packet_idx;
+
             t.push(audio_data);
 
-            let buf_req_start_idx = self.buf_req_start_idx.load(Ordering::SeqCst);
-            self.buf_req_start_idx.store(buf_req_start_idx+1, Ordering::SeqCst);
+            // let buf_req_start_idx = self.buf_req_start_idx.load(Ordering::SeqCst);
+            // self.buf_req_start_idx.store(buf_req_start_idx+1, Ordering::SeqCst);
         }
+
+        println!("last id: {}", last_idx);
 
         Ok(())
     }
@@ -353,7 +368,14 @@ impl AudioSampleInner {
                 self.packet_playback_idx.store(p_pos as usize +1, Ordering::SeqCst);
 
             } else {
+                let mut a: Vec<&u32> = enc_buf.frame_buf.keys().collect();
+                if a.len() == 0 {
+                    continue;
+                }
+                a.sort();
+
                 println!("err: packet {} is missing", p_pos);
+
                 break;
             }
         }
