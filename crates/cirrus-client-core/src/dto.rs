@@ -8,6 +8,7 @@ pub struct AudioSource {
     pub bit_rate: u32,
     pub sample_rate: usize,
     pub packet_dur: f64,
+    pub content_packets: u32,
 }
 
 impl AudioSource {
@@ -27,6 +28,7 @@ impl AudioSource {
             bit_rate: metadata_res.orig_bit_rate,
             sample_rate: metadata_res.orig_sample_rate as usize,
             packet_dur: metadata_res.packet_dur,
+            content_packets: metadata_res.sp_packets,
         })
 
     }
