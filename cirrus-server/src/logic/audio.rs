@@ -167,7 +167,8 @@ pub struct AudioSampleIterator {
     opus_encoder: opus::Encoder,
     decoded_samples: Vec<Vec<f32>>,
     
-    seek_packet_idx: u32,
+    seek_packet_cnt: u32,
+    packet_seek_start_idx: u32,
 }
 
 impl AudioSampleIterator {
@@ -255,7 +256,8 @@ impl AudioSampleIterator {
                 orig_sample_rate: codec_sample_rate,
                 opus_encoder,
                 decoded_samples,
-                seek_packet_idx: packet_start_idx,
+                seek_packet_cnt: Default::default(),
+                packet_seek_start_idx: packet_start_idx,
             }
         )
     }
@@ -291,8 +293,8 @@ impl Iterator for AudioSampleIterator {
             self.decoded_samples[1].extend_from_slice(&samples[sample_frame_len..]);
         }
 
-        if self.seek_packet_idx == self.packet_num ||
-             self.decoded_samples[0].len() == 0 {
+        if self.seek_packet_cnt == self.packet_num ||
+            self.decoded_samples[0].len() == 0 {
             // println!("reach end of content");
             return None;
         }
@@ -334,8 +336,8 @@ impl Iterator for AudioSampleIterator {
         let encoded = self.opus_encoder.encode_vec_float(resampled_output.as_slice(), 4000).unwrap();
         enc_output.extend(encoded);
 
-        let packet_idx = self.seek_packet_idx;
-        self.seek_packet_idx += 1;
+        let packet_idx = self.packet_seek_start_idx + self.seek_packet_cnt;
+        self.seek_packet_cnt += 1;
 
         Some(        
             SampleFramePacket {

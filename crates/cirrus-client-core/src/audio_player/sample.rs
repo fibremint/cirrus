@@ -292,8 +292,7 @@ impl AudioSampleInner {
             );
 
         if fetch_packet_num == 0 {
-            println!("fetch packet num: zero");
-
+            println!("reach fpn zero");
             return Ok(());
         }
 
@@ -305,8 +304,7 @@ impl AudioSampleInner {
             2,
         ).await?;
 
-        println!("fetch packet: ({}..{})", fetch_start_pkt_idx, fetch_packet_num);
-
+        println!("fetch packet: ({}..{})", fetch_start_pkt_idx, fetch_start_pkt_idx+fetch_packet_num);
         let mut last_idx = 0;
 
         while let Some(res) = audio_data_stream.next().await {
@@ -321,20 +319,20 @@ impl AudioSampleInner {
             if AudioSampleBufferStatus::StopFillBuffer == self.get_buffer_status() {
                 self.set_buffer_status(AudioSampleBufferStatus::StoppedFillBuffer);
                 println!("stopped fill buffer");
+                // drop(audio_data_stream);
 
                 break;
             }
 
             let mut t = self.packet_buf.lock().unwrap();
             last_idx = audio_data.packet_idx;
-
+            // println!("push item: {}", audio_data.packet_idx);
             t.push(audio_data);
-
             // let buf_req_start_idx = self.buf_req_start_idx.load(Ordering::SeqCst);
             // self.buf_req_start_idx.store(buf_req_start_idx+1, Ordering::SeqCst);
         }
 
-        println!("last id: {}", last_idx);
+        println!("last pushed packet id: {}", last_idx);
 
         Ok(())
     }
