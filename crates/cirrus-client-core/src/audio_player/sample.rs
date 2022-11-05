@@ -1,34 +1,27 @@
 use std::{
     sync::{
         Arc, 
-        atomic::{AtomicUsize, Ordering, AtomicBool}, Condvar, Mutex, MutexGuard
+        atomic::{AtomicUsize, Ordering}, Condvar, Mutex
     }, 
-    collections::{VecDeque, HashMap}, any::Any,
+    collections::VecDeque
 };
 use std::iter::Iterator;
 
-use cirrus_protobuf::api::AudioDataRes;
 // use anyhow::anyhow;
-use futures::{StreamExt, stream::Forward};
-use tokio::{sync::mpsc, runtime::Handle};
+use futures::StreamExt;
+use tokio::runtime::Handle;
 use opus;
 use audio::{Channels, AsInterleavedMut};
 
-use rand::Rng;
-
 use crate::{dto::AudioSource, request};
-use super::{state::AudioSampleBufferStatus, packet::{self, EncodedBuffer, get_packet_idx_from_sec, NodeSearchDirection}};
+use super::{state::AudioSampleBufferStatus, packet::{EncodedBuffer, get_packet_idx_from_sec, NodeSearchDirection}};
 
 pub struct AudioSample {
     pub inner: Arc<AudioSampleInner>,
-    // pub inner: AudioSampleInner,
-    pub tx: mpsc::Sender<f64>,
-    thread_run_states: Vec<Arc<AtomicBool>>,
 }
 
 impl AudioSample {
     pub fn new(audio_source: AudioSource, host_sample_rate: u32, host_output_channels: usize) -> Self {
-        let (tx, mut rx) = mpsc::channel(64);
 
         let inner = Arc::new(
             AudioSampleInner::new(
@@ -38,38 +31,8 @@ impl AudioSample {
             )
         );
 
-        // let inner_1_clone = inner.clone();
-
-        let mut thread_run_states: Vec<Arc<AtomicBool>> = Vec::new();
-        let thread_run_state_1 = Arc::new(AtomicBool::new(true));
-        let thread_run_state_1_clone = thread_run_state_1.clone();
-
-        // tokio::spawn(async move {
-        //     loop {
-        //         if !thread_run_state_1_clone.load(Ordering::Relaxed) {
-        //             println!("stop thread: fetch buffer, source id: {}", inner_1_clone.source.id);
-
-        //             break;
-        //         }
-
-        //         while let Some(fetch_buf_sec) = rx.recv().await {
-        //             inner_1_clone.fetch_buffer(fetch_buf_sec).await.unwrap();
-        //         }
-        //     }
-        // });
-
-        // thread_run_states.push(thread_run_state_1);
-
-        // let inner = AudioSampleInner::new(
-        //     audio_source,
-        //     host_sample_rate, 
-        //     host_output_channels
-        // );
-
         Self {
             inner,
-            tx,
-            thread_run_states
         }
     }
 
@@ -126,16 +89,6 @@ impl AudioSample {
     }
 }
 
-impl Drop for AudioSample {
-    fn drop(&mut self) {
-        self.inner.set_buffer_status(AudioSampleBufferStatus::StopFillBuffer);
-
-        for thread_run_state in &self.thread_run_states {
-            thread_run_state.store(false, Ordering::Relaxed);
-        }
-    }
-}
-
 pub struct AudioSampleInner {
     pub source: AudioSource,
 
@@ -145,7 +98,6 @@ pub struct AudioSampleInner {
     host_output_channels: usize,
 
     done_fill_buf_condvar: Arc<(Mutex<bool>, Condvar)>,
-    // buf_req_start_idx: Arc<AtomicUsize>,
     packet_playback_idx: Arc<AtomicUsize>,
 
     packet_buf: Arc<Mutex<EncodedBuffer>>,
@@ -173,7 +125,6 @@ impl AudioSampleInner {
             host_sample_rate,
             host_output_channels,
             done_fill_buf_condvar: Arc::new((Mutex::new(true), Condvar::new())),
-            // buf_req_start_idx: Arc::new(AtomicUsize::new(0)),
 
             packet_playback_idx: Arc::new(AtomicUsize::new(0)),
             packet_buf: Arc::new(Mutex::new(EncodedBuffer::new(content_pckts))),
@@ -182,23 +133,6 @@ impl AudioSampleInner {
             opus_decoder: Arc::new(Mutex::new(od)),
         }
     }
-
-    // fn fetch_buffer_wraper(&self) {
-    //     if self.get_buffer_status() != AudioSampleBufferStatus::StartFillBuffer {
-    //         // return Ok(());
-    //         todo!()
-    //     }
-
-    //     // check fetch requried
-
-    //     // fetch start
-    //     let inner = Arc::new(self);
-        
-    //     tokio::spawn(async move {
-    //         inner.fetch_buffer(150.).await.unwrap();
-    //     });
-
-    // }
 
     fn get_remain_sample_buffer_sec(&self) -> f64 {
         let p_pos = self.packet_playback_idx.load(Ordering::SeqCst) as i32;
@@ -267,25 +201,13 @@ impl AudioSampleInner {
         
         let position_sec_delta = position_sec - self.get_current_playback_position_sec();
 
-        // let sample_req_start_sec = 
-        //     if position_sec_delta > 0.0 { position_sec + self.get_remain_sample_buffer_sec() }
-        //     else { position_sec };
         let packet_buf_update_dir = 
             if position_sec_delta > 0.0 
                 { NodeSearchDirection::Forward } 
             else 
                 { NodeSearchDirection::Backward };
 
-        // let buf_req_idx = get_packet_idx_from_sec(sample_req_start_sec, 0.06);
-        // self.packet_buf.lock().unwrap().update_seek_position(buf_req_idx.try_into().unwrap());
         self.packet_buf.lock().unwrap().update_seek_position(position_sec, packet_buf_update_dir);
-
-        // let fit_chunk = self.packet_buf.lock().unwrap().find_fit_chunk(search_from, packet_idx, search_direction)
-
-        // self.buf_req_start_idx.store(
-        //     self.packet_buf.lock().unwrap().get_buf_reqest_idx(position_sec).try_into().unwrap(), 
-        //     Ordering::SeqCst
-        // );
         self.set_playback_sample_frame_pos(position_sample_idx);
 
         let mut ds_buf = self.decoded_sample_frame_buf.lock().unwrap();
@@ -298,7 +220,6 @@ impl AudioSampleInner {
 
     async fn fetch_buffer(
         &self,
-        // playback_buffer_margin_sec: f64,
         fetch_buf_sec: f64,
     ) -> Result<(), anyhow::Error> {
         if self.get_buffer_status() != AudioSampleBufferStatus::StartFillBuffer {
@@ -317,7 +238,6 @@ impl AudioSampleInner {
             *done_fill_buf = false;
         }
 
-        // let fetch_buffer_sec = playback_buffer_margin_sec - self.get_remain_sample_buffer_sec();
         if let Err(_err) = self.get_buffer_for(&self.source.server_address, fetch_buf_sec).await {
             // println!("fetch buffer error: {:?}", err);
         }
@@ -336,12 +256,7 @@ impl AudioSampleInner {
     }
 
     async fn get_buffer_for(&self, server_address: &str, duration_sec: f64) -> Result<(), anyhow::Error> {
-        // let fetch_start_pkt_idx = self.buf_req_start_idx.load(Ordering::SeqCst);
         let fetch_start_pkt_idx = self.packet_buf.lock().unwrap().next_packet_idx;
-        // let packet_num = std::cmp::min(
-        //     get_packet_idx_from_sec(duration_sec, 0.06),
-        //     self.packet_buf.lock().unwrap().get_fetch_required_packet_num(packet_start_idx.try_into().unwrap()).try_into().unwrap()
-        // );
         let fetch_packet_num = self.packet_buf
             .lock()
             .unwrap()
@@ -351,7 +266,7 @@ impl AudioSampleInner {
             );
 
         if fetch_packet_num == 0 {
-            println!("reach fpn zero");
+            println!("warn: attempted to fetch 0 packets");
             return Ok(());
         }
 
@@ -379,17 +294,13 @@ impl AudioSampleInner {
             if AudioSampleBufferStatus::StopFillBuffer == self.get_buffer_status() {
                 self.set_buffer_status(AudioSampleBufferStatus::StoppedFillBuffer);
                 println!("stopped fill buffer");
-                // drop(audio_data_stream);
 
                 break;
             }
 
-            let mut t = self.packet_buf.lock().unwrap();
+            let mut packet_buf = self.packet_buf.lock().unwrap();
             last_idx = audio_data.packet_idx;
-            // println!("push item: {}", audio_data.packet_idx);
-            t.push(audio_data);
-            // let buf_req_start_idx = self.buf_req_start_idx.load(Ordering::SeqCst);
-            // self.buf_req_start_idx.store(buf_req_start_idx+1, Ordering::SeqCst);
+            packet_buf.insert(audio_data);
         }
 
         println!("last pushed packet id: {}", last_idx);
@@ -426,12 +337,6 @@ impl AudioSampleInner {
                 self.packet_playback_idx.store(p_pos as usize +1, Ordering::SeqCst);
 
             } else {
-                let mut a: Vec<&u32> = enc_buf.frame_buf.keys().collect();
-                if a.len() == 0 {
-                    continue;
-                }
-                a.sort();
-
                 println!("err: packet {} is missing", p_pos);
 
                 break;

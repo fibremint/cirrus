@@ -14,7 +14,7 @@ use tokio::{
     sync::{mpsc, RwLock}, runtime::Handle,
 };
 
-use crate::audio_player::state::{AudioSampleBufferStatus, PlaybackStatus};
+use crate::audio_player::state::PlaybackStatus;
 use crate::dto::AudioSource;
 
 use super::sample::AudioSample;
@@ -455,38 +455,7 @@ impl AudioStreamInner {
         Ok(())
     }
     
-    // fn check_fetch_buffer(
-    //     &self, 
-    //     playback_buffer_sec: f64,
-    //     fetch_buffer_margin_sec: f64
-    // ) -> Result<(), anyhow::Error> {
-    //     if self.audio_sample.get_buffer_status() != AudioSampleBufferStatus::StartFillBuffer {
-    //         return Ok(());
-    //     }
-
-    //     let remain_buf_sec = self.audio_sample.get_remain_sample_buffer_sec();
-    //     let playback_pos_sec = self.audio_sample.get_current_playback_position_sec();
-    //     let content_length = self.audio_sample.get_content_length();
-
-    //     if remain_buf_sec > playback_buffer_sec - fetch_buffer_margin_sec ||
-    //         playback_pos_sec + remain_buf_sec + 0.1 > content_length {
-    //             return Ok(());
-    //         }
-
-    //     // let as_clone = self.audio_sample.clone();
-
-    //     // tokio::spawn(async move {
-    //     //     as_clone.fetch_buffer(playback_buffer_sec).await
-    //     // });
-
-    //     // self.audio_sample.fetch_buffer(playback_buffer_sec);
-    //     self.audio_sample.tx.blocking_send(playback_buffer_sec).unwrap();
-
-    //     Ok(())
-    // }
-
     fn update(&self, rt_handle: Arc<Handle>) -> Result<&'static str, anyhow::Error> {
-        // self.check_fetch_buffer(180., 20.).unwrap();
         self.audio_sample.fetch_buffer(180., 20., rt_handle);
 
         match PlaybackStatus::from(self.audio_player_status.load(Ordering::SeqCst)) {
