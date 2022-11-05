@@ -29,3 +29,6 @@ dist-ssr
 # Rust builds
 Cargo.lock
 target/
+
+configs/cirrus/*
+!configs/cirrus/server.sample.toml
