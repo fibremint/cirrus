@@ -586,6 +586,31 @@ impl EncodedBuffer {
 
         self.next_packet_idx = bc.end_idx
     }
+
+    pub fn get_last_chunk(&self) -> Option<Arc<Mutex<BufChunkInfoNode>>> {
+        let bci_node = self.buf_chunk_info.get(&self.seek_buf_chunk_node_idx).unwrap().to_owned();        
+        {
+            let bn_clone = bci_node.clone();
+            let bc = bn_clone.lock().unwrap();
+            if bc.next_info.is_none() {
+                return Some(bci_node);
+            }    
+        }
+
+        let mut ci = CI::new(bci_node, NodeSearchDirection::Forward);
+
+        let mut last_chunk: Option<Arc<Mutex<BufChunkInfoNode>>> = None;
+
+        while let Some(curr) = ci.next() {
+            let c = curr.lock().unwrap();
+
+            if c.next_info.is_none() {
+                last_chunk = Some(curr.clone());
+            }
+        }
+
+        last_chunk
+    }
 }
 
 #[derive(Clone, Copy)]

@@ -11,7 +11,7 @@ use anyhow::anyhow;
 use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
 use tokio::{
     time::Duration, 
-    sync::{mpsc, RwLock},
+    sync::{mpsc, RwLock}, runtime::Handle,
 };
 
 use crate::audio_player::state::{AudioSampleBufferStatus, PlaybackStatus};
@@ -279,22 +279,27 @@ impl AudioStream {
         let thread_run_state_2 = Arc::new(AtomicBool::new(true));
         let thread_run_state_2_clone = thread_run_state_2.clone();
         let source_id_2 = source_id.clone();
-        thread::spawn(move || loop {
-            if !thread_run_state_2_clone.load(Ordering::Relaxed) {
-                println!("stop thread: audio stream playback management, source id: {}", source_id_2);
-                break;
-            }
 
-            let inner_guard = inner_1_clone.blocking_read();
-            match inner_guard.update() {
-                Ok("stop") => thread_run_state_2_clone.store(false, Ordering::Relaxed),
-                Ok(&_) => (),
-                Err(e) => println!("error at manage playback: {}, source id: {}", e, source_id_2),
-            }
+        let rt_handle = tokio::runtime::Handle::current();
+        let rt_handle = Arc::new(rt_handle);
 
-            drop(inner_guard);
+        thread::spawn(move || 
+            loop {
+                if !thread_run_state_2_clone.load(Ordering::Relaxed) {
+                    println!("stop thread: audio stream playback management, source id: {}", source_id_2);
+                    break;
+                }
 
-            thread::sleep(Duration::from_millis(10));
+                let inner_guard = inner_1_clone.blocking_read();
+                match inner_guard.update(rt_handle.clone()) {
+                    Ok("stop") => thread_run_state_2_clone.store(false, Ordering::Relaxed),
+                    Ok(&_) => (),
+                    Err(e) => println!("error at manage playback: {}, source id: {}", e, source_id_2),
+                }
+
+                drop(inner_guard);
+
+                thread::sleep(Duration::from_millis(10));
         });
 
         thread_run_states.push(thread_run_state_2);
@@ -450,38 +455,39 @@ impl AudioStreamInner {
         Ok(())
     }
     
-    fn check_fetch_buffer(
-        &self, 
-        playback_buffer_sec: f64,
-        fetch_buffer_margin_sec: f64
-    ) -> Result<(), anyhow::Error> {
-        if self.audio_sample.get_buffer_status() != AudioSampleBufferStatus::StartFillBuffer {
-            return Ok(());
-        }
+    // fn check_fetch_buffer(
+    //     &self, 
+    //     playback_buffer_sec: f64,
+    //     fetch_buffer_margin_sec: f64
+    // ) -> Result<(), anyhow::Error> {
+    //     if self.audio_sample.get_buffer_status() != AudioSampleBufferStatus::StartFillBuffer {
+    //         return Ok(());
+    //     }
 
-        let remain_buf_sec = self.audio_sample.get_remain_sample_buffer_sec();
-        let playback_pos_sec = self.audio_sample.get_current_playback_position_sec();
-        let content_length = self.audio_sample.get_content_length();
+    //     let remain_buf_sec = self.audio_sample.get_remain_sample_buffer_sec();
+    //     let playback_pos_sec = self.audio_sample.get_current_playback_position_sec();
+    //     let content_length = self.audio_sample.get_content_length();
 
-        if remain_buf_sec > playback_buffer_sec - fetch_buffer_margin_sec ||
-            playback_pos_sec + remain_buf_sec + 0.1 > content_length {
-                return Ok(());
-            }
+    //     if remain_buf_sec > playback_buffer_sec - fetch_buffer_margin_sec ||
+    //         playback_pos_sec + remain_buf_sec + 0.1 > content_length {
+    //             return Ok(());
+    //         }
 
-        // let as_clone = self.audio_sample.clone();
+    //     // let as_clone = self.audio_sample.clone();
 
-        // tokio::spawn(async move {
-        //     as_clone.fetch_buffer(playback_buffer_sec).await
-        // });
+    //     // tokio::spawn(async move {
+    //     //     as_clone.fetch_buffer(playback_buffer_sec).await
+    //     // });
 
-        // self.audio_sample.fetch_buffer(playback_buffer_sec);
-        self.audio_sample.tx.blocking_send(playback_buffer_sec).unwrap();
+    //     // self.audio_sample.fetch_buffer(playback_buffer_sec);
+    //     self.audio_sample.tx.blocking_send(playback_buffer_sec).unwrap();
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    fn update(&self) -> Result<&'static str, anyhow::Error> {
-        self.check_fetch_buffer(180., 20.).unwrap();
+    fn update(&self, rt_handle: Arc<Handle>) -> Result<&'static str, anyhow::Error> {
+        // self.check_fetch_buffer(180., 20.).unwrap();
+        self.audio_sample.fetch_buffer(180., 20., rt_handle);
 
         match PlaybackStatus::from(self.audio_player_status.load(Ordering::SeqCst)) {
             PlaybackStatus::Play => {
