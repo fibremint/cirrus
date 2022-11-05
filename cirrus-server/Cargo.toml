@@ -13,8 +13,7 @@ edition = "2021"
 #structopt = "0.3.0"
 
 [dependencies]
-#aiff = {git = "https://github.com/julientregoat/aiff-rs.git"}
-aiff = { path = "../crates/aiff-rs" }
+aiff = { git = "https://github.com/fibremint/aiff-rs", branch="master" }
 anyhow = "1"
 bson = { version = "2.1", features = ["chrono-0_4"] }
 bytes = "1.1"
@@ -28,7 +27,8 @@ mongodb = { version = "2.1", default-features = false, features = ["tokio-runtim
 serde = "1"
 serde_derive = "1"
 # symphonia = "0.5.1"
-symphonia = { path = "../crates/symphonia/symphonia", features = ["aiff", "wav", "ogg", "vorbis"] }
+#symphonia = { path = "../crates/symphonia/symphonia", features = ["aiff", "wav", "ogg", "vorbis"] }
+symphonia = { git = "https://github.com/fibremint/Symphonia", branch="aiff-decode", features = ["aiff", "wav", "ogg", "vorbis"] }
 tonic = "0.6"
 tokio = { version = "1.0", features = ["rt-multi-thread", "time", "macros", "fs"] }
 tokio-stream = "0.1"

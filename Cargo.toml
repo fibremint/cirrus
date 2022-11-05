@@ -3,7 +3,6 @@
 members = [
     "cirrus-app/src-tauri",
     "cirrus-server",
-    #"crates/aiff-rs",
     "crates/cirrus-client-core",
     "crates/cirrus-protobuf",
     "crates/cirrus-tauri-plugin",

@@ -1,6 +1,0 @@
-[submodule "crates/aiff-rs"]
-	path = crates/aiff-rs
-	url = https://github.com/fibremint/aiff-rs
-[submodule "crates/symphonia"]
-	path = crates/symphonia
-	url = https://github.com/fibremint/Symphonia
