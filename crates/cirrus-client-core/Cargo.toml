@@ -18,9 +18,9 @@ futures = "0.3"
 tokio = { version = "1.0", features = ["rt-multi-thread", "time", "macros", "fs"] }
 tonic = "0.6"
 serde = "1"
-#prost = "0.9"
-rubato = "0.12"
-#ndarray = "0.15"
+opus = "0.3.0"
+audio = "0.2.0-alpha.3"
+rand = "0.8.5"
 
 #[build-dependencies]
 #tonic-build = "0.6"

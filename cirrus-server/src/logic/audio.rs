@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    path::{Path, PathBuf}, collections::{HashMap, HashSet}, io::{BufReader, Read, Seek},
+    path::{Path, PathBuf}, collections::{HashMap, HashSet}, io::{BufReader, Read, Seek}, env,
 };
 use itertools::Itertools;
 
@@ -12,12 +12,25 @@ use cirrus_protobuf::api::{
 };
 
 use mongodb::bson;
+use rubato::Resampler;
 use walkdir::{DirEntry, WalkDir};
 
 use crate::{
     util, 
-    model::{self, document}
+    model::{self, document}, settings::Settings,
 };
+
+use symphonia::core::{codecs::{CODEC_TYPE_NULL, DecoderOptions, Decoder}, audio::{AudioBufferRef, Signal, SampleBuffer, RawSampleBuffer}, formats::{FormatReader, SeekMode, SeekTo}, units::{TimeStamp, Time}};
+use symphonia::core::errors::Error;
+use symphonia::core::formats::FormatOptions;
+use symphonia::core::meta::MetadataOptions;
+use symphonia::core::io::MediaSourceStream;
+use symphonia::core::probe::Hint;
+
+use opus;
+use audio;
+use audio::ReadBuf as _;
+use audio::{io, wrap, WriteBuf, ExactSizeBuf, ChannelMut, Channels, Channel};
 
 pub struct AudioFile {}
 
@@ -26,8 +39,13 @@ impl AudioFile {
         mongodb_client: mongodb::Client,
         audio_tag_id: &str
     ) -> Result<AudioMetaRes, String> {
+        let current_dir = env::current_dir().unwrap();
+        let server_config_path = current_dir.join("configs/cirrus/server.toml");
+        
+        let settings = Settings::new(&server_config_path).unwrap();
+
         let audio_tag_id = ObjectId::parse_str(audio_tag_id).unwrap();
-        let audio_file = model::AudioFile::find_by_audio_tag_id(mongodb_client.clone(), audio_tag_id).await.unwrap();
+        let audio_file = model::audio::AudioFile::find_by_audio_tag_id(mongodb_client.clone(), audio_tag_id).await.unwrap();
 
         let audio_file = match audio_file {
             Some(audio_file) => audio_file,
@@ -39,172 +57,296 @@ impl AudioFile {
             Err(_) => return Err(String::from("failed to load file")),
         };
 
-        let mut reader = AiffReader::new(&file);
-        reader.parse().unwrap();
-       
-        let common = reader.read_chunk::<aiff::chunks::CommonChunk>(true, false, aiff::ids::COMMON).unwrap();
+        let mss = MediaSourceStream::new(Box::new(file), Default::default());
+        let hint = Hint::new();
+
+        let meta_opts: MetadataOptions = Default::default();
+        let fmt_opts: FormatOptions = Default::default();
+
+        let probed = symphonia::default::get_probe().format(&hint, mss, &fmt_opts, &meta_opts).unwrap();
+
+        let format = probed.format;
+        let track = format.tracks()
+            .iter()
+            .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+            .expect("no supported audio tracks");
+
+        let bit_rate = track.codec_params.bits_per_sample.unwrap();
+        let channels = track.codec_params.channels.unwrap().count();
+        let sample_rate = track.codec_params.sample_rate.unwrap();
+        let content_length = 
+            track.codec_params.n_frames.unwrap() as f64 / sample_rate as f64;
+
+        let sample_frame_packet_dur = 
+            settings.audio_sample_frame_packet.len as f64 
+                / settings.audio_sample_frame_packet.sample_rate as f64;
+
+        let sample_frame_packet_num = (content_length / sample_frame_packet_dur).ceil() as u32;
 
         Ok(AudioMetaRes {
-            bit_rate: common.bit_rate as u32,
-            channels: common.num_channels as u32,
-            sample_frames: common.num_sample_frames,
-            sample_rate: common.sample_rate as u32,
+            content_length,
+            sp_packets: sample_frame_packet_num,
+            packet_dur: sample_frame_packet_dur,
+            orig_sample_rate: sample_rate,
+            orig_bit_rate: bit_rate,
+            channels: channels.try_into().unwrap(),
         })
     }
 
     pub async fn get_audio_sample_iterator(
         mongodb_client: mongodb::Client,
         audio_tag_id: &str,
-        request_samples_size: usize,
-        samples_start_idx: usize, 
-        samples_end_idx: usize
-    ) -> Result<AudioSampleIterator, String> {
+        packet_start_idx: u32,
+        packet_num: u32,
+        channels: u32,
+    ) -> Result<AudioSampleIterator, anyhow::Error> {
+        let current_dir = env::current_dir().unwrap();
+        let server_config_path = current_dir.join("configs/cirrus/server.toml");
+        
+        let settings = Settings::new(&server_config_path).unwrap();
+        
         let audio_tag_id = ObjectId::parse_str(audio_tag_id).unwrap();
-        let audio_file = model::AudioFile::find_by_audio_tag_id(mongodb_client.clone(), audio_tag_id).await.unwrap();
+        let audio_file = model::audio::AudioFile::find_by_audio_tag_id(mongodb_client.clone(), audio_tag_id).await.unwrap();
 
         let audio_file = match audio_file {
             Some(audio_file) => audio_file,
-            None => return Err(String::from("failed to retrieve audio file information")),
+            None => return Err(anyhow::anyhow!("failed to retrieve audio file information")),
         };
 
         let file = match File::open(audio_file.get_path()) {
             Ok(file) => file,
-            Err(_err) => return Err(String::from("failed to load file")),
+            Err(_err) => return Err(anyhow::anyhow!("failed to load file")),
         };
-    
-        let mut reader = AiffReader::new(&file);
-        reader.parse().unwrap();
 
-        let sound_data_meta = reader.get_sound_data_metadata();
+        // let file = File::open("D:\\tmp\\file_example_WAV_10MG.wav").unwrap();
+
+        let sample_frame_packet_dur = 
+        settings.audio_sample_frame_packet.len as f64 
+            / settings.audio_sample_frame_packet.sample_rate as f64;
 
         let audio_sample_iter = AudioSampleIterator::new(
             file,
-            sound_data_meta.metadata.num_sample_frames.try_into().unwrap(),
-            request_samples_size.try_into().unwrap(),
-            samples_start_idx.try_into().unwrap(),
-            samples_end_idx.try_into().unwrap(),
-            sound_data_meta.metadata.num_channels.try_into().unwrap(),
-            sound_data_meta.metadata.sample_rate as u32,
-            sound_data_meta.data_offset,
-        );
+            packet_start_idx,
+            packet_num,
+            sample_frame_packet_dur,
+            settings.audio_sample_frame_packet.len,
+            settings.audio_sample_frame_packet.sample_rate,
+            channels.try_into().unwrap(),
+        )?;
 
         Ok(audio_sample_iter)
     }
 }
 
+pub struct SampleFramePacket {
+    pub packet_idx: u32,
+    pub sample_frame_duration: f64,
+    pub sample_frame_num: u32,
+    // pub original_frame_len: u16,
+    // pub padded_frame_start_pos: u16,
+    pub encoded_data: Vec<u8>
+}
+
 pub struct AudioSampleIterator {
-    samples_size: u64,
+    // duration: f64,
+    packet_num: u32,
+    packet_dur: f64,
+    packet_sample_frame_num: u32,
+    packet_sample_rate: u32,
     channel_size: usize,
-    sample_buf: Vec<Vec<f32>>,
-    file_reader: BufReader<File>,
-    raw_data_buffer: Vec<u8>,
-    num_seek_samples: u64,
-    sample_idx: u64,
-    sample_rate: u32,
-    // samples_start_idx: u64,
-    // samples_end_idx: u64,
-    last_buf_pos: u64,
-    // num_total_samples: u64
+
+    ch_sample_buf: Vec<Vec<f32>>,
+    decoder: Box<dyn Decoder>,
+    format: Box<dyn FormatReader>,
+    resampler: rubato::FftFixedOut<f32>,
+    resampler_in_buf: Vec<Vec<f32>>,
+    resampler_out_buf: Vec<Vec<f32>>,
+
+    orig_sample_rate: u32,
+    
+    opus_encoder: opus::Encoder,
+    decoded_samples: Vec<Vec<f32>>,
+    
+    seek_packet_cnt: u32,
+    packet_seek_start_idx: u32,
 }
 
 impl AudioSampleIterator {
     pub fn new(
         source: File,
-        num_total_samples: u64,
-        samples_size: u64,
-        samples_start_idx: u64,
-        samples_end_idx: u64,
-        channel_size: usize,
-        sample_rate: u32,
-        data_offset: u64,
-    ) -> Self {
-        println!("sample iterator: total length of samples: {}", num_total_samples);
+        packet_start_idx: u32,
+        packet_num: u32,
+        packet_dur: f64,
+        packet_sample_frame_num: u32,
+        packet_sample_rate: u32,
+        channels: u32,
+    ) -> Result<Self, anyhow::Error> {
+        let mss = MediaSourceStream::new(Box::new(source), Default::default());
+        let hint = Hint::new();
 
-        let num_seek_samples = std::cmp::min(
-            (samples_end_idx - samples_start_idx) * samples_size,
-            num_total_samples - (samples_start_idx * samples_size)
-        );
+        let meta_opts: MetadataOptions = Default::default();
+        let fmt_opts: FormatOptions = Default::default();
 
-        assert!(samples_size * samples_start_idx + num_seek_samples <= num_total_samples);
+        let probed = symphonia::default::get_probe().format(&hint, mss, &fmt_opts, &meta_opts).unwrap();
 
-        let mut sample_buf = Vec::with_capacity(channel_size);
-        for _ in 0..channel_size {
-            sample_buf.push(vec![0.; 0]);
+        let mut format = probed.format;
+            // Find the first audio track with a known (decodeable) codec.
+        let track = format.tracks()
+            .iter()
+            .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+            .expect("no supported audio tracks");
+
+        // Use the default options for the decoder.
+        let dec_opts: DecoderOptions = Default::default();
+        // Create a decoder for the track.
+        let decoder = symphonia::default::get_codecs().make(&track.codec_params, &dec_opts)
+                                            .expect("unsupported codec");
+
+        let mut ch_sample_buf = Vec::with_capacity(channels.try_into().unwrap());
+        for _ in 0..channels {
+            ch_sample_buf.push(vec![0.; 0]);
         }
 
-        let mut file_reader = BufReader::new(source);
-        
-        let seek_start_pos = data_offset + (samples_start_idx * samples_size * 2 * 2);
-        file_reader.seek_relative(seek_start_pos.try_into().unwrap()).unwrap();
+        let codec_sample_rate = track.codec_params.sample_rate.unwrap();
 
-        Self {
-            samples_size,
-            channel_size,
-            sample_buf,
-            file_reader,
-            raw_data_buffer: Vec::with_capacity((samples_size*4).try_into().unwrap()),
-            num_seek_samples,
-            sample_idx: 0,
-            sample_rate,
-            // samples_start_idx,
-            // samples_end_idx,
-            last_buf_pos: 0,
-            // num_total_samples
-        }
-    }
+        let resampler = rubato::FftFixedOut::new(
+            codec_sample_rate.try_into().unwrap(), 
+            packet_sample_rate.try_into().unwrap(),
+            packet_sample_frame_num.try_into().unwrap(), 
+            2,
+            2
+        )?;
 
-    fn reset_buf(&mut self, ch_buf_size: usize) {
-        for sample_ch_buf in self.sample_buf.iter_mut() {
-            *sample_ch_buf = vec![0.; ch_buf_size];
-        }
-    }
+        let sample_frame_start_sec = packet_start_idx as f64 * packet_dur;
 
-    fn drain_sample_buffer(&mut self) -> Vec<Vec<f32>> {
-        let mut drained_sample_buf = Vec::with_capacity(self.channel_size);
-        for sample_ch_buf in self.sample_buf.iter_mut() {
-            drained_sample_buf.push(sample_ch_buf.drain(..).collect_vec());
+        format.seek(
+            SeekMode::Accurate,
+            SeekTo::Time { 
+                time: Time::from(sample_frame_start_sec), 
+                track_id: Some(track.id) 
+            }
+        )?;
+
+        let resampler_in_buf = resampler.input_buffer_allocate();
+        let resampler_out_buf = resampler.output_buffer_allocate();
+
+        let opus_encoder = opus::Encoder::new(packet_sample_rate, opus::Channels::Stereo, opus::Application::Audio)?;
+
+        let mut decoded_samples = Vec::with_capacity(2);
+        for _ in 0..2 {
+            decoded_samples.push(Vec::new());
         }
 
-        drained_sample_buf
+        Ok(
+            Self {
+                // duration,
+                packet_num,
+                packet_dur,
+                packet_sample_frame_num,
+                packet_sample_rate,
+                channel_size: channels.try_into().unwrap(),
+    
+                ch_sample_buf,
+                // mss,
+                decoder,
+                format,
+                resampler,
+                resampler_in_buf,
+                resampler_out_buf,
+                orig_sample_rate: codec_sample_rate,
+                opus_encoder,
+                decoded_samples,
+                seek_packet_cnt: Default::default(),
+                packet_seek_start_idx: packet_start_idx,
+            }
+        )
     }
 }
 
 impl Iterator for AudioSampleIterator {
-    type Item = Vec<Vec<f32>>;
+    type Item = SampleFramePacket;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let read_sample_len = std::cmp::min(
-            self.samples_size, 
-            self.num_seek_samples - self.sample_idx
-        );
+        let mut enc_output = Vec::new();
+        let rs_input_frame_next = self.resampler.input_frames_next();
 
-        if read_sample_len == 0 {
-            return None
+        while self.decoded_samples[0].len() < rs_input_frame_next {
+            let packet = match self.format.next_packet() {
+                Ok(packet) => packet,
+                Err(e) => {
+                    break
+                },
+            };
+
+            let decoded = match self.decoder.decode(&packet) {
+                Ok(decoded) => decoded,
+                Err(_) => break,
+            };
+
+            let mut sample_buf = SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
+            sample_buf.copy_planar_ref(decoded);
+
+            let samples = sample_buf.samples();
+            let sample_frame_len = samples.len() / 2;
+
+            self.decoded_samples[0].extend_from_slice(&samples[..sample_frame_len]);
+            self.decoded_samples[1].extend_from_slice(&samples[sample_frame_len..]);
         }
 
-        self.raw_data_buffer = vec![0; (read_sample_len*2*2).try_into().unwrap()];
-        self.reset_buf(read_sample_len.try_into().unwrap());
-
-        // self.file_reader.read_exact(&mut self.raw_data_buffer).unwrap();
-        self.last_buf_pos = self.file_reader.stream_position().unwrap();
-        if let Err(err) = self.file_reader.read_exact(&mut self.raw_data_buffer) {
-            println!("{:?}", err);
+        if self.seek_packet_cnt == self.packet_num ||
+            self.decoded_samples[0].len() == 0 {
+            // println!("reach end of content");
+            return None;
         }
-        self.sample_idx += read_sample_len;
 
-        let sample_iter = self.raw_data_buffer
-            .chunks(2)
-            .map(|ref mut item| 
-                aiff::reader::read_i16_be(item) as f32 / self.sample_rate as f32);
-            
-        for (sample_item_idx, sample_item) in sample_iter.enumerate() {
-            let ch_idx = sample_item_idx % self.channel_size;
-            let sample_idx = sample_item_idx / self.channel_size;
-            self.sample_buf[ch_idx][sample_idx] = sample_item;
-        }
-    
-        Some(self.drain_sample_buffer())
+        let mut rs_input = Vec::with_capacity(2);
+        let dc_sp_frame_len = self.decoded_samples[0].len() as i32;
+        let zero_pad_len = std::cmp::max(rs_input_frame_next as i32 - dc_sp_frame_len, 0);
         
+        for ch_idx in 0..2 {
+            let ch_sp_drain_len = std::cmp::min(rs_input_frame_next, dc_sp_frame_len.try_into().unwrap());
+            let mut ch_rs_input = self.decoded_samples[ch_idx].drain(..ch_sp_drain_len).collect_vec();
+            
+            if zero_pad_len > 0 {
+                ch_rs_input.extend_from_slice(&vec![0.; zero_pad_len.try_into().unwrap()]);
+            }
+
+            rs_input.push(ch_rs_input);
+        }
+
+        self.resampler.process_into_buffer(
+            &rs_input, 
+            &mut self.resampler_out_buf, 
+            None
+        ).unwrap();
+
+        let mut resampled_output = audio::Interleaved::<f32>::with_topology(2, self.resampler.output_frames_max());
+
+        for ch_idx in 0..2 {
+            for (c, s) in resampled_output
+                .get_mut(ch_idx)
+                .unwrap()
+                .iter_mut()
+                .zip(&self.resampler_out_buf[ch_idx])
+            {
+                *c = *s;
+            }
+        }
+
+        let encoded = self.opus_encoder.encode_vec_float(resampled_output.as_slice(), 4000).unwrap();
+        enc_output.extend(encoded);
+
+        let packet_idx = self.packet_seek_start_idx + self.seek_packet_cnt;
+        self.seek_packet_cnt += 1;
+
+        Some(        
+            SampleFramePacket {
+                packet_idx,
+                sample_frame_duration: self.packet_dur,
+                sample_frame_num: 2880,
+                encoded_data: enc_output,
+            }
+        )
     }
 }
 
@@ -262,7 +404,7 @@ impl AudioLibrary {
             return Err(String::from("not exists"))
         }
 
-        if model::AudioLibraryRoot::check_exists_by_path(mongodb_client.clone(), library_root).await {
+        if model::audio::AudioLibraryRoot::check_exists_by_path(mongodb_client.clone(), library_root).await {
             return Err(format!("path '{:?}' already exists", library_root))
         }
 
@@ -273,24 +415,24 @@ impl AudioLibrary {
             .iter()
             .map(|item| Self::get_audio_file_paths(item.path(), &audio_types))
             .flat_map(|item| item)
-            .map(|item| document::AudioFile::create_from_path(&item))
+            .map(|item| document::audio::AudioFile::create_from_path(&item))
             .collect();
         
         let library_docs: Vec<_> = audio_library_entries
             .iter()
-            .map(|item| document::AudioLibrary::create_from_path(&item.path()))
+            .map(|item| document::audio::AudioLibrary::create_from_path(&item.path()))
             .collect();
 
-        let audio_library_root_doc = document::AudioLibrary::create_from_path(&library_root);
+        let audio_library_root_doc = document::audio::AudioLibrary::create_from_path(&library_root);
 
-        let library_create_res = model::AudioLibraryRoot::create(mongodb_client.clone(), audio_library_root_doc).await;
+        let library_create_res = model::audio::AudioLibraryRoot::create(mongodb_client.clone(), audio_library_root_doc).await;
 
         if !library_docs.is_empty() {
-            model::AudioLibrary::create_many(mongodb_client.clone(), library_docs).await.unwrap();
+            model::audio::AudioLibrary::create_many(mongodb_client.clone(), library_docs).await.unwrap();
         }
         
         if !audio_file_docs.is_empty() {
-            model::AudioFile::create_many(mongodb_client.clone(), &audio_file_docs).await.unwrap();
+            model::audio::AudioFile::create_many(mongodb_client.clone(), &audio_file_docs).await.unwrap();
         }
 
         match library_create_res {
@@ -303,7 +445,7 @@ impl AudioLibrary {
         mongodb_client: mongodb::Client,
         path: &Path
     ) -> Result<String, String> {
-        if !model::AudioLibraryRoot::check_exists_by_path(mongodb_client.clone(), path).await {
+        if !model::audio::AudioLibraryRoot::check_exists_by_path(mongodb_client.clone(), path).await {
             return Err(format!("path '{:?}' not exists", path))
         }
 
@@ -311,26 +453,26 @@ impl AudioLibrary {
         let mut delete_file_count = 0;
         let mut delete_library_count = 0;
 
-        let delete_audio_libraries = model::AudioLibrary::get_by_path(mongodb_client.clone(), path).await.unwrap();
+        let delete_audio_libraries = model::audio::AudioLibrary::get_by_path(mongodb_client.clone(), path).await.unwrap();
         for delete_audio_library in delete_audio_libraries.iter() {
             let delete_audio_library_path = util::path::materialized_to_path(&delete_audio_library.path.as_ref().unwrap());
             let delete_audio_library_path = Path::new(&delete_audio_library_path);
-            let audio_files = model::AudioFile::get_self_by_library_path(mongodb_client.clone(), delete_audio_library_path, false).await.unwrap();
+            let audio_files = model::audio::AudioFile::get_self_by_library_path(mongodb_client.clone(), delete_audio_library_path, false).await.unwrap();
             let delete_audio_tag_ids: Vec<_> = audio_files.iter()
                 .filter_map(|item| item.audio_tag_refer)
                 .collect();
     
-            let audio_tag_delete_res = model::AudioTag::delete_by_ids(mongodb_client.clone(), &delete_audio_tag_ids).await.unwrap();
+            let audio_tag_delete_res = model::audio::AudioTag::delete_by_ids(mongodb_client.clone(), &delete_audio_tag_ids).await.unwrap();
             delete_tag_count += audio_tag_delete_res.deleted_count;
     
-            let audio_file_delete_res = model::AudioFile::delete_by_selfs(mongodb_client.clone(), &audio_files).await.unwrap();
+            let audio_file_delete_res = model::audio::AudioFile::delete_by_selfs(mongodb_client.clone(), &audio_files).await.unwrap();
             delete_file_count += audio_file_delete_res.deleted_count;
     
-            let library_delete_res = model::AudioLibrary::delete_by_path(mongodb_client.clone(), delete_audio_library_path).await.unwrap();
+            let library_delete_res = model::audio::AudioLibrary::delete_by_path(mongodb_client.clone(), delete_audio_library_path).await.unwrap();
             delete_library_count += library_delete_res.deleted_count;
         }
 
-        model::AudioLibraryRoot::delete_by_path(mongodb_client.clone(), path).await;
+        model::audio::AudioLibraryRoot::delete_by_path(mongodb_client.clone(), path).await;
 
         Ok(format!("deleted tag count: {}, deleted file count: {}, deleted library count: {}", delete_tag_count, delete_file_count, delete_library_count))
     }
@@ -338,22 +480,22 @@ impl AudioLibrary {
     pub async fn analyze_audio_library(
         mongodb_client: mongodb::Client,
     ) -> Result<(), String> {
-        let audio_libraries = model::AudioLibraryRoot::get_all(mongodb_client.clone()).await;
+        let audio_libraries = model::audio::AudioLibraryRoot::get_all(mongodb_client.clone()).await;
 
         for audio_library in audio_libraries.into_iter() {
-            let audio_files = model::AudioFile::get_self_by_library_path(mongodb_client.clone(), Path::new(&audio_library.id), true).await.unwrap();
+            let audio_files = model::audio::AudioFile::get_self_by_library_path(mongodb_client.clone(), Path::new(&audio_library.id), true).await.unwrap();
 
             for audio_file in audio_files.iter() {
                 let parent_path = util::path::materialized_to_path(&audio_file.parent_path);
                 let audio_tag = Self::create_audio_tag(None, &parent_path, &audio_file.filename);
                 let audio_tag_id = audio_tag.id.clone();
                 
-                match model::AudioTag::create(mongodb_client.clone(), audio_tag).await {
+                match model::audio::AudioTag::create(mongodb_client.clone(), audio_tag).await {
                     Ok(_) => (),
                     Err(err) => return Err(format!("{}", err)),
                 }
 
-                let update_res = model::AudioFile::set_audio_tag_refer(mongodb_client.clone(), &audio_file.id.unwrap(), &audio_tag_id.unwrap()).await.unwrap();
+                let update_res = model::audio::AudioFile::set_audio_tag_refer(mongodb_client.clone(), &audio_file.id.unwrap(), &audio_tag_id.unwrap()).await.unwrap();
                 println!("ur: {:?}", update_res);
             }
         }
@@ -364,11 +506,11 @@ impl AudioLibrary {
     pub async fn refresh_audio_library(
         mongodb_client: mongodb::Client,
     ) -> Result<(), String> {
-        let audio_library_roots = model::AudioLibraryRoot::get_all(mongodb_client.clone()).await;
+        let audio_library_roots = model::audio::AudioLibraryRoot::get_all(mongodb_client.clone()).await;
         let audio_types = vec!["aiff"];
 
         for audio_library_root in audio_library_roots.iter() {
-            let audio_libraries = model::AudioLibrary::get_by_path(mongodb_client.clone(), Path::new(&audio_library_root.id)).await.unwrap();
+            let audio_libraries = model::audio::AudioLibrary::get_by_path(mongodb_client.clone(), Path::new(&audio_library_root.id)).await.unwrap();
             let audio_libraries: HashMap<_, _> = audio_libraries.iter()
                 .map(|item| (item.id.as_str(), item))
                 .collect();
@@ -400,17 +542,17 @@ impl AudioLibrary {
                     .iter()
                     .map(|item| Self::get_audio_file_paths(Path::new(item), &audio_types))
                     .flat_map(|item| item)
-                    .map(|item| document::AudioFile::create_from_path(&item))
+                    .map(|item| document::audio::AudioFile::create_from_path(&item))
                     .collect();
 
                 let new_library_docs: Vec<_> = new_library_pathstrs
                     .iter()
-                    .map(|item| document::AudioLibrary::create_from_path(Path::new(&item)))
+                    .map(|item| document::audio::AudioLibrary::create_from_path(Path::new(&item)))
                     .collect();
 
-                model::AudioLibrary::create_many(mongodb_client.clone(), new_library_docs).await.unwrap();
+                model::audio::AudioLibrary::create_many(mongodb_client.clone(), new_library_docs).await.unwrap();
 
-                model::AudioFile::create_many(mongodb_client.clone(), &new_audio_file_docs).await.unwrap();
+                model::audio::AudioFile::create_many(mongodb_client.clone(), &new_audio_file_docs).await.unwrap();
     
             }
 
@@ -419,16 +561,16 @@ impl AudioLibrary {
                     println!("sync delete audio library: {:?}", deleted_library_pathstr);
                     let delted_library_path = Path::new(deleted_library_pathstr);
 
-                    let audio_files = model::AudioFile::get_self_by_library_path(mongodb_client.clone(), delted_library_path, false).await.unwrap();
+                    let audio_files = model::audio::AudioFile::get_self_by_library_path(mongodb_client.clone(), delted_library_path, false).await.unwrap();
                     let delete_audio_tag_ids: Vec<_> = audio_files.iter()
                         .filter_map(|item| item.audio_tag_refer)
                         .collect();
 
-                    let _audio_tag_delete_res = model::AudioTag::delete_by_ids(mongodb_client.clone(), &delete_audio_tag_ids).await.unwrap();
+                    let _audio_tag_delete_res = model::audio::AudioTag::delete_by_ids(mongodb_client.clone(), &delete_audio_tag_ids).await.unwrap();
 
-                    let _audio_file_delete_res = model::AudioFile::delete_by_selfs(mongodb_client.clone(), &audio_files).await.unwrap();
+                    let _audio_file_delete_res = model::audio::AudioFile::delete_by_selfs(mongodb_client.clone(), &audio_files).await.unwrap();
 
-                    let _library_delete_res = model::AudioLibrary::delete_by_path(mongodb_client.clone(), delted_library_path).await.unwrap();
+                    let _library_delete_res = model::audio::AudioLibrary::delete_by_path(mongodb_client.clone(), delted_library_path).await.unwrap();
                 }
             }
 
@@ -437,12 +579,12 @@ impl AudioLibrary {
                 
                 for updated_local_library in updated_local_libraries.iter() {
                     let local_library_path = Path::new(&updated_local_library.id);
-                    let audio_files = model::AudioFile::get_self_by_library_path(mongodb_client.clone(), local_library_path.clone(), false).await.unwrap();
+                    let audio_files = model::audio::AudioFile::get_self_by_library_path(mongodb_client.clone(), local_library_path.clone(), false).await.unwrap();
                     let audio_filenames: HashSet<_> = audio_files
                         .iter()
                         .map(|item| item.filename.to_owned())
                         .collect();
-                    let mut audio_files: HashMap<String, document::AudioFile> = audio_files
+                    let mut audio_files: HashMap<String, document::audio::AudioFile> = audio_files
                         .into_iter()
                         .map(|item| (item.filename.to_owned(), item))
                         .collect();
@@ -460,8 +602,8 @@ impl AudioLibrary {
                     let deleted_audio_filenames: HashSet<_> = audio_filenames.difference(&local_audio_filenames).cloned().collect();
                     let managed_audio_filenames: HashSet<_> = audio_filenames.difference(&deleted_audio_filenames).cloned().collect();
 
-                    let mut updated_audio_files: Vec<document::AudioFile> = vec![];
-                    let mut updated_audio_tags: Vec<document::AudioTag> = vec![];
+                    let mut updated_audio_files: Vec<document::audio::AudioFile> = vec![];
+                    let mut updated_audio_tags: Vec<document::audio::AudioTag> = vec![];
 
                     for managed_audio_filename in managed_audio_filenames.iter() {
                         let mut audio_file = audio_files.remove(managed_audio_filename).unwrap();
@@ -487,7 +629,7 @@ impl AudioLibrary {
                             let mut target_path = local_library_path.clone().to_path_buf();
                             target_path.push(item);
 
-                            document::AudioFile::create_from_path(&target_path)
+                            document::audio::AudioFile::create_from_path(&target_path)
                         })
                         .collect();
 
@@ -497,7 +639,7 @@ impl AudioLibrary {
                         .collect();
 
                     if !new_audio_file_docs.is_empty() {
-                        model::AudioFile::create_many(mongodb_client.clone(), &new_audio_file_docs).await.unwrap();
+                        model::audio::AudioFile::create_many(mongodb_client.clone(), &new_audio_file_docs).await.unwrap();
                     }
 
                     if !delete_audio_file_docs.is_empty() {
@@ -506,21 +648,21 @@ impl AudioLibrary {
                             .filter_map(|item| item.audio_tag_refer)
                             .collect();
 
-                        model::AudioTag::delete_by_ids(mongodb_client.clone(), &deleted_audio_tag_ids).await.unwrap();
+                        model::audio::AudioTag::delete_by_ids(mongodb_client.clone(), &deleted_audio_tag_ids).await.unwrap();
 
-                        model::AudioFile::delete_by_selfs(mongodb_client.clone(), &delete_audio_file_docs).await.unwrap();
+                        model::audio::AudioFile::delete_by_selfs(mongodb_client.clone(), &delete_audio_file_docs).await.unwrap();
                     }
 
                     if !updated_audio_files.is_empty() {
-                        model::AudioFile::update_self(mongodb_client.clone(), &updated_audio_files).await;
+                        model::audio::AudioFile::update_self(mongodb_client.clone(), &updated_audio_files).await;
                     }
 
                     if !updated_audio_tags.is_empty() {
-                        model::AudioTag::update_self(mongodb_client.clone(), &updated_audio_tags).await;
+                        model::audio::AudioTag::update_self(mongodb_client.clone(), &updated_audio_tags).await;
                     }
 
                     let local_library_modified_timestamp = util::path::get_timestamp(&local_library_path);
-                    let _update_local_library_res = model::AudioLibrary::update_modified_timestamp(mongodb_client.clone(), &updated_local_library.id, local_library_modified_timestamp).await;
+                    let _update_local_library_res = model::audio::AudioLibrary::update_modified_timestamp(mongodb_client.clone(), &updated_local_library.id, local_library_modified_timestamp).await;
                 }
             }
 
@@ -539,7 +681,7 @@ impl AudioLibrary {
         id: Option<ObjectId>,
         parent_path: &str,
         filename: &str,
-    ) -> document::AudioTag {
+    ) -> document::audio::AudioTag {
         let mut audio_file_path = Path::new(parent_path).to_path_buf();
         audio_file_path.push(filename);
 
@@ -587,7 +729,7 @@ impl AudioLibrary {
 
             let pictures: Vec<_> = id3v2.tag.pictures()
                 .into_iter()
-                .map(|item| document::AudioFileMetadataPicture {
+                .map(|item| document::audio::AudioFileMetadataPicture {
                     description: item.description.clone(),
                     mime_type: item.mime_type.clone(),
                     picture_type: item.picture_type.to_string(),
@@ -620,7 +762,7 @@ impl AudioLibrary {
                 None => None,
             };
 
-            let mut audio_tag = document::AudioTag {
+            let mut audio_tag = document::audio::AudioTag {
                 id,
                 property_hash: None,
                 artist: artist,
@@ -644,7 +786,7 @@ impl AudioLibrary {
             return audio_tag
 
         } else {
-            return document::AudioTag {
+            return document::audio::AudioTag {
                 id,
                 property_hash: None,
                 title: Some(filename.clone().to_owned()),
@@ -662,7 +804,7 @@ impl AudioTag {
         max_item_num: u64,
         page: u64,
     ) -> Result<Vec<AudioTagRes>, String> {
-        let get_all_res = model::AudioTag::get_all(mongodb_client.clone(), max_item_num as i64, page).await;
+        let get_all_res = model::audio::AudioTag::get_all(mongodb_client.clone(), max_item_num as i64, page).await;
 
         let res: Vec<_> = get_all_res
             .iter()

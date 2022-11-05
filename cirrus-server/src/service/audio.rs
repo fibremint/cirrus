@@ -5,7 +5,7 @@ use tonic::{Code, Request, Response, Status};
 use tokio_stream::wrappers::ReceiverStream;
 
 use cirrus_protobuf::{
-    api::{AudioMetaReq, AudioMetaRes, AudioDataReq, AudioDataRes, AudioLibraryReq, AudioTagRes, AudioChannelData},
+    api::{AudioMetaReq, AudioMetaRes, AudioDataReq, AudioDataRes, AudioLibraryReq, AudioTagRes},
     common::{RequestAction, Response as Res, ListRequest},
 
     audio_data_svc_server::AudioDataSvc,
@@ -38,7 +38,7 @@ impl AudioDataSvc for AudioDataSvcImpl {
     ) -> Result<Response<AudioMetaRes>, Status> {
         let audio_tag_id = &request.get_ref().audio_tag_id;
 
-        let res = match logic::AudioFile::read_meta(self.mongodb_client.clone(), audio_tag_id).await {
+        let res = match logic::audio::AudioFile::read_meta(self.mongodb_client.clone(), audio_tag_id).await {
             Ok(res) => Response::new(res),
             Err(err) => return Err(Status::new(Code::Internal, err)),
         };
@@ -51,30 +51,36 @@ impl AudioDataSvc for AudioDataSvcImpl {
         request: Request<AudioDataReq>
     ) -> Result<Response<Self::GetDataStream>, Status> {
         let (tx, rx) = mpsc::channel(16);
-        
-        let audio_tag_id = &request.get_ref().audio_tag_id;
-        let samples_size = request.get_ref().samples_size as usize;
-        let samples_start_idx = request.get_ref().samples_start_idx as usize;
-        let samples_end_idx = request.get_ref().samples_end_idx as usize;
+        let req = request.get_ref();
 
-        let mut audio_sample_iter = logic::AudioFile::get_audio_sample_iterator(
+        let mut audio_sample_iter = match logic::audio::AudioFile::get_audio_sample_iterator(
             self.mongodb_client.clone(), 
-            audio_tag_id, 
-            samples_size, 
-            samples_start_idx,
-            samples_end_idx
-        ).await.unwrap();
+            &req.audio_tag_id, 
+            req.packet_start_idx, 
+            req.packet_num,
+            req.channels,
+        ).await {
+            Ok(iter) => iter,
+            Err(err) => return Err(Status::new(Code::Internal, err.to_string())),
+        };
 
         tokio::spawn(async move {
-            while let Some(sample_data) = audio_sample_iter.next() {
-                let audio_channel_data = sample_data.iter()
-                    .map(|item| AudioChannelData {
-                        content: item.to_owned()
-                    })
-                    .collect::<Vec<_>>();
+            while let Some(sample_frame_packet) = audio_sample_iter.next() {
+                // let ch_sample_frames = sample_data.encoded_data.iter().enumerate()
+                //     .map(|(ch_idx, item)| AudioChannelSampleFrames {
+                //         ch_idx: ch_idx.try_into().unwrap(),
+                //         encoded_samples: item.to_owned()
+                //     })
+                //     .collect::<Vec<_>>();
 
                 if let Err(_err) = tx.send(Ok(AudioDataRes {
-                    audio_channel_data
+                    // num_frames: ch_sample_frames[0].encoded_samples.len().try_into().unwrap(),
+                    // ch_sample_frames
+                    packet_idx: sample_frame_packet.packet_idx,
+                    sp_frame_duration: sample_frame_packet.sample_frame_duration,
+                    sp_frame_num: sample_frame_packet.sample_frame_num,
+                    encoded_samples: sample_frame_packet.encoded_data.to_owned(),
+                    // ch_sample_frames,
                 })).await {
                     break;
                 }
@@ -107,7 +113,7 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
         let path = &request.get_ref().path;
         let path = Path::new(path);
 
-        let res = match logic::AudioLibrary::add_audio_library(self.mongodb_client.clone(), path).await {
+        let res = match logic::audio::AudioLibrary::add_audio_library(self.mongodb_client.clone(), path).await {
             Ok(_) => Response::new(Res {
                 code: Code::Ok as u32,
                 status: Option::None,
@@ -125,7 +131,7 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
         let path = request.get_ref().path.clone();
         let path = Path::new(path.as_str());
 
-        let res = match logic::AudioLibrary::remove_audio_library(self.mongodb_client.clone(), path).await {
+        let res = match logic::audio::AudioLibrary::remove_audio_library(self.mongodb_client.clone(), path).await {
             Ok(res) => Response::new(Res {
                 code: Code::Ok as u32,
                 status: Some(res),
@@ -141,7 +147,7 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
         _request: Request<RequestAction>
     ) -> Result<Response<Res>, Status> {
 
-        let res = match logic::AudioLibrary::analyze_audio_library(self.mongodb_client.clone()).await {
+        let res = match logic::audio::AudioLibrary::analyze_audio_library(self.mongodb_client.clone()).await {
             Ok(_) => Response::new(Res {
                 code: Code::Ok as u32,
                 status: Some(format!("Refreshed audio library"))
@@ -157,7 +163,7 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
         _request: Request<RequestAction>
     ) -> Result<Response<Res>, Status> {
 
-        let res = match logic::AudioLibrary::refresh_audio_library(self.mongodb_client.clone()).await {
+        let res = match logic::audio::AudioLibrary::refresh_audio_library(self.mongodb_client.clone()).await {
             Ok(_) => Response::new(Res {
                 code: Code::Ok as u32,
                 status: Some(format!("Refreshed audio library"))
@@ -195,7 +201,7 @@ impl AudioTagSvc for AudioTagSvcImpl {
         let req_items_per_page = request.get_ref().items_per_page;
 
         let (tx, rx) = mpsc::channel(req_items_per_page as usize);
-        let res = logic::AudioTag::list_audio_tags(self.mongodb_client.clone(), req_items_per_page, req_page).await.unwrap();
+        let res = logic::audio::AudioTag::list_audio_tags(self.mongodb_client.clone(), req_items_per_page, req_page).await.unwrap();
 
         tokio::spawn(async move {
             for r in res.into_iter() {

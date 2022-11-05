@@ -1,8 +1,7 @@
 use std::{
     sync::{
         Arc, 
-        RwLock, 
-        atomic::{AtomicUsize, Ordering, AtomicBool}, Condvar, Mutex
+        atomic::{AtomicUsize, Ordering}, Condvar, Mutex
     }, 
     collections::VecDeque
 };
@@ -10,21 +9,19 @@ use std::iter::Iterator;
 
 // use anyhow::anyhow;
 use futures::StreamExt;
-use rubato::Resampler;
-use tokio::sync::mpsc;
+use tokio::runtime::Handle;
+use opus;
+use audio::{Channels, AsInterleavedMut};
 
 use crate::{dto::AudioSource, request};
-use super::state::AudioSampleBufferStatus;
+use super::{state::AudioSampleBufferStatus, packet::{EncodedBuffer, get_packet_idx_from_sec, NodeSearchDirection}};
 
 pub struct AudioSample {
     pub inner: Arc<AudioSampleInner>,
-    pub tx: mpsc::Sender<f32>,
-    thread_run_states: Vec<Arc<AtomicBool>>,
 }
 
 impl AudioSample {
     pub fn new(audio_source: AudioSource, host_sample_rate: u32, host_output_channels: usize) -> Self {
-        let (tx, mut rx) = mpsc::channel(64);
 
         let inner = Arc::new(
             AudioSampleInner::new(
@@ -34,44 +31,20 @@ impl AudioSample {
             )
         );
 
-        let inner_1_clone = inner.clone();
-
-        let mut thread_run_states: Vec<Arc<AtomicBool>> = Vec::new();
-        let thread_run_state_1 = Arc::new(AtomicBool::new(true));
-        let thread_run_state_1_clone = thread_run_state_1.clone();
-
-        tokio::spawn(async move {
-            loop {
-                if !thread_run_state_1_clone.load(Ordering::Relaxed) {
-                    println!("stop thread: fetch buffer, source id: {}", inner_1_clone.source.id);
-
-                    break;
-                }
-
-                while let Some(fetch_buf_sec) = rx.recv().await {
-                    inner_1_clone.fetch_buffer(&inner_1_clone.source.server_address, fetch_buf_sec).await.unwrap();
-                }
-            }
-        });
-
-        thread_run_states.push(thread_run_state_1);
-
         Self {
             inner,
-            tx,
-            thread_run_states
         }
     }
 
-    pub fn get_current_playback_position_sec(&self) -> f32 {
+    pub fn get_current_playback_position_sec(&self) -> f64 {
         self.inner.get_current_playback_position_sec()
     }
 
-    pub fn get_remain_sample_buffer_sec(&self) -> f32 {
+    pub fn get_remain_sample_buffer_sec(&self) -> f64 {
         self.inner.get_remain_sample_buffer_sec()
     }
 
-    pub fn set_playback_position(&self, position_sec: f32) {
+    pub fn set_playback_position(&self, position_sec: f64) {
         self.inner.set_playback_position(position_sec)
     }
 
@@ -79,115 +52,127 @@ impl AudioSample {
         self.inner.get_buffer_status()
     }
 
-}
+    pub fn get_content_length(&self) -> f64 {
+        self.inner.source.length
+    }
 
-impl Drop for AudioSample {
-    fn drop(&mut self) {
-        self.inner.set_buffer_status(AudioSampleBufferStatus::StopFillBuffer);
-
-        for thread_run_state in &self.thread_run_states {
-            thread_run_state.store(false, Ordering::Relaxed);
+    pub fn fetch_buffer(&self, min_avail_buf_sec: f64, fetch_start_margin_sec: f64, rt_handle: Arc<Handle>) {
+        if self.get_buffer_status() != AudioSampleBufferStatus::StartFillBuffer {
+            return;
         }
+
+        // check fetch requried
+        let remain_buf_sec = self.inner.get_remain_sample_buffer_sec();
+
+        if remain_buf_sec > min_avail_buf_sec ||
+            remain_buf_sec - min_avail_buf_sec > fetch_start_margin_sec {
+            return;
+        }
+
+        let packet_buf = self.inner.packet_buf.lock().unwrap();
+        let last_buf_chunk = packet_buf.buf_chunk_info.get(&packet_buf.last_node_id).unwrap();
+
+        let content_packets = packet_buf.content_packets;
+        let last_chunk_end_idx = last_buf_chunk.lock().unwrap().end_idx;
+        let chunks_num = packet_buf.get_chunks_num_from_current();
+
+        if last_chunk_end_idx == content_packets && chunks_num == 1 {
+            return;
+        }
+        
+        // fetch start
+        let inner = Arc::clone(&self.inner);
+          
+        rt_handle.spawn(async move {
+            inner.fetch_buffer(min_avail_buf_sec).await.unwrap();
+        });
     }
 }
 
 pub struct AudioSampleInner {
     pub source: AudioSource,
-    sample_buffer: RwLock<Vec<VecDeque<f32>>>,
-    playback_sample_frame_idx: Arc<AtomicUsize>,
+
+    playback_sample_frame_pos: Arc<AtomicUsize>,
     pub buffer_status: Arc<AtomicUsize>,
-    resampler: Mutex<rubato::FftFixedInOut<f32>>,
-    pub resampler_frames_input_next: usize,
-    pub resampler_frames_output_next: usize,
     host_sample_rate: u32,
     host_output_channels: usize,
-    pub content_length: f32,
-    buf_req_pos: Arc<AtomicUsize>,
-    done_fill_buf_condvar: Arc<(Mutex<bool>, Condvar)>
+
+    done_fill_buf_condvar: Arc<(Mutex<bool>, Condvar)>,
+    packet_playback_idx: Arc<AtomicUsize>,
+
+    packet_buf: Arc<Mutex<EncodedBuffer>>,
+    decoded_sample_frame_buf: Arc<Mutex<Vec<VecDeque<f32>>>>,
+    opus_decoder: Arc<Mutex<opus::Decoder>>,
 }
 
 impl AudioSampleInner {
     pub fn new(source: AudioSource, host_sample_rate: u32, host_output_channels: usize) -> Self {
-        let resampler = rubato::FftFixedInOut::new(
-            source.metadata.sample_rate as usize, 
-            host_sample_rate as usize, 
-            1024, 
-            2
-        ).unwrap();
+        let mut decoded_sample_frame_buf: Vec<VecDeque<f32>> = Vec::with_capacity(2);
 
-        let resampler_frames_input_next = resampler.input_frames_next();
-        let resampler_frames_output_next = resampler.output_frames_next();
-
-        let mut sample_buffer: Vec<VecDeque<f32>> = Vec::with_capacity(2);
         for _ in 0..host_output_channels {
-            sample_buffer.push(VecDeque::new());
+            decoded_sample_frame_buf.push(VecDeque::new());
         }
 
-        let resampled_sample_frames = (source.metadata.sample_frames as f32 * (host_sample_rate as f32 / source.metadata.sample_rate as f32)).ceil() as usize;
-        let content_length = resampled_sample_frames as f32 / host_sample_rate as f32;
+        let od = opus::Decoder::new(48_000, opus::Channels::Stereo).unwrap();
+
+        let content_pckts = source.content_packets;
 
         Self {
             source,
-            sample_buffer: RwLock::new(sample_buffer),
-            playback_sample_frame_idx: Arc::new(AtomicUsize::new(0)),
+
+            playback_sample_frame_pos: Arc::new(AtomicUsize::new(0)),
             buffer_status: Arc::new(AtomicUsize::new(AudioSampleBufferStatus::StartFillBuffer as usize)),
-            resampler: Mutex::new(resampler),
-            resampler_frames_input_next,
-            resampler_frames_output_next,
             host_sample_rate,
             host_output_channels,
-            content_length,
-            buf_req_pos: Arc::new(AtomicUsize::new(0)),
-            done_fill_buf_condvar: Arc::new((Mutex::new(true), Condvar::new()))
+            done_fill_buf_condvar: Arc::new((Mutex::new(true), Condvar::new())),
+
+            packet_playback_idx: Arc::new(AtomicUsize::new(0)),
+            packet_buf: Arc::new(Mutex::new(EncodedBuffer::new(content_pckts))),
+
+            decoded_sample_frame_buf: Arc::new(Mutex::new(decoded_sample_frame_buf)),
+            opus_decoder: Arc::new(Mutex::new(od)),
         }
     }
 
-    fn get_remain_sample_buffer_len(&self) -> usize {
-        self.sample_buffer.read().unwrap()[0].len()
+    fn get_remain_sample_buffer_sec(&self) -> f64 {
+        let p_pos = self.packet_playback_idx.load(Ordering::SeqCst) as i32;
+
+        let packet_buf = self.packet_buf.lock().unwrap();
+        let buf_chunk_info = packet_buf.buf_chunk_info.get(&packet_buf.seek_buf_chunk_node_idx).unwrap();
+
+        let bci = buf_chunk_info.lock().unwrap();
+
+        let remain_packets: i32 = bci.end_idx as i32 - p_pos - 1;
+
+        if p_pos < bci.start_idx.try_into().unwrap() || remain_packets < 0 {
+            return 0.
+        }
+
+        remain_packets as f64 * 0.06
     }
 
-    fn get_playback_sample_frame_idx(&self) -> usize {
-        self.playback_sample_frame_idx.load(Ordering::SeqCst)
+    fn get_playback_sample_frame_pos(&self) -> usize {
+        self.playback_sample_frame_pos.load(Ordering::SeqCst)
     }
 
-    fn convert_sample_frame_idx_to_sec(&self, sample_frame_idx: usize, sample_rate: u32) -> f32 {
-        sample_frame_idx as f32 / sample_rate as f32
+    fn convert_sample_frame_idx_to_sec(&self, sample_frame_idx: usize, sample_rate: u32) -> f64 {
+        sample_frame_idx as f64 / sample_rate as f64
     }
 
-    fn convert_sec_to_sample_frame_idx(&self, sec: f32, sample_rate: u32) -> usize {
-        (sec * sample_rate as f32).floor() as usize
+    fn convert_sec_to_sample_frame_idx(&self, sec: f64, sample_rate: u32) -> usize {
+        (sec * sample_rate as f64).floor() as usize
     }
 
-    fn get_current_playback_position_sec(&self) -> f32 {
-        self.convert_sample_frame_idx_to_sec(self.get_playback_sample_frame_idx(), self.host_sample_rate)
+    fn get_current_playback_position_sec(&self) -> f64 {
+        self.convert_sample_frame_idx_to_sec(self.get_playback_sample_frame_pos(), self.host_sample_rate)
     }
 
-    fn get_remain_sample_buffer_sec(&self) -> f32 {
-        self.convert_sample_frame_idx_to_sec(self.get_remain_sample_buffer_len(), self.host_sample_rate)
-    }
-
-    fn get_playback_sample_frame_idx_from_sec(&self, sec: f32) -> usize {
+    fn get_playback_sample_frame_pos_from_sec(&self, sec: f64) -> usize {
         self.convert_sec_to_sample_frame_idx(sec, self.host_sample_rate)
     }
 
-    fn get_audio_source_sample_idx(&self, sec: f32) -> usize {
-        (self.convert_sec_to_sample_frame_idx(sec, self.source.metadata.sample_rate) as f32 / 
-            self.resampler_frames_input_next as f32).floor() as usize
-    }
-
-    fn set_playback_sample_frame_idx(&self, sample_frame_idx: usize) {
-        self.playback_sample_frame_idx.store(sample_frame_idx, Ordering::SeqCst);
-    }
-
-    fn get_buf_req_pos(&self) -> usize {
-        self.buf_req_pos.load(Ordering::SeqCst)
-    }
-
-    fn set_buf_req_pos(&self, pos: usize) {
-        self.buf_req_pos.store(
-            pos, 
-            Ordering::SeqCst
-        );
+    fn set_playback_sample_frame_pos(&self, sample_frame_idx: usize) {
+        self.playback_sample_frame_pos.store(sample_frame_idx, Ordering::SeqCst);
     }
 
     fn get_buffer_status(&self) -> AudioSampleBufferStatus {
@@ -198,7 +183,7 @@ impl AudioSampleInner {
         self.buffer_status.store(status as usize, Ordering::Relaxed);
     }
 
-    fn set_playback_position(&self, position_sec: f32) {
+    fn set_playback_position(&self, position_sec: f64) {
         self.set_buffer_status(AudioSampleBufferStatus::StopFillBuffer);
         
         let done_fill_buf_condvar_clone = self.done_fill_buf_condvar.clone();
@@ -209,40 +194,33 @@ impl AudioSampleInner {
             done_fill_buf = done_fill_buf_cv.wait(done_fill_buf).unwrap();
         }
 
-        let position_sample_idx = self.get_playback_sample_frame_idx_from_sec(position_sec);
+        let position_sample_idx = self.get_playback_sample_frame_pos_from_sec(position_sec);
+        let updated_playback_pkt_idx = get_packet_idx_from_sec(position_sec, 0.06);
+        self.packet_playback_idx.store(updated_playback_pkt_idx, Ordering::SeqCst);
+        println!("updated playback packet index: {}", updated_playback_pkt_idx);
+        
         let position_sec_delta = position_sec - self.get_current_playback_position_sec();
 
-        let drain_buffer_len = 
-            if position_sec_delta > 0.0 { position_sample_idx - self.get_playback_sample_frame_idx() } 
-            else { self.get_remain_sample_buffer_len() };
+        let packet_buf_update_dir = 
+            if position_sec_delta > 0.0 
+                { NodeSearchDirection::Forward } 
+            else 
+                { NodeSearchDirection::Backward };
 
-        self.drain_sample_buffer(drain_buffer_len);
+        self.packet_buf.lock().unwrap().update_seek_position(position_sec, packet_buf_update_dir);
+        self.set_playback_sample_frame_pos(position_sample_idx);
 
-        let sample_req_start_sec = 
-            if position_sec_delta > 0.0 { position_sec + self.get_remain_sample_buffer_sec() }
-            else { position_sec };
-
-        let buf_req_start_pos = self.get_audio_source_sample_idx(sample_req_start_sec);
-        self.set_buf_req_pos(buf_req_start_pos);
-        self.set_playback_sample_frame_idx(position_sample_idx);
+        let mut ds_buf = self.decoded_sample_frame_buf.lock().unwrap();
+        for channel_sample_buffer in ds_buf.iter_mut() {
+            channel_sample_buffer.clear();
+        }
 
         self.set_buffer_status(AudioSampleBufferStatus::StartFillBuffer);
     }
 
-    fn drain_sample_buffer(&self, drain_len: usize) {
-        let mut sample_buffer = self.sample_buffer.write().unwrap();
-
-        let min_drain_buffer_len = std::cmp::min(sample_buffer[0].len(), drain_len);
-
-        for ch_sample_buffer in sample_buffer.iter_mut() {
-            ch_sample_buffer.drain(..min_drain_buffer_len);
-        }
-    }
-
     async fn fetch_buffer(
         &self,
-        server_address: &str,
-        playback_buffer_margin_sec: f32,
+        fetch_buf_sec: f64,
     ) -> Result<(), anyhow::Error> {
         if self.get_buffer_status() != AudioSampleBufferStatus::StartFillBuffer {
             return Ok(());
@@ -254,14 +232,13 @@ impl AudioSampleInner {
 
         let done_fill_buf_condvar_clone = self.done_fill_buf_condvar.clone();
         let (done_fill_buf_condvar_lock, done_fill_buf_cv) = &*done_fill_buf_condvar_clone;
-
+        
         {
             let mut done_fill_buf = done_fill_buf_condvar_lock.lock().unwrap();
             *done_fill_buf = false;
         }
 
-        let fetch_buffer_sec = playback_buffer_margin_sec - self.get_remain_sample_buffer_sec();
-        if let Err(_err) = self.get_buffer_for(server_address, fetch_buffer_sec).await {
+        if let Err(_err) = self.get_buffer_for(&self.source.server_address, fetch_buf_sec).await {
             // println!("fetch buffer error: {:?}", err);
         }
 
@@ -278,67 +255,99 @@ impl AudioSampleInner {
         Ok(())
     }
 
-    async fn get_buffer_for(&self, server_address: &str, sec: f32) -> Result<(), anyhow::Error> {
-        let buf_req_start_idx = self.get_buf_req_pos() as u32;
+    async fn get_buffer_for(&self, server_address: &str, duration_sec: f64) -> Result<(), anyhow::Error> {
+        let fetch_start_pkt_idx = self.packet_buf.lock().unwrap().next_packet_idx;
+        let fetch_packet_num = self.packet_buf
+            .lock()
+            .unwrap()
+            .get_fetch_required_packet_num(
+                fetch_start_pkt_idx,
+                duration_sec,
+            );
+
+        if fetch_packet_num == 0 {
+            println!("warn: attempted to fetch 0 packets");
+            return Ok(());
+        }
 
         let mut audio_data_stream = request::get_audio_data_stream(
             server_address.to_string(),
             &self.source.id,
-            self.resampler_frames_input_next as u32,
-            buf_req_start_idx,
-            buf_req_start_idx + self.get_audio_source_sample_idx(sec) as u32
+            fetch_start_pkt_idx.try_into().unwrap(),
+            fetch_packet_num.try_into().unwrap(),
+            2,
         ).await?;
 
-        drop(buf_req_start_idx);
+        println!("fetch packet: ({}..{})", fetch_start_pkt_idx, fetch_start_pkt_idx+fetch_packet_num);
+        println!("seek buf chunk id: {}", self.packet_buf.lock().unwrap().seek_buf_chunk_node_idx);
+        let mut last_idx = 0;
 
-        while let Some(data) = audio_data_stream.next().await {
+        while let Some(res) = audio_data_stream.next().await {
+            let audio_data = match res {
+                Ok(data) => data,
+                Err(e) => {
+                    println!("err: {}", e);
+                    break;
+                },
+            };
+
             if AudioSampleBufferStatus::StopFillBuffer == self.get_buffer_status() {
                 self.set_buffer_status(AudioSampleBufferStatus::StoppedFillBuffer);
-
                 println!("stopped fill buffer");
 
                 break;
             }
 
-            let mut sample_items = Vec::with_capacity(self.source.metadata.channels);
-            for ch_data in data.unwrap().audio_channel_data.into_iter() {
-                sample_items.push(ch_data.content);
-            }
-
-            let mut resampler = self.resampler.lock().unwrap();
-            let mut resampler_output_buffer = resampler.output_buffer_allocate();
-
-            // zero pad for final sample data
-            if sample_items[0].len() < self.resampler_frames_input_next {
-                let zero_pad_len = self.resampler_frames_input_next - sample_items[0].len();
-                for sample_items_ch in sample_items.iter_mut() {
-                    sample_items_ch.extend_from_slice(&vec![0.; zero_pad_len]);
-                }
-            }
-
-            resampler.process_into_buffer(&sample_items, &mut resampler_output_buffer, None).unwrap();
-
-            let mut sample_buffer = self.sample_buffer.write().unwrap();
-            for (ch_idx, channel_sample_buffer) in sample_buffer.iter_mut().enumerate() {
-                channel_sample_buffer.extend(resampler_output_buffer.get(ch_idx).unwrap())
-            }
-
-            drop(sample_buffer);
-
-            let buf_req_start_idx = self.get_buf_req_pos();
-            self.set_buf_req_pos(buf_req_start_idx+1);
+            let mut packet_buf = self.packet_buf.lock().unwrap();
+            last_idx = audio_data.packet_idx;
+            packet_buf.insert(audio_data);
         }
+
+        println!("last pushed packet id: {}", last_idx);
 
         Ok(())
     }
     
     pub fn play_for(&self, output: &mut [f32]) {
-        for output_channel_frame in output.chunks_mut(self.source.metadata.channels) {  
+        let mut ds_buf = self.decoded_sample_frame_buf.lock().unwrap();
+        
+        while ds_buf[0].len() < output.len() {
+            let enc_buf = self.packet_buf.lock().unwrap();
+            let mut od = self.opus_decoder.lock().unwrap();
+            let p_pos = self.packet_playback_idx.load(Ordering::SeqCst) as u32;
+
+            if let Some(eb) = enc_buf.frame_buf.get(&p_pos) {
+                let mut decoded_samples = vec![0.; (eb.sp_frame_num*2).try_into().unwrap()];
+                let mut decoded_samples = audio::wrap::interleaved(decoded_samples.as_mut_slice(), 2);
+
+                if let Err(err) = od.decode_float(
+                    &eb.encoded_samples, 
+                    &mut decoded_samples.as_interleaved_mut(),
+                    false
+                ) {
+                      println!("{:?}", err);
+                }
+
+                let r = audio::io::Read::new(decoded_samples);
+
+                for (ch_idx, channel_sample_buffer) in ds_buf.iter_mut().enumerate() {
+                    channel_sample_buffer.extend(r.channel(ch_idx));
+                }
+
+                self.packet_playback_idx.store(p_pos as usize +1, Ordering::SeqCst);
+
+            } else {
+                println!("err: packet {} is missing", p_pos);
+
+                break;
+            }
+        }
+
+        for output_channel_frame in output.chunks_mut(self.source.channels) {  
             let mut channel_sample_read: u8 = 0;
-            let mut sample_buffer = self.sample_buffer.write().unwrap();
           
             for channel_idx in 0..self.host_output_channels {
-                if let Some(channel_sample) = sample_buffer[channel_idx].pop_front() {
+                if let Some(channel_sample) = ds_buf[channel_idx].pop_front() {
                     output_channel_frame[channel_idx] = channel_sample;
                     channel_sample_read += 1;
                 } else {
@@ -346,11 +355,9 @@ impl AudioSampleInner {
                 }
             }
 
-            drop(sample_buffer);
-
-            let playback_sample_frame_idx = self.get_playback_sample_frame_idx();
-            let next_playback_frame_idx = playback_sample_frame_idx + (channel_sample_read / self.source.metadata.channels as u8) as usize;
-            self.set_playback_sample_frame_idx(next_playback_frame_idx);
+            let playback_sample_pos = self.get_playback_sample_frame_pos();
+            let next_playback_frame_idx = playback_sample_pos + (channel_sample_read / self.source.channels as u8) as usize;
+            self.set_playback_sample_frame_pos(next_playback_frame_idx);
         }
     }
 }

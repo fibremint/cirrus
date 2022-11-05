@@ -21,16 +21,16 @@ use cirrus_protobuf::{
 };
 use settings::Settings;
 
-use crate::model::get_mongodb_client;
+use model::get_mongodb_client;
 
 async fn grpc_server_task(addr: &str, mongodb_client: mongodb::Client) -> Result<(), Box<dyn std::error::Error>> {
     println!("run grpc server");
     let addr = addr.parse().unwrap();
 
     // let audio_data_svc = service::AudioDataSvcImpl::default();
-    let audio_data_svc = service::AudioDataSvcImpl::new(mongodb_client.clone());
-    let audio_library_svc = service::AudioLibrarySvcImpl::new(mongodb_client.clone());
-    let audio_tag_svc = service::AudioTagSvcImpl::new(mongodb_client.clone());
+    let audio_data_svc = service::audio::AudioDataSvcImpl::new(mongodb_client.clone());
+    let audio_library_svc = service::audio::AudioLibrarySvcImpl::new(mongodb_client.clone());
+    let audio_tag_svc = service::audio::AudioTagSvcImpl::new(mongodb_client.clone());
 
     TonicServer::builder()
         .add_service(AudioDataSvcServer::new(audio_data_svc))
