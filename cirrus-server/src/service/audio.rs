@@ -5,7 +5,7 @@ use tonic::{Code, Request, Response, Status};
 use tokio_stream::wrappers::ReceiverStream;
 
 use cirrus_protobuf::{
-    api::{AudioMetaReq, AudioMetaRes, AudioDataReq, AudioDataRes, AudioLibraryReq, AudioTagRes, AudioChannelSampleFrames},
+    api::{AudioMetaReq, AudioMetaRes, AudioDataReq, AudioDataRes, AudioLibraryReq, AudioTagRes},
     common::{RequestAction, Response as Res, ListRequest},
 
     audio_data_svc_server::AudioDataSvc,
@@ -53,17 +53,19 @@ impl AudioDataSvc for AudioDataSvcImpl {
         let (tx, rx) = mpsc::channel(16);
         let req = request.get_ref();
 
-        let mut audio_sample_iter = logic::audio::AudioFile::get_audio_sample_iterator(
+        let mut audio_sample_iter = match logic::audio::AudioFile::get_audio_sample_iterator(
             self.mongodb_client.clone(), 
             &req.audio_tag_id, 
-            req.sample_rate, 
+            req.packet_start_idx, 
+            req.packet_num,
             req.channels,
-            req.sample_frame_start_pos,
-            req.sample_frames
-        ).await.unwrap();
+        ).await {
+            Ok(iter) => iter,
+            Err(err) => return Err(Status::new(Code::Internal, err.to_string())),
+        };
 
         tokio::spawn(async move {
-            while let Some(sample_data) = audio_sample_iter.next() {
+            while let Some(sample_frame_packet) = audio_sample_iter.next() {
                 // let ch_sample_frames = sample_data.encoded_data.iter().enumerate()
                 //     .map(|(ch_idx, item)| AudioChannelSampleFrames {
                 //         ch_idx: ch_idx.try_into().unwrap(),
@@ -74,9 +76,10 @@ impl AudioDataSvc for AudioDataSvcImpl {
                 if let Err(_err) = tx.send(Ok(AudioDataRes {
                     // num_frames: ch_sample_frames[0].encoded_samples.len().try_into().unwrap(),
                     // ch_sample_frames
-                    num_frames: sample_data.original_frame_len.try_into().unwrap(),
-                    padded_frame_pos: sample_data.padded_frame_pos.try_into().unwrap(),
-                    encoded_samples: sample_data.encoded_data.to_owned()
+                    packet_idx: sample_frame_packet.packet_idx,
+                    sp_frame_duration: sample_frame_packet.sample_frame_duration,
+                    sp_frame_num: sample_frame_packet.sample_frame_num,
+                    encoded_samples: sample_frame_packet.encoded_data.to_owned(),
                     // ch_sample_frames,
                 })).await {
                     break;

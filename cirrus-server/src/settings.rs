@@ -15,11 +15,20 @@ pub struct MongoDB {
     pub address: String,
 }
 
+
+#[derive(Serialize, Deserialize)]
+#[allow(unused)]
+pub struct AudioSamleFramePacket {
+    pub sample_rate: u32,
+    pub len: u32,
+}
+
 #[derive(Serialize, Deserialize)]
 #[allow(unused)]
 pub struct Settings {
     pub server: Server,
-    pub mongodb: MongoDB
+    pub mongodb: MongoDB,
+    pub audio_sample_frame_packet: AudioSamleFramePacket
 }
 
 impl Settings {
