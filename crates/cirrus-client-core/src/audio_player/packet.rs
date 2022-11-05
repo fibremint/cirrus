@@ -163,6 +163,8 @@ impl EncodedBuffer {
     }
 
     fn update_node(&mut self, audio_data: &AudioDataRes) {
+        let mut updated = false;
+
         {
             let bci_node = self.buf_chunk_info.get(&self.seek_buf_chunk_node_idx).unwrap().to_owned();
             let (bc_start_idx, bc_end_idx) = {
@@ -206,6 +208,8 @@ impl EncodedBuffer {
                 };
 
                 self.seek_buf_chunk_node_idx = nn_id;
+
+                updated = true;
             }
 
             if audio_data.packet_idx < bc_start_idx {
@@ -243,8 +247,50 @@ impl EncodedBuffer {
                 };
 
                 self.seek_buf_chunk_node_idx = pn_id;
+
+                updated = true;
             }
         }
+
+       if updated {
+         // Updated node info
+         let bci = self.buf_chunk_info.get(&self.first_node_id).unwrap();
+         let mut ci = CI::new(bci.clone(), NodeSearchDirection::Forward);
+ 
+         {
+             let c = bci.lock().unwrap();
+             println!("({}..{}) - {}", c.start_idx, c.end_idx, c.id);
+             if c.prev_info.is_some() {
+                 let p = c.prev_info.as_ref().unwrap();
+                 let p = p.lock().unwrap();
+                 println!("prev: ({}..{})", p.start_idx, p.end_idx);
+             }
+             if c.next_info.is_some() {
+                 let n = c.next_info.as_ref().unwrap();
+                 let n = n.lock().unwrap();
+ 
+                 println!("next: ({}..{})", n.start_idx, n.end_idx);
+             }
+         }
+ 
+         while let Some(cur) = ci.next() {
+             let c = cur.lock().unwrap();
+ 
+             println!("({}..{}) - {}", c.start_idx, c.end_idx, c.id);
+ 
+             if c.prev_info.is_some() {
+                 let p = c.prev_info.as_ref().unwrap();
+                 let p = p.lock().unwrap();
+                 println!("prev: ({}..{})", p.start_idx, p.end_idx);
+             }
+             if c.next_info.is_some() {
+                 let n = c.next_info.as_ref().unwrap();
+                 let n = n.lock().unwrap();
+ 
+                 println!("next: ({}..{})", n.start_idx, n.end_idx);
+             }
+         }
+       }
 
         // Merge chunk
 
@@ -455,6 +501,9 @@ impl EncodedBuffer {
     }
 
     pub fn update_seek_position(&mut self, position_sec: f64, direction: NodeSearchDirection) {
+        println!("previous seek index: {}", self.seek_buf_chunk_node_idx);
+        println!("direction: {:?}", direction);
+
         let packet_idx = get_packet_idx_from_sec(position_sec, 0.06) as u32;
 
         let bci_node = self.buf_chunk_info.get(&self.seek_buf_chunk_node_idx).unwrap();                
@@ -491,13 +540,18 @@ impl EncodedBuffer {
                         break;
                     }
 
-                    if c.start_idx > packet_idx &&
-                        i_delta > 0 {
-                            next_node = c.prev_info.clone();
-                            break;
-                        }
+                    // if c.start_idx >= packet_idx &&
+                    //     i_delta > 0 {
+                    //         next_node = c.prev_info.clone();
+                    //         break;
+                    //     }
+
+                    if c.start_idx >= packet_idx {
+                        next_node = c.prev_info.clone();
+                        break;
+                    }
                     
-                    i_delta = packet_idx as i32 - c.end_idx as i32;
+                    // i_delta = packet_idx as i32 - c.end_idx as i32;
                 },
                 NodeSearchDirection::Backward => {
                     // if c.start_idx < packet_idx ||
@@ -526,6 +580,7 @@ impl EncodedBuffer {
 
         if next_node.is_some() {
             self.seek_buf_chunk_node_idx = next_node.unwrap().lock().unwrap().id;
+            println!("updated seek node index: {}", self.seek_buf_chunk_node_idx);
         }
 
         self.set_buf_reqest_idx(position_sec);
@@ -613,7 +668,7 @@ impl EncodedBuffer {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum NodeSearchDirection {
     Forward,
     Backward,

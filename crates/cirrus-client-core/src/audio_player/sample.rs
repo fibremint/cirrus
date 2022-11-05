@@ -270,7 +270,9 @@ impl AudioSampleInner {
         }
 
         let position_sample_idx = self.get_playback_sample_frame_pos_from_sec(position_sec);
-        self.packet_playback_idx.store(get_packet_idx_from_sec(position_sec, 0.06), Ordering::SeqCst);
+        let updated_playback_pkt_idx = get_packet_idx_from_sec(position_sec, 0.06);
+        self.packet_playback_idx.store(updated_playback_pkt_idx, Ordering::SeqCst);
+        println!("updated playback packet index: {}", updated_playback_pkt_idx);
         
         let position_sec_delta = position_sec - self.get_current_playback_position_sec();
 
@@ -353,7 +355,7 @@ impl AudioSampleInner {
             .lock()
             .unwrap()
             .get_fetch_required_packet_num(
-                fetch_start_pkt_idx.try_into().unwrap(),
+                fetch_start_pkt_idx,
                 duration_sec,
             );
 
