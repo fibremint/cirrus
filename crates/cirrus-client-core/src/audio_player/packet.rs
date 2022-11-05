@@ -4,6 +4,8 @@ use cirrus_protobuf::api::AudioDataRes;
 use opus::packet;
 use rand::Rng;
 
+type PacketIndex = u32;
+
 
 pub struct BufChunkInfoNode {
     pub id: u32,
@@ -26,7 +28,8 @@ impl BufChunkInfoNode {
         Self { 
             id,
             start_idx: idx_from,
-            end_idx: idx_from+1,
+            // end_idx: idx_from+1,
+            end_idx: idx_from,
             prev_info, 
             next_info 
         }
@@ -38,8 +41,9 @@ pub struct EncodedBuffer {
     pub frame_buf: HashMap<u32, AudioDataRes>, // packet idx, packet
     pub buf_chunk_info: HashMap<u32, Arc<Mutex<BufChunkInfoNode>>>,
     pub seek_buf_chunk_node_idx: u32,
-    first_node_id: u32,
-    pub next_packet_idx: u32,
+    first_node_id: PacketIndex,
+    pub last_node_id: PacketIndex,
+    pub next_packet_idx: PacketIndex,
 }
 
 impl EncodedBuffer {
@@ -51,6 +55,18 @@ impl EncodedBuffer {
         let bci_node = Arc::new(Mutex::new(bci_node));
 
         buf_chunk_info.insert(bci_node_id.try_into().unwrap(), bci_node);
+        // let mut enc_buf = Self {
+        //     content_packets,
+        //     frame_buf: Default::default(), 
+        //     buf_chunk_info: Default::default(),
+        //     seek_buf_chunk_node_idx: Default::default(),
+        //     first_node_id: Default::default(),
+        //     next_packet_idx: 0,
+        // };
+
+        // enc_buf.first_node_id = enc_buf.update_node(0);
+
+        // enc_buf
 
         Self {
             content_packets,
@@ -58,6 +74,7 @@ impl EncodedBuffer {
             buf_chunk_info: buf_chunk_info,
             seek_buf_chunk_node_idx: bci_node_id,
             first_node_id: bci_node_id,
+            last_node_id: bci_node_id,
             next_packet_idx: 0,
         }
     }
@@ -106,7 +123,8 @@ impl Iterator for CI {
         //     return None;
         // }
 
-        self.curr.clone()
+        self.found.clone()
+        // self.curr.clone()
     }
 }
 
@@ -162,8 +180,82 @@ impl EncodedBuffer {
         found_node
     }
 
-    fn update_node(&mut self, audio_data: &AudioDataRes) {
+    fn print_nodes(&self) {
+        let bci = self.buf_chunk_info.get(&self.first_node_id).unwrap();
+        let mut ci = CI::new(bci.clone(), NodeSearchDirection::Forward);
+
+        while let Some(cur) = ci.next() {
+            let c = cur.lock().unwrap();
+
+            println!("({}..{}) - {}", c.start_idx, c.end_idx, c.id);
+
+            if c.prev_info.is_some() {
+                let p = c.prev_info.as_ref().unwrap();
+                let p = p.lock().unwrap();
+                println!("prev: ({}..{})", p.start_idx, p.end_idx);
+            }
+            if c.next_info.is_some() {
+                let n = c.next_info.as_ref().unwrap();
+                let n = n.lock().unwrap();
+
+                println!("next: ({}..{})", n.start_idx, n.end_idx);
+            }
+        }
+    
+    }
+
+    fn append_new_node_from(&mut self, prev_node: Arc<Mutex<BufChunkInfoNode>>, packet_idx: u32) -> PacketIndex {
+        let prev_node_next = prev_node.lock().unwrap().next_info.clone();
+
+        let new_node = BufChunkInfoNode::new(
+            packet_idx, 
+            Some(prev_node.clone()), 
+            prev_node_next
+        );
+
+        let new_node_id = new_node.id;
+        let next_node = new_node.next_info.clone();
+
+        let new_node = Arc::new(Mutex::new(new_node));
+
+        {
+            let mut pn = prev_node.lock().unwrap();
+            pn.next_info = Some(Arc::clone(&new_node));
+    
+            if next_node.is_some() {
+                let next_node = next_node.unwrap();
+                let mut nn = next_node.lock().unwrap();
+                nn.prev_info = Some(Arc::clone(&new_node));
+            }
+        }
+
+        self.buf_chunk_info.insert(new_node_id, Arc::clone(&new_node));
+
+        let last_chunk = self.get_last_chunk().unwrap();
+        self.last_node_id = last_chunk.lock().unwrap().id;
+
+        new_node_id
+    }
+
+    fn append_new_node(&mut self, packet_idx: u32, direction: NodeSearchDirection) -> u32 {
         let mut updated = false;
+        let mut seek_buf_chunk_node_idx = 0;
+
+        let bci_node = self.buf_chunk_info.get(&self.seek_buf_chunk_node_idx).unwrap().to_owned();
+        let (bc_start_idx, bc_end_idx) = {
+            let bc = bci_node.as_ref().lock().unwrap();
+            (bc.start_idx, bc.end_idx)
+        };
+
+        let ci = CI::new(bci_node, direction);
+
+
+
+        // if packet_idx > bc_end_idx {
+
+        // } else {
+
+        // }
 
         {
             let bci_node = self.buf_chunk_info.get(&self.seek_buf_chunk_node_idx).unwrap().to_owned();
@@ -172,16 +264,16 @@ impl EncodedBuffer {
                 (bc.start_idx, bc.end_idx)
             };
 
-            if audio_data.packet_idx > bc_end_idx {
+            if packet_idx > bc_end_idx {
                 let nn_id = match self.find_fit_chunk(
                     &bci_node, 
-                    audio_data.packet_idx, 
+                    packet_idx, 
                     NodeSearchDirection::Forward
                 ) {
                     Some(next_node) => next_node.lock().unwrap().id,
                     None => {
                         let next_node = BufChunkInfoNode::new(
-                                audio_data.packet_idx, 
+                                packet_idx, 
                                 Some(bci_node.clone()), 
                                 bci_node.lock().unwrap().next_info.clone()
                             );
@@ -207,21 +299,22 @@ impl EncodedBuffer {
                     },
                 };
 
-                self.seek_buf_chunk_node_idx = nn_id;
+                // self.seek_buf_chunk_node_idx = nn_id;
+                seek_buf_chunk_node_idx = nn_id;
 
                 updated = true;
             }
 
-            if audio_data.packet_idx < bc_start_idx {
+            if packet_idx < bc_start_idx {
                 let pn_id = match self.find_fit_chunk(
                     &bci_node, 
-                    audio_data.packet_idx, 
+                    packet_idx, 
                     NodeSearchDirection::Backward
                 ) {
                     Some(prev_node) => prev_node.lock().unwrap().id,
                     None => {
                         let prev_node = BufChunkInfoNode::new(
-                            audio_data.packet_idx, 
+                            packet_idx, 
                             bci_node.lock().unwrap().prev_info.clone(), 
                             Some(bci_node.clone())
                         );
@@ -246,51 +339,54 @@ impl EncodedBuffer {
                     },                
                 };
 
-                self.seek_buf_chunk_node_idx = pn_id;
+                // self.seek_buf_chunk_node_idx = pn_id;
+                seek_buf_chunk_node_idx = pn_id;
 
                 updated = true;
             }
         }
 
-       if updated {
-         // Updated node info
-         let bci = self.buf_chunk_info.get(&self.first_node_id).unwrap();
-         let mut ci = CI::new(bci.clone(), NodeSearchDirection::Forward);
- 
-         {
-             let c = bci.lock().unwrap();
-             println!("({}..{}) - {}", c.start_idx, c.end_idx, c.id);
-             if c.prev_info.is_some() {
-                 let p = c.prev_info.as_ref().unwrap();
-                 let p = p.lock().unwrap();
-                 println!("prev: ({}..{})", p.start_idx, p.end_idx);
-             }
-             if c.next_info.is_some() {
-                 let n = c.next_info.as_ref().unwrap();
-                 let n = n.lock().unwrap();
- 
-                 println!("next: ({}..{})", n.start_idx, n.end_idx);
-             }
-         }
- 
-         while let Some(cur) = ci.next() {
-             let c = cur.lock().unwrap();
- 
-             println!("({}..{}) - {}", c.start_idx, c.end_idx, c.id);
- 
-             if c.prev_info.is_some() {
-                 let p = c.prev_info.as_ref().unwrap();
-                 let p = p.lock().unwrap();
-                 println!("prev: ({}..{})", p.start_idx, p.end_idx);
-             }
-             if c.next_info.is_some() {
-                 let n = c.next_info.as_ref().unwrap();
-                 let n = n.lock().unwrap();
- 
-                 println!("next: ({}..{})", n.start_idx, n.end_idx);
-             }
-         }
-       }
+        if updated {
+            // Updated node info
+            let bci = self.buf_chunk_info.get(&self.first_node_id).unwrap();
+            let mut ci = CI::new(bci.clone(), NodeSearchDirection::Forward);
+
+            {
+                let c = bci.lock().unwrap();
+                println!("({}..{}) - {}", c.start_idx, c.end_idx, c.id);
+                if c.prev_info.is_some() {
+                    let p = c.prev_info.as_ref().unwrap();
+                    let p = p.lock().unwrap();
+                    println!("prev: ({}..{})", p.start_idx, p.end_idx);
+                }
+                if c.next_info.is_some() {
+                    let n = c.next_info.as_ref().unwrap();
+                    let n = n.lock().unwrap();
+
+                    println!("next: ({}..{})", n.start_idx, n.end_idx);
+                }
+            }
+
+            while let Some(cur) = ci.next() {
+                let c = cur.lock().unwrap();
+
+                println!("({}..{}) - {}", c.start_idx, c.end_idx, c.id);
+
+                if c.prev_info.is_some() {
+                    let p = c.prev_info.as_ref().unwrap();
+                    let p = p.lock().unwrap();
+                    println!("prev: ({}..{})", p.start_idx, p.end_idx);
+                }
+                if c.next_info.is_some() {
+                    let n = c.next_info.as_ref().unwrap();
+                    let n = n.lock().unwrap();
+
+                    println!("next: ({}..{})", n.start_idx, n.end_idx);
+                }
+            }
+        }
+
+        seek_buf_chunk_node_idx
 
         // Merge chunk
 
@@ -369,10 +465,16 @@ impl EncodedBuffer {
         // }
 
         self.buf_chunk_info.remove(&nn.id);
+
+        drop(nn);
+        drop(bc);
+
+        let last_chunk = self.get_last_chunk().unwrap();
+        self.last_node_id = last_chunk.lock().unwrap().id;
     }
 
     pub fn push(&mut self, audio_data: AudioDataRes) {
-        self.update_node(&audio_data);
+        // self.update_node(&audio_data);
 
         {
             let bci_node = self.buf_chunk_info.get(&self.seek_buf_chunk_node_idx).unwrap().to_owned();        
@@ -505,6 +607,7 @@ impl EncodedBuffer {
         println!("direction: {:?}", direction);
 
         let packet_idx = get_packet_idx_from_sec(position_sec, 0.06) as u32;
+        // self.update_node(packet_idx);
 
         let bci_node = self.buf_chunk_info.get(&self.seek_buf_chunk_node_idx).unwrap();                
         
@@ -512,21 +615,45 @@ impl EncodedBuffer {
             let bc = bci_node.lock().unwrap();
             if bc.start_idx <= packet_idx &&
                 bc.end_idx > packet_idx {
+                    self.seek_buf_chunk_node_idx = bc.id;
                     return;
                 }
         }
+        // if let Some(fit_chunk) = self.find_fit_chunk(
+        //     bci_node, packet_idx, direction) {
+        //         self.seek_buf_chunk_node_idx = fit_chunk.lock().unwrap().id;
+        //         return;
+        //     }
 
         // drop(bc);
 
-        let mut next_node: Option<Arc<Mutex<BufChunkInfoNode>>> = None;
+        // let mut next_node: Option<Arc<Mutex<BufChunkInfoNode>>> = None;
         // let next_node: Arc<Mutex<BufChunkInfoNode>> = None;
 
         let mut ci = CI::new(bci_node.clone(), direction);
         // let mut i_delta: i32 = 0;
-        let mut i_delta = packet_idx as i32 - bci_node.lock().unwrap().start_idx as i32;
+        // let mut i_delta = packet_idx as i32 - bci_node.lock().unwrap().start_idx as i32;
+        let mut new_node_id: Option<u32> = None;
 
         while let Some(s) = ci.next() {
             let c = s.lock().unwrap();
+            // let (start_idx, end_idx) = {
+            //     let c = s.lock().unwrap();
+            //     (c.start_idx, c.end_idx)
+            // };
+            let node_id = c.id;
+            let start_idx = c.start_idx;
+            let end_idx = c.end_idx;
+            let prev_node = c.prev_info.clone();
+            let next_node = c.next_info.clone();
+
+            drop(c);
+
+            if start_idx <= packet_idx && end_idx > packet_idx {
+                // next_node = Some(s.clone());
+                self.seek_buf_chunk_node_idx = node_id;
+                break;
+            }
 
             match direction {
                 NodeSearchDirection::Forward => {
@@ -535,25 +662,77 @@ impl EncodedBuffer {
                     //         next_node = Some(s.clone());
                     //         break;
                     //     }
-                    if c.next_info.is_none() {
-                        next_node = Some(s.clone());
+                    
+                    if start_idx > packet_idx {
+                        let nid = self.append_new_node_from(
+                            // c.prev_info.clone().unwrap(),
+                            prev_node.unwrap(),
+                            packet_idx
+                        );
+
+                        new_node_id = Some(nid);
+                        break;
+                    }
+                    
+                    if next_node.is_none() {
+                        let nid = self.append_new_node_from(
+                            s.clone(), 
+                            packet_idx
+                        );
+                        
+                        new_node_id = Some(nid);
                         break;
                     }
 
+                    // if c.start_idx <= packet_idx && c.end_idx > packet_idx {
+                    //     next_node = Some(s.clone());
+                    //     break;
+                    // }
+
+                    // ///////////////////
+
+                    // if c.next_info.is_none() {
+                    //     next_node = Some(s.clone());
+                    //     break;
+                    // }
+
+                    // if c.start_idx >= packet_idx {
+                    //     next_node = c.prev_info.clone();
+                    //     break;
+                    // }
+
+                    // //////////////////
+                    // /// 
+                    
                     // if c.start_idx >= packet_idx &&
                     //     i_delta > 0 {
                     //         next_node = c.prev_info.clone();
                     //         break;
                     //     }
 
-                    if c.start_idx >= packet_idx {
-                        next_node = c.prev_info.clone();
-                        break;
-                    }
-                    
+
+
                     // i_delta = packet_idx as i32 - c.end_idx as i32;
                 },
                 NodeSearchDirection::Backward => {
+                    // if start_idx > packet_idx {
+                    //     continue;
+                    // }
+                    
+                    if end_idx <= packet_idx {
+                        let nid = self.append_new_node_from(
+                            s.clone(), 
+                            packet_idx
+                        );
+                        
+                        new_node_id = Some(nid);
+                        break;                    
+                    }
+
+                    // if c.start_idx <= packet_idx && c.end_idx > packet_idx {
+                    //     next_node = Some(s.clone());
+                    //     break;
+                    // }
                     // if c.start_idx < packet_idx ||
                     //     c.end_idx > packet_idx {
                     //         next_node = Some(s.clone());
@@ -563,13 +742,16 @@ impl EncodedBuffer {
                     //     next_node = Some(s.clone());
                     //     break;
                     // }
-                    if c.start_idx > packet_idx {
-                        continue;
-                    }
 
-                    next_node = Some(s.clone());
-                    break;
+                    // ///////////////
+                    // if c.start_idx > packet_idx {
+                    //     continue;
+                    // }
 
+                    // next_node = Some(s.clone());
+                    // break;
+                    // ///////////////
+                    // /// 
                     // if c.end_idx -1 < packet_idx || c.start_idx >= packet_idx {
                     //     next_node = Some(s.clone());
                     //     break;
@@ -578,10 +760,21 @@ impl EncodedBuffer {
             }
         }
 
-        if next_node.is_some() {
-            self.seek_buf_chunk_node_idx = next_node.unwrap().lock().unwrap().id;
-            println!("updated seek node index: {}", self.seek_buf_chunk_node_idx);
+        // if next_node.is_none() {
+        //     self.seek_buf_chunk_node_idx = self.append_new_node(packet_idx, direction);
+        // }
+
+        if let Some(nid) = new_node_id {
+            self.print_nodes();
+            self.seek_buf_chunk_node_idx = nid;
         }
+
+        // if next_node.is_some() {
+        //     self.seek_buf_chunk_node_idx = next_node.unwrap().lock().unwrap().id;
+        //     println!("updated seek node index: {}", self.seek_buf_chunk_node_idx);
+        // }
+
+        println!("updated seek index: {}", self.seek_buf_chunk_node_idx);
 
         self.set_buf_reqest_idx(position_sec);
 
@@ -644,13 +837,13 @@ impl EncodedBuffer {
 
     pub fn get_last_chunk(&self) -> Option<Arc<Mutex<BufChunkInfoNode>>> {
         let bci_node = self.buf_chunk_info.get(&self.seek_buf_chunk_node_idx).unwrap().to_owned();        
-        {
-            let bn_clone = bci_node.clone();
-            let bc = bn_clone.lock().unwrap();
-            if bc.next_info.is_none() {
-                return Some(bci_node);
-            }    
-        }
+        // {
+        //     let bn_clone = bci_node.clone();
+        //     let bc = bn_clone.lock().unwrap();
+        //     if bc.next_info.is_none() {
+        //         return Some(bci_node);
+        //     }    
+        // }
 
         let mut ci = CI::new(bci_node, NodeSearchDirection::Forward);
 
@@ -665,6 +858,13 @@ impl EncodedBuffer {
         }
 
         last_chunk
+    }
+
+    pub fn get_chunks_num_from_current(&self) -> u32 {
+        let bci_node = self.buf_chunk_info.get(&self.seek_buf_chunk_node_idx).unwrap().to_owned();        
+        let ci = CI::new(bci_node, NodeSearchDirection::Forward);
+
+        ci.into_iter().count().try_into().unwrap()
     }
 }
 

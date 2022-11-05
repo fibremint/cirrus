@@ -106,25 +106,16 @@ impl AudioSample {
             return;
         }
 
-        let fetch_start_margin_pkts = get_packet_idx_from_sec(fetch_start_margin_sec, 0.06);
-
-        let packet_playback_idx = self.inner.packet_playback_idx.load(Ordering::SeqCst);
-        // let last_buf_chunk = self.inner.packet_buf.lock().unwrap().get_last_chunk().unwrap();
         let packet_buf = self.inner.packet_buf.lock().unwrap();
-        let last_buf_chunk = packet_buf.get_last_chunk().unwrap();
-        let last_buf_chunk = last_buf_chunk.lock().unwrap();
-        // let last_buf_chunk_end_idx = packet_buf.get_last_chunk().unwrap().lock().unwrap().end_idx -1;   
+        let last_buf_chunk = packet_buf.buf_chunk_info.get(&packet_buf.last_node_id).unwrap();
 
-        if packet_buf.content_packets - last_buf_chunk.end_idx < fetch_start_margin_pkts.try_into().unwrap() &&
-            packet_playback_idx >= last_buf_chunk.start_idx.try_into().unwrap() {
+        let content_packets = packet_buf.content_packets;
+        let last_chunk_end_idx = last_buf_chunk.lock().unwrap().end_idx;
+        let chunks_num = packet_buf.get_chunks_num_from_current();
+
+        if last_chunk_end_idx == content_packets && chunks_num == 1 {
             return;
         }
-        // let playback_sec = self.get_current_playback_position_sec();
-        // let content_length = self.inner.source.length;
-
-        // if content_length - playback_sec < fetch_start_margin_sec {
-        //     return;
-        // }
         
         // fetch start
         let inner = Arc::clone(&self.inner);
@@ -373,6 +364,7 @@ impl AudioSampleInner {
         ).await?;
 
         println!("fetch packet: ({}..{})", fetch_start_pkt_idx, fetch_start_pkt_idx+fetch_packet_num);
+        println!("seek buf chunk id: {}", self.packet_buf.lock().unwrap().seek_buf_chunk_node_idx);
         let mut last_idx = 0;
 
         while let Some(res) = audio_data_stream.next().await {
