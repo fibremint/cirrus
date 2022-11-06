@@ -4,7 +4,7 @@ use std::{
         Arc, 
         atomic::{AtomicUsize, Ordering, AtomicBool},
     },
-    thread,
+    thread, path::PathBuf,
 };
 
 use anyhow::anyhow;
@@ -13,19 +13,29 @@ use tokio::{
     time::Duration, 
     sync::{mpsc, RwLock}, runtime::Handle,
 };
+use tonic::transport::ClientTlsConfig;
 
-use crate::audio_player::state::PlaybackStatus;
+use crate::{audio_player::state::PlaybackStatus, tls};
 use crate::dto::AudioSource;
 
 use super::sample::AudioSample;
 
+#[derive(Clone)]
+pub struct ServerState {
+    pub grpc_endpoint: String,
+    pub tls_config: Option<ClientTlsConfig>,
+}
+
 pub struct AudioPlayer {
     inner: Arc<RwLock<AudioPlayerInner>>,
+    pub server_state: ServerState,
     thread_run_states: Vec<Arc<AtomicBool>>,
 }
 
 impl AudioPlayer {
-    pub fn new() -> Self {
+    pub fn new(
+        grpc_endpoint: String
+    ) -> Self {
         let (tx, mut rx) = mpsc::channel(64);
 
         let inner = Arc::new(
@@ -60,14 +70,34 @@ impl AudioPlayer {
         
         thread_run_states.push(thread_run_state_1);
 
+        let server_state = ServerState {
+            grpc_endpoint,
+            tls_config: None,
+        };
+
         Self {
             inner,
+            server_state,
             thread_run_states
         }
     }
 
-    pub async fn add_audio(&self, server_address: &str, audio_tag_id: &str) -> Result<f64, anyhow::Error> {
-        self.inner.write().await.add_audio(server_address, audio_tag_id).await
+    pub fn load_cert(&mut self, cert_path: &PathBuf, domain_name: &str) -> Result<(), anyhow::Error> {
+        self.server_state.tls_config = Some(tls::load_cert(cert_path, domain_name)?);
+
+        Ok(())
+    }
+
+    pub async fn add_audio(
+        &self, 
+        audio_tag_id: &str
+    ) -> Result<f64, anyhow::Error> {
+        self.inner
+            .write()
+            .await.add_audio(
+                &self.server_state,
+                audio_tag_id
+            ).await
     }
 
     pub fn play(&self) -> Result<(), anyhow::Error> {
@@ -129,8 +159,16 @@ impl AudioPlayerInner {
         }
     }
 
-    pub async fn add_audio(&mut self, server_address: &str, audio_tag_id: &str) -> Result<f64, anyhow::Error> {
-        let audio_source = AudioSource::new(server_address, audio_tag_id).await?;
+    pub async fn add_audio(
+        &mut self, 
+        server_state: &ServerState,
+        audio_tag_id: &str
+    ) -> Result<f64, anyhow::Error> {
+        let audio_source = AudioSource::new(
+            &server_state.grpc_endpoint, 
+            &server_state.tls_config, 
+            audio_tag_id
+        ).await?;
 
         let audio_ctx_1_clone = self.ctx.clone();
         let tx_1_clone = self.tx.clone();
@@ -138,7 +176,7 @@ impl AudioPlayerInner {
 
         let audio_stream = AudioStream::new(
             audio_ctx_1_clone, 
-            audio_source, 
+            audio_source,
             tx_1_clone, 
             status_1_clone
         ).unwrap();
