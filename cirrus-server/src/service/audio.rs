@@ -37,11 +37,6 @@ impl AudioDataSvc for AudioDataSvcImpl {
         request: Request<AudioMetaReq>
     ) -> Result<Response<AudioMetaRes>, Status> {
         let audio_tag_id = &request.get_ref().audio_tag_id;
-        if let Some(remote_addr) = request.remote_addr() {
-            println!("info: {} requests 'get audio metadata'", remote_addr);
-        } else {
-            println!("warn: unknown remote address tries to request");
-        }
 
         let res = match logic::audio::AudioFile::read_meta(self.mongodb_client.clone(), audio_tag_id).await {
             Ok(res) => Response::new(res),
@@ -57,11 +52,6 @@ impl AudioDataSvc for AudioDataSvcImpl {
     ) -> Result<Response<Self::GetDataStream>, Status> {
         let (tx, rx) = mpsc::channel(16);
         let req = request.get_ref();
-        if let Some(remote_addr) = request.remote_addr() {
-            println!("info: {} requests 'get audio data'", remote_addr);
-        } else {
-            println!("warn: unknown remote address tries to request");
-        }
 
         let mut audio_sample_iter = match logic::audio::AudioFile::get_audio_sample_iterator(
             self.mongodb_client.clone(), 
@@ -122,11 +112,6 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
     ) -> Result<Response<Res>, Status> {
         let path = &request.get_ref().path;
         let path = Path::new(path);
-        if let Some(remote_addr) = request.remote_addr() {
-            println!("info: {} requests 'add audio library'", remote_addr);
-        } else {
-            println!("warn: unknown remote address tries to request");
-        }
 
         let res = match logic::audio::AudioLibrary::add_audio_library(self.mongodb_client.clone(), path).await {
             Ok(_) => Response::new(Res {
@@ -146,12 +131,6 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
         let path = request.get_ref().path.clone();
         let path = Path::new(path.as_str());
 
-        if let Some(remote_addr) = request.remote_addr() {
-            println!("info: {} requests 'remove audio library'", remote_addr);
-        } else {
-            println!("warn: unknown remote address tries to request");
-        }
-
         let res = match logic::audio::AudioLibrary::remove_audio_library(self.mongodb_client.clone(), path).await {
             Ok(res) => Response::new(Res {
                 code: Code::Ok as u32,
@@ -165,13 +144,8 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
 
     async fn analyze_audio_library(
         &self,
-        request: Request<RequestAction>
+        _request: Request<RequestAction>
     ) -> Result<Response<Res>, Status> {
-        if let Some(remote_addr) = request.remote_addr() {
-            println!("info: {} requests 'analyze audio library'", remote_addr);
-        } else {
-            println!("warn: unknown remote address tries to request");
-        }
 
         let res = match logic::audio::AudioLibrary::analyze_audio_library(self.mongodb_client.clone()).await {
             Ok(_) => Response::new(Res {
@@ -186,13 +160,8 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
 
     async fn refresh_audio_library(
         &self,
-        request: Request<RequestAction>
+        _request: Request<RequestAction>
     ) -> Result<Response<Res>, Status> {
-        if let Some(remote_addr) = request.remote_addr() {
-            println!("info: {} requests 'refresh audio library'", remote_addr);
-        } else {
-            println!("warn: unknown remote address tries to request");
-        }
 
         let res = match logic::audio::AudioLibrary::refresh_audio_library(self.mongodb_client.clone()).await {
             Ok(_) => Response::new(Res {
@@ -228,12 +197,6 @@ impl AudioTagSvc for AudioTagSvcImpl {
         request: tonic::Request<ListRequest>
     ) -> Result<Response<Self::ListAudioTagsStream>, Status> {
         // let tag_num = 20;
-        if let Some(remote_addr) = request.remote_addr() {
-            println!("info: {} requests 'list audio tags'", remote_addr);
-        } else {
-            println!("warn: unknown remote address tries to request");
-        }
-
         let req_page = request.get_ref().page;
         let req_items_per_page = request.get_ref().items_per_page;
 
