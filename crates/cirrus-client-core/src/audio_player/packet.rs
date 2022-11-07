@@ -312,7 +312,7 @@ impl EncodedBuffer {
         }
 
         if let Some(nid) = new_node_id {
-            self.print_nodes();
+            // self.print_nodes();
             self.seek_buf_chunk_node_idx = nid;
         }
 

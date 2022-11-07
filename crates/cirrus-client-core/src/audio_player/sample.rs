@@ -84,8 +84,18 @@ impl AudioSample {
         let inner = Arc::clone(&self.inner);
           
         rt_handle.spawn(async move {
+            println!("start fill buffer thread. source id: {}", inner.source.id);
+
             inner.fetch_buffer(min_avail_buf_sec).await.unwrap();
+
+            println!("stopped fill buffer thread. source id: {}", inner.source.id);
         });
+    }
+}
+
+impl Drop for AudioSample {
+    fn drop(&mut self) {
+        self.inner.set_buffer_status(AudioSampleBufferStatus::StopFillBuffer);
     }
 }
 
@@ -226,8 +236,6 @@ impl AudioSampleInner {
             return Ok(());
         }
 
-        println!("start fill buffer");
-
         self.set_buffer_status(AudioSampleBufferStatus::StartedFillBuffer);
 
         let done_fill_buf_condvar_clone = self.done_fill_buf_condvar.clone();
@@ -283,7 +291,7 @@ impl AudioSampleInner {
         ).await?;
 
         println!("fetch packet: ({}..{})", fetch_start_pkt_idx, fetch_start_pkt_idx+fetch_packet_num);
-        println!("seek buf chunk id: {}", self.packet_buf.lock().unwrap().seek_buf_chunk_node_idx);
+        // println!("seek buf chunk id: {}", self.packet_buf.lock().unwrap().seek_buf_chunk_node_idx);
         let mut last_idx = 0;
 
         while let Some(res) = audio_data_stream.next().await {
@@ -297,7 +305,7 @@ impl AudioSampleInner {
 
             if AudioSampleBufferStatus::StopFillBuffer == self.get_buffer_status() {
                 self.set_buffer_status(AudioSampleBufferStatus::StoppedFillBuffer);
-                println!("stopped fill buffer");
+                println!("buffer status is stop. interrupting fill buffer");
 
                 break;
             }
