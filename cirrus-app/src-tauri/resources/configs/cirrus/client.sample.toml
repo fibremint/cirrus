@@ -2,6 +2,6 @@
 grpc_endpoint = "grpc://127.0.0.1:50000"
 
 [tls]
-tls = false
+use_tls = false
 domain_name = "example.com"
-cert_path = "resources/tls/your-cert.pem"
+cert_path = "tls/your-cert.pem"
