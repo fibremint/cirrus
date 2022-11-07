@@ -17,14 +17,17 @@ fn manage_player_event<R: Runtime>(window: &Window<R>) {
 }
 
 fn resolve_res_path<R: Runtime>(app: &AppHandle<R>, path: &str) -> PathBuf {
-    let config_path = app.path_resolver()
+    let res_path = app.path_resolver()
         .resolve_resource(path)
         .expect("failed to resolve file path");
 
-    let config_path = dunce::canonicalize(config_path).unwrap();
+    let res_path = dunce::canonicalize(res_path).unwrap();
 
-    config_path
+    res_path
 }
+
+const RES_PATH_STR: &'static str = "resources";
+const CONFIG_PATH_STR: &'static str = "configs/cirrus/client.toml";
 
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("cirrus")
@@ -38,12 +41,11 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::set_playback_position,
         ])
         .setup(|app| {
-            let config_path = resolve_res_path(app, "resources/configs/cirrus/client.toml");
-            let cert_path = resolve_res_path(app, "resources/tls/cert1.pem");
+            let res_root_path = resolve_res_path(app, &RES_PATH_STR);
 
             let state = state::AppState::new(
-                &config_path,
-                &cert_path,
+                &res_root_path,
+                &CONFIG_PATH_STR
             ).unwrap();
 
             app.manage(state);

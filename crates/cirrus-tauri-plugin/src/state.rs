@@ -9,21 +9,24 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(config_path: &PathBuf, cert_path: &PathBuf) -> Result<Self, anyhow::Error> {
-        let settings = Settings::new(config_path).unwrap();
+    pub fn new(res_root_path: &PathBuf, config_path_str: &str) -> Result<Self, anyhow::Error> {
+        let config_path = res_root_path.join(config_path_str);
+        let settings = Settings::new(&config_path).unwrap();
 
-        let mut audio_player = AudioPlayer::new(settings.server.grpc_endpoint);
+        let mut audio_player = AudioPlayer::new(&settings.server.grpc_endpoint);
 
-        if settings.tls.tls {
+        if settings.tls.use_tls {
+            let cert_path = res_root_path.join(&settings.tls.cert_path);
+
             audio_player.load_cert(
-                cert_path,
+                &cert_path,
                 &settings.tls.domain_name,
             )?;
         }
 
         Ok(Self {
             audio_player: Arc::new(audio_player),
-            settings: Settings::new(config_path).unwrap()
+            settings
         })
     }
 }

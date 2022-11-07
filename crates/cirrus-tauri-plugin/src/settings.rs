@@ -6,7 +6,7 @@ use serde_derive::{Serialize, Deserialize};
 #[derive(Serialize, Deserialize)]
 #[allow(unused)]
 pub struct Tls {
-    pub tls: bool,
+    pub use_tls: bool,
     pub domain_name: String,
     pub cert_path: String,
 }

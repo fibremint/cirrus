@@ -34,7 +34,7 @@ pub struct AudioPlayer {
 
 impl AudioPlayer {
     pub fn new(
-        grpc_endpoint: String
+        grpc_endpoint: &str
     ) -> Self {
         let (tx, mut rx) = mpsc::channel(64);
 
@@ -71,7 +71,7 @@ impl AudioPlayer {
         thread_run_states.push(thread_run_state_1);
 
         let server_state = ServerState {
-            grpc_endpoint,
+            grpc_endpoint: grpc_endpoint.to_string(),
             tls_config: None,
         };
 
