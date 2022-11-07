@@ -22,7 +22,7 @@
         "icons/icon.ico"
       ],
       "resources": [
-        "resources/*"
+        "resources/configs/cirrus/client.toml"
       ],
       "externalBin": [],
       "copyright": "",

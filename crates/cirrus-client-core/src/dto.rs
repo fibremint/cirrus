@@ -1,14 +1,7 @@
-use tonic::transport::ClientTlsConfig;
-
 use crate::request;
 
-pub struct Server {
-    pub grpc_endpoint: String,
-    pub tls_config: Option<ClientTlsConfig>,
-}
-
 pub struct AudioSource {
-    pub server: Server,
+    pub server_address: String,
     pub id: String,
     pub length: f64,
     pub channels: usize,
@@ -19,24 +12,16 @@ pub struct AudioSource {
 }
 
 impl AudioSource {
-    pub async fn new(
-        grpc_endpoint: &str,
-        tls_config: &Option<ClientTlsConfig>,
-        audio_tag_id: &str
-    ) -> Result<Self, anyhow::Error> {
+    pub async fn new(server_address: &str, audio_tag_id: &str) -> Result<Self, anyhow::Error> {
+        let server_address = server_address.to_string();
+
         let metadata_res = request::get_audio_meta(
-            grpc_endpoint,
-            tls_config,
+            server_address.clone(),
             audio_tag_id
         ).await.unwrap().into_inner();
 
-        let server = Server {
-            grpc_endpoint: grpc_endpoint.to_string(),
-            tls_config: tls_config.clone(),
-        };
-
         Ok(Self {
-            server,
+            server_address: server_address.to_string(),
             id: audio_tag_id.to_string(),
             length: metadata_res.content_length,
             channels: metadata_res.channels.try_into().unwrap(),

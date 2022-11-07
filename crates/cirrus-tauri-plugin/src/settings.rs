@@ -2,26 +2,16 @@ use std::{env, path::PathBuf};
 use config::{Config, File, ConfigError};
 use serde_derive::{Serialize, Deserialize};
 
-
-#[derive(Serialize, Deserialize)]
-#[allow(unused)]
-pub struct Tls {
-    pub use_tls: bool,
-    pub domain_name: String,
-    pub cert_path: String,
-}
-
 #[derive(Serialize, Deserialize)]
 #[allow(unused)]
 pub struct Server {
-    pub grpc_endpoint: String,
+    pub address: String,
 }
 
 #[derive(Serialize, Deserialize)]
 #[allow(unused)]
 pub struct Settings {
     pub server: Server,
-    pub tls: Tls,
 }
 
 impl Settings {
