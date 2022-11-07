@@ -238,7 +238,7 @@ impl AudioSampleInner {
             *done_fill_buf = false;
         }
 
-        if let Err(_err) = self.get_buffer_for(&self.source.server_address, fetch_buf_sec).await {
+        if let Err(_err) = self.get_buffer_for(fetch_buf_sec).await {
             // println!("fetch buffer error: {:?}", err);
         }
 
@@ -255,7 +255,10 @@ impl AudioSampleInner {
         Ok(())
     }
 
-    async fn get_buffer_for(&self, server_address: &str, duration_sec: f64) -> Result<(), anyhow::Error> {
+    async fn get_buffer_for(
+        &self, 
+        duration_sec: f64
+    ) -> Result<(), anyhow::Error> {
         let fetch_start_pkt_idx = self.packet_buf.lock().unwrap().next_packet_idx;
         let fetch_packet_num = self.packet_buf
             .lock()
@@ -271,7 +274,8 @@ impl AudioSampleInner {
         }
 
         let mut audio_data_stream = request::get_audio_data_stream(
-            server_address.to_string(),
+            &self.source.server.grpc_endpoint,
+            &self.source.server.tls_config,
             &self.source.id,
             fetch_start_pkt_idx.try_into().unwrap(),
             fetch_packet_num.try_into().unwrap(),

@@ -5,3 +5,6 @@ WixTools
 
 resources/configs/cirrus/*
 !resources/configs/cirrus/client.sample.toml
+
+resources/tls/*
+!resources/tls/.gitkeep

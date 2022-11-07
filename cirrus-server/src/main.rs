@@ -5,14 +5,11 @@ mod util;
 mod settings;
 
 use std::env;
-use std::{sync::Arc, path::Path};
 use std::sync::mpsc::channel;
 use std::time::Duration;
 
-use futures::Future;
 use notify::{Watcher, RecursiveMode, watcher};
-use tokio::{sync::Mutex, task::JoinHandle};
-use tonic::transport::Server as TonicServer;
+use tonic::transport::{Server as TonicServer, Identity, ServerTlsConfig};
 
 use cirrus_protobuf::{
     audio_data_svc_server::AudioDataSvcServer,
@@ -23,16 +20,28 @@ use settings::Settings;
 
 use model::get_mongodb_client;
 
-async fn grpc_server_task(addr: &str, mongodb_client: mongodb::Client) -> Result<(), Box<dyn std::error::Error>> {
-    println!("run grpc server");
+async fn grpc_server_task(addr: &str, settings: &Settings, mongodb_client: mongodb::Client) -> Result<(), Box<dyn std::error::Error>> {
     let addr = addr.parse().unwrap();
 
-    // let audio_data_svc = service::AudioDataSvcImpl::default();
     let audio_data_svc = service::audio::AudioDataSvcImpl::new(mongodb_client.clone());
     let audio_library_svc = service::audio::AudioLibrarySvcImpl::new(mongodb_client.clone());
     let audio_tag_svc = service::audio::AudioTagSvcImpl::new(mongodb_client.clone());
 
-    TonicServer::builder()
+    let mut tonic_server = TonicServer::builder();
+
+    if settings.server.tls {
+        let cert = tokio::fs::read(&settings.server.cert_path).await?;
+        let key = tokio::fs::read(&settings.server.key_path).await?;
+
+        let identity = Identity::from_pem(cert, key);
+        tonic_server = tonic_server.tls_config(ServerTlsConfig::new().identity(identity))?;
+
+        println!("info: created TLS identity successfully");
+    }
+
+    println!("info: start grpc service");
+
+    tonic_server
         .add_service(AudioDataSvcServer::new(audio_data_svc))
         .add_service(AudioLibrarySvcServer::new(audio_library_svc))
         .add_service(AudioTagSvcServer::new(audio_tag_svc))
@@ -75,14 +84,18 @@ fn run_fs_notify() -> Result<(), ()> {
 //         });
 // }
 
-pub async fn run_server(addr: &str, mongodb_addr: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn run_server(addr: &str, settings: Settings) -> Result<(), Box<dyn std::error::Error>> {
     // std::thread::spawn(|| {
     //     run_fs_notify()
     // });
 
-    let mongodb_client = get_mongodb_client(mongodb_addr).await?;
+    println!("Cirrus v0.2.0");
+    println!("info: listen address: {}", addr);
+    println!("info: use tls: {}", settings.server.tls);
 
-    grpc_server_task(addr, mongodb_client.clone()).await?;
+    let mongodb_client = get_mongodb_client(&settings.mongodb.address).await?;
+
+    grpc_server_task(addr, &settings, mongodb_client.clone()).await?;
 
     Ok(())
 }
@@ -100,7 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         settings.server.listen_port
     );
 
-    run_server(&server_listen_address, &settings.mongodb.address).await?;
+    run_server(&server_listen_address, settings).await?;
 
     Ok(())
 }

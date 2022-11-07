@@ -6,7 +6,10 @@ use serde_derive::{Serialize, Deserialize};
 #[allow(unused)]
 pub struct Server {
     pub listen_address: String,
-    pub listen_port: u32
+    pub listen_port: u32,
+    pub tls: bool,
+    pub cert_path: String,
+    pub key_path: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -28,7 +31,7 @@ pub struct AudioSamleFramePacket {
 pub struct Settings {
     pub server: Server,
     pub mongodb: MongoDB,
-    pub audio_sample_frame_packet: AudioSamleFramePacket
+    pub audio_sample_frame_packet: AudioSamleFramePacket,
 }
 
 impl Settings {

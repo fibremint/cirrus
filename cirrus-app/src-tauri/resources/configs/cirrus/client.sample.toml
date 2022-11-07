@@ -1,2 +1,7 @@
 [server]
-address = "http://127.0.0.1:50000"
+grpc_endpoint = "grpc://127.0.0.1:50000"
+
+[tls]
+use_tls = false
+domain_name = "example.com"
+cert_path = "tls/your-cert.pem"
