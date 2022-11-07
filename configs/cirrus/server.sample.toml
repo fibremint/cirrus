@@ -1,6 +1,13 @@
 [server]
 listen_address = "127.0.0.1"
 listen_port = 50000
+tls = false
+cert_path = "/path/to/cert"
+key_path = "/path/to/private-key"
 
 [mongodb]
 address = "mongodb://localhost:27017"
+
+[audio_sample_frame_packet]
+sample_rate = 48000
+len = 2880

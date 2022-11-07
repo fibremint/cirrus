@@ -61,7 +61,7 @@ pub async fn load_audio(
 
     println!("got load audio command");
 
-    match state.audio_player.add_audio(&state.settings.server.address, &audio_tag_id).await {
+    match state.audio_player.add_audio(&audio_tag_id).await {
         Ok(content_length) => return Ok(content_length),
         Err(_) => return Err("tauri-plugin: failed to add audio"),
     }
@@ -112,7 +112,12 @@ pub async fn get_audio_tags(
 ) -> Result<Vec<AudioTagRes>, &'static str> {
     println!("got get-audio-tags command");
 
-    match request::get_audio_tags(state.settings.server.address.clone(), items_per_page, page as u64).await {
+    match request::get_audio_tags(
+        &state.audio_player.server_state.grpc_endpoint,
+        &state.audio_player.server_state.tls_config,
+        items_per_page, 
+        page as u64
+    ).await {
         Ok(audio_tags) => Ok(audio_tags),
         Err(_) => return Err("failed to get audio tags from server"),
     }

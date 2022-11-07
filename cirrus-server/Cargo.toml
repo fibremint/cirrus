@@ -29,8 +29,9 @@ serde_derive = "1"
 # symphonia = "0.5.1"
 #symphonia = { path = "../crates/symphonia/symphonia", features = ["aiff", "wav", "ogg", "vorbis"] }
 symphonia = { git = "https://github.com/fibremint/Symphonia", branch="aiff-decode", features = ["aiff", "wav", "ogg", "vorbis"] }
-tonic = "0.6"
+tonic = { version = "0.6.2", features = ["default", "tls-roots"] }
 tokio = { version = "1.0", features = ["rt-multi-thread", "time", "macros", "fs"] }
+#tokio-rustls = "0.23.4"
 tokio-stream = "0.1"
 prost = "0.9"
 walkdir = "2"
