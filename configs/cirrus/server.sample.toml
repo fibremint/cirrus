@@ -2,8 +2,8 @@
 listen_address = "127.0.0.1"
 listen_port = 50000
 tls = false
-cert = "/path/to/cert"
-key = "/path/to/private-key"
+cert_path = "/path/to/cert"
+key_path = "/path/to/private-key"
 
 [mongodb]
 address = "mongodb://localhost:27017"
