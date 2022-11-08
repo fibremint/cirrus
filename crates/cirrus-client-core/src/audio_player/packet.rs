@@ -166,7 +166,7 @@ impl EncodedBuffer {
         new_node_id
     }
 
-    fn merge_node_from_current(&mut self) {
+    pub fn merge_node_from_current(&mut self) {
         let bci_node = self.buf_chunk_info.get(&self.seek_buf_chunk_node_idx).unwrap().to_owned();        
         let mut bc = bci_node.lock().unwrap();
 
@@ -358,6 +358,55 @@ impl EncodedBuffer {
         let ci = CI::new(bci_node, NodeSearchDirection::Forward);
 
         ci.into_iter().count().try_into().unwrap()
+    }
+
+    pub fn get_next_packet_start_ts_from_current(&self) -> (u64, u32) {
+        let bci_node = self.buf_chunk_info.get(&self.seek_buf_chunk_node_idx).unwrap().to_owned();
+        let last_pkt_idx = bci_node.lock().unwrap().end_idx;
+
+        if last_pkt_idx == 0 {
+            return (0, 0);
+        }
+
+        let mut ci = CI::new(bci_node, NodeSearchDirection::Backward);
+
+        while let Some(c) = ci.next() {
+            let cc = c.lock().unwrap();
+
+            if cc.end_idx - cc.start_idx == 0 {
+                continue;
+            }
+
+            if cc.end_idx <= self.next_packet_idx {
+                let t3 = cc.end_idx -1;
+
+                let t = self.frame_buf.get(&t3);
+                // if t.is_none() {
+                //     let mut t: Vec<&u32> = self.frame_buf.keys().collect();
+                //     t.sort();
+
+                //     let a = "foo";
+                // }
+                let t2 = t.unwrap();
+                let pkt_start_ts = t2.packet_start_ts;
+                let pkt_read_start_offset = t2.packet_read_start_offset;
+                // let t2 = t.unwrap().packet_start_ts;
+
+                return (pkt_start_ts, pkt_read_start_offset);
+            }
+        }
+
+        let t3 = last_pkt_idx -1;
+
+        let t = self.frame_buf.get(&t3).unwrap();
+        let t2 = t.packet_start_ts;
+
+        // t2
+        (0, 0)
+        
+        // let t = self.buf_chunk_info.get(&bn.end_idx).unwrap();
+        // let t2 = t.lock().unwrap();
+        // t2.
     }
 }
 

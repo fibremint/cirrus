@@ -69,12 +69,17 @@ impl AudioDataSvc for AudioDataSvcImpl {
             req.packet_start_idx, 
             req.packet_num,
             req.channels,
+            // req.seek_start_pkt_idx,
+            req.seek_start_pkt_ts,
+            req.pkt_read_start_offset
         ).await {
             Ok(iter) => iter,
             Err(err) => return Err(Status::new(Code::Internal, err.to_string())),
         };
 
         tokio::spawn(async move {
+            let mut last_pkt_idx = 0;
+
             while let Some(sample_frame_packet) = audio_sample_iter.next() {
                 // let ch_sample_frames = sample_data.encoded_data.iter().enumerate()
                 //     .map(|(ch_idx, item)| AudioChannelSampleFrames {
@@ -82,6 +87,7 @@ impl AudioDataSvc for AudioDataSvcImpl {
                 //         encoded_samples: item.to_owned()
                 //     })
                 //     .collect::<Vec<_>>();
+                last_pkt_idx = sample_frame_packet.packet_idx;
 
                 if let Err(_err) = tx.send(Ok(AudioDataRes {
                     // num_frames: ch_sample_frames[0].encoded_samples.len().try_into().unwrap(),
@@ -90,11 +96,17 @@ impl AudioDataSvc for AudioDataSvcImpl {
                     sp_frame_duration: sample_frame_packet.sample_frame_duration,
                     sp_frame_num: sample_frame_packet.sample_frame_num,
                     encoded_samples: sample_frame_packet.encoded_data.to_owned(),
+                    packet_start_ts: sample_frame_packet.packet_start_ts,
+                    packet_read_start_offset: sample_frame_packet.packet_read_start_offset,
                     // ch_sample_frames,
                 })).await {
                     break;
                 }
             }
+
+            // let t = audio_sample_iter.get_pos();
+
+            let a = "foo";
         });
 
         Ok(Response::new(ReceiverStream::new(rx)))

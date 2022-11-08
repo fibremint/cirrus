@@ -275,11 +275,21 @@ impl AudioSampleInner {
                 fetch_start_pkt_idx,
                 duration_sec,
             );
+        // let fetch_start_pkt_idx = pb.next_packet_idx;
+        // let fetch_packet_num = pb
+        //     .get_fetch_required_packet_num(
+        //         fetch_start_pkt_idx,
+        //         duration_sec,
+        //     );
 
         if fetch_packet_num == 0 {
             println!("warn: attempted to fetch 0 packets");
+            // workaround
+            self.packet_buf.lock().unwrap().merge_node_from_current();
             return Ok(());
         }
+
+        let (pkt_seek_start_pkt_ts, pkt_read_start_offset) = self.packet_buf.lock().unwrap().get_next_packet_start_ts_from_current();
 
         let mut audio_data_stream = request::get_audio_data_stream(
             &self.source.server.grpc_endpoint,
@@ -288,6 +298,8 @@ impl AudioSampleInner {
             fetch_start_pkt_idx.try_into().unwrap(),
             fetch_packet_num.try_into().unwrap(),
             2,
+            pkt_seek_start_pkt_ts,
+            pkt_read_start_offset,
         ).await?;
 
         println!("fetch packet: ({}..{})", fetch_start_pkt_idx, fetch_start_pkt_idx+fetch_packet_num);
@@ -313,6 +325,9 @@ impl AudioSampleInner {
             let mut packet_buf = self.packet_buf.lock().unwrap();
             last_idx = audio_data.packet_idx;
             packet_buf.insert(audio_data);
+
+            // // for test 
+            // break;
         }
 
         println!("last pushed packet id: {}", last_idx);
