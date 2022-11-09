@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{path::Path, collections::HashMap, sync::{Arc, Mutex}};
 
 use tokio::sync::mpsc;
 use tonic::{Code, Request, Response, Status};
@@ -15,15 +15,42 @@ use cirrus_protobuf::{
 
 use crate::logic;
 
-#[derive(Debug)]
+struct AudioEncoderState {
+    pub encoders: HashMap<String, Arc<Mutex<opus::Encoder>>>,
+}
+
+impl Default for AudioEncoderState {
+    fn default() -> Self {
+        Self { 
+            encoders: Default::default() 
+        }
+    }
+}
+
+impl AudioEncoderState {
+    pub fn create_encoder(&mut self, audio_id: &str) -> Result<(), anyhow::Error> {
+        let opus_encoder = opus::Encoder::new(48_000, opus::Channels::Stereo, opus::Application::Audio)?;
+
+        self.encoders.insert(audio_id.to_string(), Arc::new(Mutex::new(opus_encoder)));
+
+        Ok(())
+    }
+
+    pub fn delete_encoder(&mut self, audio_id: &str) {
+        self.encoders.remove(audio_id).unwrap();
+    }
+}
+
 pub struct AudioDataSvcImpl {
     mongodb_client: mongodb::Client,
+    encoder_state: Arc<Mutex<AudioEncoderState>>,
 }
 
 impl AudioDataSvcImpl {
     pub fn new(mongodb_client: mongodb::Client) -> Self {
         Self {
-            mongodb_client
+            mongodb_client,
+            encoder_state: Default::default(),
         }
     }
 }
@@ -48,6 +75,10 @@ impl AudioDataSvc for AudioDataSvcImpl {
             Err(err) => return Err(Status::new(Code::Internal, err)),
         };
 
+        // self.create_encoder(audio_tag_id);
+        // self.encoder_state.create_encoder(audio_tag_id);
+        self.encoder_state.lock().unwrap().create_encoder(audio_tag_id).unwrap();
+
         Ok(res)
     }
 
@@ -63,15 +94,18 @@ impl AudioDataSvc for AudioDataSvcImpl {
             println!("warn: unknown remote address tries to request");
         }
 
+        let encoder = self.encoder_state.lock().unwrap().encoders.get(&req.audio_tag_id).unwrap().clone();
+
         let mut audio_sample_iter = match logic::audio::AudioFile::get_audio_sample_iterator(
             self.mongodb_client.clone(), 
             &req.audio_tag_id, 
             req.packet_start_idx, 
             req.packet_num,
             req.channels,
-            // req.seek_start_pkt_idx,
+            req.seek_start_pkt_idx,
             req.seek_start_pkt_ts,
-            req.pkt_read_start_offset
+            // req.pkt_read_start_offset,
+            encoder,
         ).await {
             Ok(iter) => iter,
             Err(err) => return Err(Status::new(Code::Internal, err.to_string())),
@@ -97,7 +131,7 @@ impl AudioDataSvc for AudioDataSvcImpl {
                     sp_frame_num: sample_frame_packet.sample_frame_num,
                     encoded_samples: sample_frame_packet.encoded_data.to_owned(),
                     packet_start_ts: sample_frame_packet.packet_start_ts,
-                    packet_read_start_offset: sample_frame_packet.packet_read_start_offset,
+                    // packet_read_start_offset: sample_frame_packet.packet_read_start_offset,
                     // ch_sample_frames,
                 })).await {
                     break;

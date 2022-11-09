@@ -158,7 +158,7 @@ impl AudioSampleInner {
             return 0.
         }
 
-        remain_packets as f64 * 0.06
+        remain_packets as f64 * 0.02
     }
 
     fn get_playback_sample_frame_pos(&self) -> usize {
@@ -205,7 +205,7 @@ impl AudioSampleInner {
         }
 
         let position_sample_idx = self.get_playback_sample_frame_pos_from_sec(position_sec);
-        let updated_playback_pkt_idx = get_packet_idx_from_sec(position_sec, 0.06);
+        let updated_playback_pkt_idx = get_packet_idx_from_sec(position_sec, 0.02);
         self.packet_playback_idx.store(updated_playback_pkt_idx, Ordering::SeqCst);
         println!("updated playback packet index: {}", updated_playback_pkt_idx);
         
@@ -289,7 +289,7 @@ impl AudioSampleInner {
             return Ok(());
         }
 
-        let (pkt_seek_start_pkt_ts, pkt_read_start_offset) = self.packet_buf.lock().unwrap().get_next_packet_start_ts_from_current();
+        let (pkt_seek_start_pkt_idx, next_pkt_start_ts) = self.packet_buf.lock().unwrap().get_next_packet_start_ts_from_current();
 
         let mut audio_data_stream = request::get_audio_data_stream(
             &self.source.server.grpc_endpoint,
@@ -298,8 +298,8 @@ impl AudioSampleInner {
             fetch_start_pkt_idx.try_into().unwrap(),
             fetch_packet_num.try_into().unwrap(),
             2,
-            pkt_seek_start_pkt_ts,
-            pkt_read_start_offset,
+            pkt_seek_start_pkt_idx,
+            next_pkt_start_ts.into(),
         ).await?;
 
         println!("fetch packet: ({}..{})", fetch_start_pkt_idx, fetch_start_pkt_idx+fetch_packet_num);
@@ -346,6 +346,12 @@ impl AudioSampleInner {
             if let Some(eb) = enc_buf.frame_buf.get(&p_pos) {
                 let mut decoded_samples = vec![0.; (eb.sp_frame_num*2).try_into().unwrap()];
                 let mut decoded_samples = audio::wrap::interleaved(decoded_samples.as_mut_slice(), 2);
+
+                // let t = od.get_nb_samples(&eb.encoded_samples).unwrap();
+                // let d = od.get_last_packet_duration().unwrap();
+                // let t2 = opus::packet::parse(&eb.encoded_samples).unwrap();
+
+                // let a = t2.frames;
 
                 if let Err(err) = od.decode_float(
                     &eb.encoded_samples, 

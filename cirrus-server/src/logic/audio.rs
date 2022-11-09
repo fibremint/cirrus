@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    path::{Path, PathBuf}, collections::{HashMap, HashSet}, io::{BufReader, Read, Seek, SeekFrom}, env,
+    path::{Path, PathBuf}, collections::{HashMap, HashSet}, io::{BufReader, Read, Seek, SeekFrom}, env, sync::{Mutex, Arc},
 };
 use itertools::Itertools;
 
@@ -101,9 +101,10 @@ impl AudioFile {
         packet_num: u32,
         channels: u32,
         // packet_start_ts: u64,
-        // seek_start_pkt_idx: u64,
+        seek_start_pkt_idx: u64,
         seek_start_pkt_ts: u64,
-        pkt_read_start_offset: u32,
+        // pkt_read_start_offset: u32,
+        opus_encoder: Arc<Mutex<opus::Encoder>>,
     ) -> Result<AudioSampleIterator, anyhow::Error> {
         let current_dir = env::current_dir().unwrap();
         let server_config_path = current_dir.join("configs/cirrus/server.toml");
@@ -138,9 +139,10 @@ impl AudioFile {
             settings.audio_sample_frame_packet.sample_rate,
             channels.try_into().unwrap(),
             // packet_start_ts
-            // seek_start_pkt_idx,
+            seek_start_pkt_idx,
             seek_start_pkt_ts,
-            pkt_read_start_offset,
+            // pkt_read_start_offset,
+            opus_encoder,
         )?;
 
         Ok(audio_sample_iter)
@@ -153,7 +155,7 @@ pub struct SampleFramePacket {
     pub sample_frame_num: u32,
 
     pub packet_start_ts: u64,
-    pub packet_read_start_offset: u32,
+    // pub packet_read_start_offset: u32,
     // pub remain_frames: i32,
     // pub original_frame_len: u16,
     // pub padded_frame_start_pos: u16,
@@ -178,15 +180,15 @@ pub struct AudioSampleIterator {
 
     orig_sample_rate: u32,
     
-    opus_encoder: opus::Encoder,
+    // opus_encoder: opus::Encoder,
     decoded_samples: Vec<Vec<f32>>,
     
     seek_packet_cnt: u32,
     packet_seek_start_idx: u32,
 
-    read_start_offset: usize,
+    // read_start_offset: usize,
 
-    // seek_start_pkt_idx: u64,
+    seek_start_pkt_idx: u64,
     seek_start_pkt_ts: u64,
 
     packet_start_idx: u32,
@@ -195,6 +197,10 @@ pub struct AudioSampleIterator {
     iter_os_val: u32,
 
     resolved_first_read_offset: bool,
+    opus_encoder: Arc<Mutex<opus::Encoder>>,
+
+    pkt_start_ts: u64,
+    pkt_dur: u64,
 }
 
 impl AudioSampleIterator {
@@ -207,9 +213,10 @@ impl AudioSampleIterator {
         packet_sample_rate: u32,
         channels: u32,
         // packet_start_ts: u64,
-        // seek_start_pkt_idx: u64,
+        seek_start_pkt_idx: u64,
         seek_start_pkt_ts: u64,
-        pkt_read_start_offset: u32,
+        // pkt_read_start_offset: u32,
+        opus_encoder: Arc<Mutex<opus::Encoder>>,
     ) -> Result<Self, anyhow::Error> {
         // source.seek(SeekFrom::Start(1453024)).unwrap();
 
@@ -282,7 +289,7 @@ impl AudioSampleIterator {
         let resampler_in_buf = resampler.input_buffer_allocate();
         let resampler_out_buf = resampler.output_buffer_allocate();
 
-        let opus_encoder = opus::Encoder::new(packet_sample_rate, opus::Channels::Stereo, opus::Application::Audio)?;
+        // let opus_encoder = opus::Encoder::new(packet_sample_rate, opus::Channels::Stereo, opus::Application::Audio)?;
 
         let mut decoded_samples = Vec::with_capacity(2);
         for _ in 0..2 {
@@ -306,14 +313,14 @@ impl AudioSampleIterator {
             resampler_in_buf,
             resampler_out_buf,
             orig_sample_rate: codec_sample_rate,
-            opus_encoder,
+            // opus_encoder,
             decoded_samples,
             seek_packet_cnt: Default::default(),
             packet_seek_start_idx: packet_start_idx,
 
-            read_start_offset: pkt_read_start_offset as usize,
+            // read_start_offset: pkt_read_start_offset as usize,
 
-            // seek_start_pkt_idx,
+            seek_start_pkt_idx,
             seek_start_pkt_ts,
             packet_start_idx,
 
@@ -322,171 +329,44 @@ impl AudioSampleIterator {
             iter_os_val: 0,
 
             resolved_first_read_offset: false,
-        };
+            opus_encoder,
 
-        // if seek_start_pkt_idx > 0 {
-        //     let read_start_offset = audio_sample_iter.seek_fwd_frame_reader_by_packet(
-        //         seek_start_pkt_idx as u32, 
-        //         packet_start_idx+packet_num, 
-        //         seek_start_pkt_ts,
-        //     ).unwrap();
-    
-        //     audio_sample_iter.read_start_offset = read_start_offset as usize;
-        // }
+            pkt_start_ts: 0,
+            pkt_dur: 0,
+        };
 
         Ok(audio_sample_iter)
 
-        // Ok(
-        //     Self {
-        //         // duration,
-        //         packet_num,
-        //         packet_dur,
-        //         packet_sample_frame_num,
-        //         packet_sample_rate,
-        //         channel_size: channels.try_into().unwrap(),
-    
-        //         ch_sample_buf,
-        //         // mss,
-        //         decoder,
-        //         // probed,
-        //         format,
-        //         resampler,
-        //         resampler_in_buf,
-        //         resampler_out_buf,
-        //         orig_sample_rate: codec_sample_rate,
-        //         opus_encoder,
-        //         decoded_samples,
-        //         seek_packet_cnt: Default::default(),
-        //         packet_seek_start_idx: packet_start_idx,
-        //     }
-        // )
     }
-
-    fn seek_fwd_frame_reader_by_packet(
-        &mut self, 
-        from_pkt_idx: u32,
-        to_pkt_idx: u32,
-        start_ts: u64,
-        // start_read_offset: u32,
-    ) -> Result<u32, anyhow::Error> {
-        assert_ne!(from_pkt_idx, to_pkt_idx);
-
-        let track = self.format.tracks()
-            .iter()
-            .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
-            .expect("no supported audio tracks");
-            
-
-        self.format.seek(
-            SeekMode::Coarse,
-            SeekTo::TimeStamp { 
-                ts: start_ts,
-                track_id: track.id,
-             }
-        )?;
-
-        let mut ts = start_ts;
-        // let mut read_offset = start_read_offset;
-        let mut read_offset = 0;
-
-        let pkt_divide_len = self.resampler.input_frames_max() as u32;
-        let mut pkt_idx = from_pkt_idx;
-        // let mut pkt_start_ts = 0;
-
-        while pkt_idx < to_pkt_idx {
-            let packet = match self.format.next_packet() {
-                Ok(packet) => packet,
-                Err(e) => {
-                    break
-                },
-            };
-
-            let packet_start_ts = packet.ts();
-            let packet_dur = packet.dur();
-            assert_eq!(ts, packet_start_ts);
-
-            let t = (packet_start_ts + packet_dur) as u32;
-            let t2 = t as f32 / pkt_divide_len as f32;
-            let t3 = t2.floor() as u32;
-
-            if pkt_idx + 1 == t3 {
-                pkt_idx += 1;
-                let t4 = pkt_divide_len * pkt_idx;
-                let t5 = t - t4;
-                read_offset = t5;
-                // pkt_start_ts = packet_start_ts;
-            }
-
-            ts += packet_dur;
-            // ts += packet.dur();
-
-        }
-
-        Ok(read_offset)
-    }
-
-    // pub fn get_pos(self) -> u64 {
-    //     // let mut mss = self.probed.format.into_inner();
-    //     // let pos = mss.stream_position().unwrap();
-
-    //     // pos
-    //     0
-    // }
 }
 
 impl Iterator for AudioSampleIterator {
     type Item = SampleFramePacket;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // if self.seek_packet_cnt == self.packet_num ||
-        //     self.decoded_samples[0].len() == 0 {
-        //     // println!("reach end of content");
-        //     return None;
-        // }
-
         if self.seek_packet_cnt == self.packet_num {
-            // println!("reach end of content");
             return None;
         }
 
-
         let mut enc_output = Vec::new();
         let rs_input_frame_next = self.resampler.input_frames_next();
-        let mut packet_ts = 0;
 
-        // let mut ts = self.seek_start_pkt_ts;
-        let mut pkt_idx = self.packet_seek_start_idx;
-        let mut t = 0;
-        let mut t2 = 0;
-        let mut t3 = 0;
-        let mut ro = 0;
-        let mut pst = 0;
-        let mut t101 = 0;
+        // let pkt_idx = self.packet_seek_start_idx;
 
         let mut packet_start_ts = 0;
         let mut packet_dur = 0;
 
-        let mut packet_start_ts_prv = 0;
-        let mut packet_dur_prv = 0;
+        // let mut read_offset = 0;
+        // let mut first_frame_ts = u32::MAX;
 
-        let mut pkt_start_ts_first = u64::MAX;
-        let mut pkt_dur_first = 0;
+        // let prev_decoded_samples_len = self.decoded_samples[0].len();
 
-        let mut test_offset_val = 0;
-        let mut test_offset_val2 = 0;
-        let mut is_start_from_seek = false;
-
-        let mut read_offset = 0;
-        let mut pre_chk = false;
-
-        let mut packet_read_start_offset = 0;
-
-        let mut pkt_dur_acc = 0;
-
-        let mut first_frame_ts = u32::MAX;
+        // let mut read_start_offset = 0;
 
         while self.decoded_samples[0].len() < rs_input_frame_next {
         // while self.decoded_samples[0].len() - self.read_start_offset <= rs_input_frame_next  {
+            let mut read_start_offset = 0;
+            // self.read_start_offset = 0;
 
             let packet = match self.format.next_packet() {
                 Ok(packet) => packet,
@@ -495,80 +375,67 @@ impl Iterator for AudioSampleIterator {
                 },
             };
 
-            // let packet_start_ts = packet.ts();
-            // let packet_dur = packet.dur();
-            
             packet_start_ts = packet.ts();
             packet_dur = packet.dur();
             assert_eq!(self.seek_ts, packet_start_ts);
 
             self.seek_ts += packet_dur;
+            self.pkt_start_ts = packet_start_ts;
+            self.pkt_dur = packet_dur;
 
-            let sample_frame_ts = (packet_start_ts + packet_dur) as u64;
-            let sample_idx = sample_frame_ts as f32 / self.resampler.input_frames_max() as f32;
-            let sample_idx = sample_idx.floor() as u32;
+            let des_pkt_size_at_idx = self.resampler.input_frames_max() as u32 * (self.packet_start_idx);
 
-            // t += packet_dur;
-            // t2 = packet_start_ts;
-            // t3 = packet_dur;
+            // if !self.resolved_first_read_offset && self.packet_start_idx > 0 {
+            //     self.read_start_offset = (self.read_start_offset + self.resampler.input_frames_max()) % packet_dur as usize;
+            // }
 
-            if sample_idx < self.packet_start_idx {
-                // pre_chk = true;
-
-                // t101 += 1;
-                // packet_start_ts_prv = packet_start_ts;
-                // packet_dur_prv = packet_dur;
-                // test_offset_val = (packet_start_ts + packet_dur) as i32 - (2646 * (sample_idx+1)) as i32;
-                // let a = "foo";
-
+            if packet_start_ts + packet_dur <= des_pkt_size_at_idx as u64 {
+                // self.read_start_offset = (self.read_start_offset + self.resampler.input_frames_max()) % packet_dur as usize;
+                
                 continue;
+                // self.read_start_offset = self.resampler.input_frames_max();
+                // read_start_offset = self.resampler.input_frames_max();
             }
 
-            // pkt_dur_acc += packet_dur;
-
-
-            // if pre_chk {
-            //     // read_offset = test_offset_val + packet_dur as i32;
-            //     read_offset = pkt_idx * 2646 - packet_start_ts as u32;
-            //     pre_chk = false;
-            //     let os_val_test = (packet_start_ts + packet_dur) as i32 - (2646 * sample_idx) as i32;
-            //     self.iter_os_val = os_val_test.try_into().unwrap();
-            // }
-
-            // pst = t2;
-            // if self.read_start_offset == 0 {
-            //     pst -= t3
-            // }
-
-            if first_frame_ts == u32::MAX {
-                first_frame_ts = packet_start_ts as u32;
-
-                if !self.resolved_first_read_offset {
-                    read_offset = 2646 * pkt_idx - first_frame_ts;
-                }
+            if !self.resolved_first_read_offset {
+                read_start_offset = self.resampler.input_frames_max() * self.packet_start_idx as usize - self.pkt_start_ts as usize;
             }
 
-            // if pkt_start_ts_first == u64::MAX {
-            //     pkt_start_ts_first = packet_start_ts;
-            //     pkt_dur_first = packet_dur;
-            //     // test_offset_val2 = (packet_start_ts + packet_dur) as i32 - (2646 * sample_idx) as i32;
-            //     // test_offset_val2 = 
-
+            // if self.pkt_start_ts + self.pkt_dur < ((self.packet_start_idx+1) * self.resampler.input_frames_max() as u32) as u64 {
+            //     continue;
             // }
 
-            // if ro == 0 {
-            //     pst = t2;
-            //     if self.read_start_offset == 0 {
-            //         pst -= t3;
+            // let sample_frame_ts = (packet_start_ts + packet_dur) as u64;
+            // let sample_idx = sample_frame_ts as f32 / self.resampler.input_frames_max() as f32;
+            // let sample_idx = sample_idx.floor() as u32;
+
+            // if sample_idx < self.packet_start_idx {
+            //     continue;
+            // }
+
+            // if first_frame_ts == u32::MAX {
+            //     first_frame_ts = packet_start_ts as u32;
+
+            //     if !self.resolved_first_read_offset {
+            //         read_offset = self.resampler.input_frames_max() as u32 * pkt_idx - first_frame_ts;
             //     }
-            //     // if self.read_start_offset == 0 && sample_idx != 0 {
-            //     //     pst -= t3
-            //     // }
-            //     ro = 1;
-            //     // ro = pst + t3 - (self.resampler.input_frames_max() as u32 * pkt_idx) as u64;
             // }
 
-            // next_pkt_seek_ts = packet_start_ts;
+            // if !self.resolved_first_read_offset && self.packet_start_idx > 0 {
+
+            //     // let packet_pos = packet_start_ts + packet_dur;
+            //     // let resampler_req_samples = self.resampler.input_frames_max() as u32 * (self.packet_seek_start_idx + self.seek_packet_cnt);
+            //     // let prev_pkt_size = self.resampler.input_frames_max() as u32 * (self.seek_start_pkt_idx) as u32;
+            //     // read_start_offset = (packet_pos as u32 - prev_pkt_size).try_into().unwrap();
+            //     // read_start_offset = packet_start_ts -
+            //     let calc = self.resampler.input_frames_max() as u32 * (self.packet_start_idx) - packet_start_ts as u32;
+            //     // let calc = (packet_start_ts+packet_dur) as u32 - (self.resampler.input_frames_max() as u32 * (self.packet_start_idx-1) as u32) as u32;
+            //     // let calc = self.resampler.input_frames_max() as u32 - calc;
+            //     read_start_offset = calc.try_into().unwrap();
+                
+            //     // self.read_start_offset += (packet_pos - resampler_req_samples as u64) as usize;
+            //     // self.read_start_offset = (self.resampler.input_frames_max() as u32 * self.packet_seek_start_idx - packet_start_ts as u32) as usize;
+            // }
 
             let decoded = match self.decoder.decode(&packet) {
                 Ok(decoded) => decoded,
@@ -582,61 +449,35 @@ impl Iterator for AudioSampleIterator {
             let sample_frame_len = samples.len() / 2;
 
             self.decoded_samples[0].extend_from_slice(&samples[..sample_frame_len]);
-            self.decoded_samples[0].drain(..read_offset as usize);
+            self.decoded_samples[0].drain(..read_start_offset as usize);
             self.decoded_samples[1].extend_from_slice(&samples[sample_frame_len..]);
-            self.decoded_samples[1].drain(..read_offset as usize);
+            self.decoded_samples[1].drain(..read_start_offset as usize);
 
-            read_offset = 0;
+            // read_offset = 0;
+            // read_start_offset = 0;
+            // self.read_start_offset = 0;
 
             self.resolved_first_read_offset = true;
         }
 
-        let pkt_idx = self.packet_seek_start_idx+self.seek_packet_cnt;
+        // let pkt_idx = self.packet_seek_start_idx+self.seek_packet_cnt;
 
-        let next_pkt_seek_ts = packet_start_ts;
-        let next_pkt_read_offset = (pkt_idx+1) * self.resampler.input_frames_max() as u32 - next_pkt_seek_ts as u32;
+        // let next_pkt_seek_ts = self.pkt_start_ts;
+        // let next_pkt_seek_ts = 
+        //     if {  }
+        // let next_pkt_read_offset = 
+        //     (pkt_idx+1) * self.resampler.input_frames_max() as u32 - (next_pkt_seek_ts + packet_dur) as u32;
 
-        // let curr_pkt_seek_ts = first_frame_ts;
-        // let curr_pkt_read_offset = (pkt_idx) * self.resampler.input_frames_max() as u32 - curr_pkt_seek_ts;
-
-        // let sample_frame_ts = (t2 + t3);
-
-
-        let sample_idx = pst as f32 / self.resampler.input_frames_max() as f32;
-        let sample_idx = sample_idx.floor() as u32;
-
-        // let mut pst = t2 + t3;
-        // if self.read_start_offset == 0 {
-        //     pst -= t3;
-        // }
-
-        // let remains = (packet_start_ts+packet_dur-self.read_start_offset as u64) - (rs_input_frame_next as u64 * (pkt_idx+1) as u64);
-
-        // let t10 = pst + t3 - (self.resampler.input_frames_max() as u32 * t100) as u64;
-        // let t10 = pst + t3 - (2646 * sample_idx) as u64;
-
-        // let r = t2 + t3 - (self.resampler.input_frames_max() as u64 * (sample_idx) as u64);
-        // println!("r: {}", r);
 
         let mut rs_input = Vec::with_capacity(2);
         let dc_sp_frame_len = self.decoded_samples[0].len() as i32;
-        // let dcPs-
-        // let remain_frames = ((dc_sp_frame_len) as i32 - self.read_start_offset as i32) - rs_input_frame_next as i32;
 
         let zero_pad_len = std::cmp::max(rs_input_frame_next as i32 - dc_sp_frame_len, 0);
-        // let zero_pad_len = std::cmp::max(v1, v2)
         
         for ch_idx in 0..2 {
             let ch_sp_drain_len = std::cmp::min(rs_input_frame_next, dc_sp_frame_len.try_into().unwrap());
 
-            // let mut t = &mut self.decoded_samples[ch_idx];
-            // self.decoded_samples[ch_idx].drain(..read_offset as usize);
             let mut ch_rs_input = self.decoded_samples[ch_idx].drain(..ch_sp_drain_len).collect_vec();
-            // {
-            //     // self.decoded_samples[ch_idx].drain(..read_offset as usize);
-            // }
-            // let mut ch_rs_input = self.decoded_samples[ch_idx].drain(..ch_sp_drain_len);
-            // let mut ch_rs_input = self.decoded_samples[ch_idx].drain(..ch_sp_drain_len+self.read_start_offset).collect_vec();
             
             if zero_pad_len > 0 {
                 ch_rs_input.extend_from_slice(&vec![0.; zero_pad_len.try_into().unwrap()]);
@@ -645,26 +486,54 @@ impl Iterator for AudioSampleIterator {
             rs_input.push(ch_rs_input);
         }
 
-        // self.read_start_offset = 0;
-        // self.iter_os_val += self.decoded_samples[0].len() as u32;
-        // let os_val = self.iter_os_val;
-        // self.iter_os_val = (self.iter_os_val + pkt_dur_acc as u32 - 2646) % packet_dur as u32;
+        // let next_pkt_seek_ts = self.pkt_start_ts;
+
+        // let next_pkt_seek_ts = 
+        //     if self.decoded_samples[0].len() == self.resampler.input_frames_max() || (pkt_idx > 0 && self.decoded_samples[0].len() == 0)
+        //         { self.pkt_start_ts + self.pkt_dur }
+        //     else
+        //         { self.pkt_start_ts };
+
+        let next_pkt_seek_ts = 
+            if self.decoded_samples[0].len() > 0
+                { self.pkt_start_ts }
+            else
+                { self.pkt_start_ts + self.pkt_dur };
+
+        // let next_pkt_read_offset = self.decoded_samples[0].len() as u32;
+        // let next_pkt_read_offset = self.decoded_samples[0].len() % self.resampler.input_frames_max(); 
+        // let next_pkt_read_offset = 0;
+        // let next_pkt_read_offset = self.resampler.input_frames_max() * (pkt_idx+1) as usize - next_pkt_seek_ts as usize;
+        // let next_pkt_read_offset = next_pkt_read_offset % self.resampler.input_frames_max();
+
+        // let next_pkt_read_offset = 
+        //     (self.pkt_start_ts + self.pkt_dur) as u32 - (pkt_idx+1) * self.resampler.input_frames_max() as u32;
+
+        // let next_pkt_read_offset = 
+        //     (pkt_idx+1) * self.resampler.input_frames_max() as u32 - self.pkt_start_ts as u32;
+
+        // let next_pkt_read_offset = (next_pkt_seek_ts + packet_dur) as u32 - 
+        //     (pkt_idx+1) * self.resampler.input_frames_max() as u32;
+
+
+        // // for test
+        // let packet_idx = self.packet_seek_start_idx + self.seek_packet_cnt;
+        // println!("rs input values; pkt idx: {}", packet_idx);
+        
+        // for ch_idx in 0..2 {
+        //     println!("ch {}", ch_idx);
+        //     for (idx, item) in rs_input[ch_idx].iter().enumerate() {
+        //         println!("idx {}: {}", idx, item);
+        //     }
+            
+        //     println!("");
+        // }
 
         self.resampler.process_into_buffer(
             &rs_input, 
             &mut self.resampler_out_buf, 
             None
         ).unwrap();
-
-        println!("sidx: {}", sample_idx);
-
-        for ch_idx in 0..2 {
-            println!("ch: {}", ch_idx);
-            for (i, v) in rs_input[ch_idx].iter().enumerate() {
-                println!("{}: {}", i, v);
-            }
-            // println!("{:?}", rs_input[ch_idx]);
-        }
 
         let mut resampled_output = audio::Interleaved::<f32>::with_topology(2, self.resampler.output_frames_max());
 
@@ -679,7 +548,7 @@ impl Iterator for AudioSampleIterator {
             }
         }
 
-        let encoded = self.opus_encoder.encode_vec_float(resampled_output.as_slice(), 4000).unwrap();
+        let encoded = self.opus_encoder.lock().unwrap().encode_vec_float(resampled_output.as_slice(), 4000).unwrap();
         enc_output.extend(encoded);
 
         let packet_idx = self.packet_seek_start_idx + self.seek_packet_cnt;
@@ -689,11 +558,11 @@ impl Iterator for AudioSampleIterator {
             SampleFramePacket {
                 packet_idx,
                 sample_frame_duration: self.packet_dur,
-                sample_frame_num: 2880,
+                sample_frame_num: 960,
                 packet_start_ts: next_pkt_seek_ts as u64,
                 // packet_start_ts: r,
                 // packet_read_start_offset: remain_frames as u32,
-                packet_read_start_offset: next_pkt_read_offset.try_into().unwrap(),
+                // packet_read_start_offset: next_pkt_read_offset.try_into().unwrap(),
                 // remain_frames,
                 encoded_data: enc_output,
             }
