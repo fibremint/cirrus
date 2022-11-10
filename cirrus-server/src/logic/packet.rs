@@ -1,9 +1,9 @@
-use std::{fs::File, sync::{Arc, Mutex}, any};
+use std::{fs::File, sync::{Arc, Mutex}};
 
 use audio::{Buf, Channels};
 use rubato::Resampler;
 
-use super::sample::{SampleFrames, SampleFrame};
+use super::sample::SampleFrames;
 
 const MIN_ENCODER_PRESYNC_PKT_MS: i32 = 80;
 
@@ -15,8 +15,6 @@ pub struct Packets {
     resampler_output_buf: Vec<Vec<f32>>,
 
     packet_encoder: Arc<Mutex<opus::Encoder>>,
-
-    seek_start_pkt_idx: usize,
     packet_dur_ms: u32,
 
     packet_start_idx: usize,
@@ -30,21 +28,11 @@ impl Packets {
         packet_encoder: Arc<Mutex<opus::Encoder>>,
         pkt_start_idx: usize,
         pkt_num: usize,
-        seek_start_pkt_idx: usize,
-        // seek_start_pkt_ts: u64,
         pkt_len: usize,
         sample_rate: usize,
     ) -> Result<Self, anyhow::Error> {
         let packet_dur = pkt_len as f64 / sample_rate as f64;
         let packet_dur_ms = (packet_dur * 1000 as f64) as u32;
-
-        // let packet_start_ms = (pkt_start_idx * packet_dur_ms as usize) as i32;
-        // let seek_start_packet_ms = (seek_start_pkt_idx * packet_dur_ms as usize) as i32;
-
-        // if pkt_start_idx > 0 
-        //     && packet_start_ms - seek_start_packet_ms < MIN_ENCODER_PRESYNC_PKT_MS {
-        //         return Err(anyhow::anyhow!("seek start should be {}", MIN_ENCODER_PRESYNC_PKT_MS));
-        //     }
 
         let seek_start_frame_idx = 
             if pkt_start_idx > 4
@@ -57,13 +45,6 @@ impl Packets {
             seek_start_frame_idx,
             pkt_start_idx + pkt_num-1,
         )?;
-
-        // let mut sample_frames = SampleFrames::new(
-        //     source,
-        //     seek_start_pkt_idx,
-        //     pkt_start_idx + pkt_num,
-        //     seek_start_pkt_ts,
-        // )?;
 
         let resampler = rubato::FftFixedOut::new(
             sample_frames.codec_sample_rate.try_into().unwrap(), 
@@ -97,8 +78,6 @@ impl Packets {
             resampler_output_buf,
 
             packet_encoder,
-
-            seek_start_pkt_idx,
             packet_dur_ms,
 
             packet_start_idx: pkt_start_idx,
@@ -109,22 +88,6 @@ impl Packets {
         packets.resovle_encoder_frame_sync();
 
         Ok(packets)
-
-        // Ok(Self{
-        //     sample_frames,
-
-        //     resampler,
-        //     resampler_input_buf,
-        //     resampler_output_buf,
-
-        //     packet_encoder,
-
-        //     seek_start_pkt_idx,
-        //     packet_dur_ms,
-
-        //     packet_start_idx: pkt_start_idx,
-        //     packet_len: pkt_len,
-        // })
     }
 
     fn resovle_encoder_frame_sync(&mut self) {
@@ -133,7 +96,7 @@ impl Packets {
         }
 
         loop {
-            let frame_idx_delta = self.packet_start_idx as i64 - self.sample_frames.get_curr_frame_idx_2();
+            let frame_idx_delta = self.packet_start_idx as i64 - self.sample_frames.get_curr_frame_idx();
             if frame_idx_delta as u32 * self.packet_dur_ms <= MIN_ENCODER_PRESYNC_PKT_MS.try_into().unwrap() {
                 break;
             }
@@ -141,7 +104,7 @@ impl Packets {
             self.sample_frames.next().unwrap().unwrap();
         }
 
-        while self.packet_start_idx -1 > self.sample_frames.get_curr_frame_idx_2() as usize {
+        while self.packet_start_idx -1 > self.sample_frames.get_curr_frame_idx() as usize {
             let frame = self.sample_frames.next().unwrap().unwrap();
             self.create_packet(frame.samples);
         }

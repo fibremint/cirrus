@@ -276,12 +276,6 @@ impl AudioSampleInner {
                 fetch_start_pkt_idx,
                 duration_sec,
             );
-        // let fetch_start_pkt_idx = pb.next_packet_idx;
-        // let fetch_packet_num = pb
-        //     .get_fetch_required_packet_num(
-        //         fetch_start_pkt_idx,
-        //         duration_sec,
-        //     );
 
         if fetch_packet_num == 0 {
             println!("warn: attempted to fetch 0 packets");
@@ -290,8 +284,6 @@ impl AudioSampleInner {
             return Ok(());
         }
 
-        // let (pkt_seek_start_pkt_idx, next_pkt_start_ts) = self.packet_buf.lock().unwrap().get_next_packet_start_ts_from_current();
-
         let mut audio_data_stream = request::get_audio_data_stream(
             &self.source.server.grpc_endpoint,
             &self.source.server.tls_config,
@@ -299,14 +291,9 @@ impl AudioSampleInner {
             fetch_start_pkt_idx.try_into().unwrap(),
             fetch_packet_num.try_into().unwrap(),
             2,
-            0,
-            0,
-            // pkt_seek_start_pkt_idx,
-            // next_pkt_start_ts.into(),
         ).await?;
 
         println!("fetch packet: ({}..{})", fetch_start_pkt_idx, fetch_start_pkt_idx+fetch_packet_num);
-        // println!("seek buf chunk id: {}", self.packet_buf.lock().unwrap().seek_buf_chunk_node_idx);
         let mut last_idx = 0;
 
         while let Some(res) = audio_data_stream.next().await {
@@ -328,9 +315,6 @@ impl AudioSampleInner {
             let mut packet_buf = self.packet_buf.lock().unwrap();
             last_idx = audio_data.packet_idx;
             packet_buf.insert(audio_data);
-
-            // // for test 
-            // break;
         }
 
         println!("last pushed packet id: {}", last_idx);
@@ -349,12 +333,6 @@ impl AudioSampleInner {
             if let Some(eb) = enc_buf.frame_buf.get(&p_pos) {
                 let mut decoded_samples = vec![0.; (eb.sp_frame_num*2).try_into().unwrap()];
                 let mut decoded_samples = audio::wrap::interleaved(decoded_samples.as_mut_slice(), 2);
-
-                // let t = od.get_nb_samples(&eb.encoded_samples).unwrap();
-                // let d = od.get_last_packet_duration().unwrap();
-                // let t2 = opus::packet::parse(&eb.encoded_samples).unwrap();
-
-                // let a = t2.frames;
 
                 if let Err(err) = od.decode_float(
                     &eb.encoded_samples, 

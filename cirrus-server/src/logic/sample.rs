@@ -1,6 +1,5 @@
 use std::fs::File;
 
-use anyhow::anyhow;
 use itertools::Itertools;
 use symphonia::core::{formats::{FormatReader, SeekMode, SeekTo}, io::MediaSourceStream, probe::Hint, codecs::{CODEC_TYPE_NULL, Decoder}, audio::SampleBuffer, units::Time, errors::Error};
 
@@ -14,7 +13,6 @@ pub struct SampleFrames {
     seek_start_frame_idx: usize,
     seek_end_frame_idx: usize,
 
-    frame_cnt: usize,
     frame_len: usize,
     frame_buf: Vec<f32>,
 
@@ -28,7 +26,6 @@ impl SampleFrames {
         source: File,
         seek_start_frame_idx: usize,
         seek_end_frame_idx: usize,
-        // seek_start_sample_ts: u64,
     ) -> Result<Self, anyhow::Error> {
         let mss = MediaSourceStream::new(Box::new(source), Default::default());
         let hint = Hint::new();
@@ -36,7 +33,7 @@ impl SampleFrames {
         let probe_res = symphonia::default::get_probe()
             .format(&hint, mss, &Default::default(), &Default::default()).unwrap();
 
-        let mut format = probe_res.format;
+        let format = probe_res.format;
         let track = format.tracks()
             .iter()
             .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
@@ -50,28 +47,6 @@ impl SampleFrames {
             .make(&track.codec_params, &Default::default())
             .expect("unsupported codec");
 
-        // let seek_start_time =
-        //     if seek_start_frame_idx > 16
-        //         { seek_start_frame_idx as f64 * 0.02 - 0.32 }
-        //     else 
-        //         { 0. };
-
-        // format.seek(
-        //     SeekMode::Accurate,
-        //     SeekTo::Time { 
-        //         time: Time::from(seek_start_time), 
-        //         track_id: Some(track.id),
-        //     }
-        // )?;
-
-        // format.seek(
-        //     SeekMode::Coarse, 
-        //     SeekTo::TimeStamp {
-        //         ts: seek_start_sample_ts,
-        //         track_id: track.id,
-        //     }
-        // )?;
-
         Ok(Self {
             media_reader: format,
             audio_decoder: decoder,
@@ -82,10 +57,8 @@ impl SampleFrames {
             seek_end_frame_idx,
 
             frame_len: 0,
-            frame_cnt: 0,
             frame_buf: Default::default(),
 
-            // curr_frame_start_ts: seek_start_sample_ts,
             curr_frame_start_ts: 0,
             curr_frame_dur: 0,
             resolved_first_offset: false,
@@ -93,12 +66,6 @@ impl SampleFrames {
     }
 
     pub fn seek(&mut self, ts: u64) -> Result<(), anyhow::Error> {
-        // let seek_start_time =
-        //     if seek_start_frame_idx >= 4
-        //         { (seek_start_frame_idx -4) * 882  }
-        //     else 
-        //         { 0 };
-
         if ts < self.frame_len as u64 {
             return Err(anyhow::anyhow!("timestamp is not enough to seek"));
         }
@@ -116,16 +83,12 @@ impl SampleFrames {
         Ok(())
     }
     
-    pub fn get_curr_frame_idx_2(&self) -> i64 {
+    pub fn get_curr_frame_idx(&self) -> i64 {
         // should call this function after read samples
         let remain_frame_len = self.frame_buf.len() / 2;
         let curr_frame_size = (self.curr_frame_start_ts + self.curr_frame_dur) as usize - remain_frame_len;
 
         (curr_frame_size / self.frame_len) as i64 -1
-    }
-
-    pub fn get_curr_frame_idx(&self) -> usize {
-        self.seek_start_frame_idx + self.frame_cnt
     }
 
     pub fn set_frame_len(&mut self, frame_len: usize) {
@@ -192,7 +155,7 @@ impl Iterator for SampleFrames {
             return Some(Err(anyhow::anyhow!("frame length is not set")));
         }
 
-        if self.get_curr_frame_idx_2() as usize == self.seek_end_frame_idx {
+        if self.get_curr_frame_idx() as usize == self.seek_end_frame_idx {
             return None;
         }
 
@@ -205,10 +168,6 @@ impl Iterator for SampleFrames {
                 return Some(Err(anyhow::anyhow!(err)));
             },
         }
-
-        // if let Err(err) = self.read_samples() {
-        //     return Some(Err(err));
-        // }
         
         let samples = self.frame_buf
             .drain(..self.frame_len*2)
@@ -220,16 +179,13 @@ impl Iterator for SampleFrames {
             else 
                 { self.curr_frame_start_ts + self.curr_frame_dur };
 
-        let frame_idx = self.get_curr_frame_idx_2().try_into().unwrap();
+        let frame_idx = self.get_curr_frame_idx().try_into().unwrap();
 
         let frame = SampleFrame {
-            // idx: self.seek_start_frame_idx + self.frame_cnt,
             idx: frame_idx,
             next_seek_ts: next_frame_seek_start_ts,
             samples,
         };
-
-        self.frame_cnt += 1;
 
         Some(Ok(frame))
     }
@@ -237,7 +193,6 @@ impl Iterator for SampleFrames {
 
 pub struct SampleFrame {
     pub idx: usize,
-    // pub ts: usize,
     pub next_seek_ts: u64,
     pub samples: Vec<f32>,
 }

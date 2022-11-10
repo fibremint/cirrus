@@ -102,9 +102,6 @@ impl AudioDataSvc for AudioDataSvcImpl {
             req.packet_start_idx.try_into().unwrap(), 
             req.packet_num.try_into().unwrap(),
             req.channels,
-            req.seek_start_pkt_idx.try_into().unwrap(),
-            req.seek_start_pkt_ts,
-            // req.pkt_read_start_offset,
             encoder,
         ).await {
             Ok(iter) => iter,
@@ -128,33 +125,6 @@ impl AudioDataSvc for AudioDataSvcImpl {
                     break;
                 }
             }
-
-            // let mut last_pkt_idx = 0;
-
-            // while let Some(sample_frame_packet) = audio_sample_iter.next() {
-            //     // let ch_sample_frames = sample_data.encoded_data.iter().enumerate()
-            //     //     .map(|(ch_idx, item)| AudioChannelSampleFrames {
-            //     //         ch_idx: ch_idx.try_into().unwrap(),
-            //     //         encoded_samples: item.to_owned()
-            //     //     })
-            //     //     .collect::<Vec<_>>();
-            //     last_pkt_idx = sample_frame_packet.packet_idx;
-
-            //     if let Err(_err) = tx.send(Ok(AudioDataRes {
-            //         // num_frames: ch_sample_frames[0].encoded_samples.len().try_into().unwrap(),
-            //         // ch_sample_frames
-            //         packet_idx: sample_frame_packet.packet_idx,
-            //         sp_frame_duration: sample_frame_packet.sample_frame_duration,
-            //         sp_frame_num: sample_frame_packet.sample_frame_num,
-            //         encoded_samples: sample_frame_packet.encoded_data.to_owned(),
-            //         packet_start_ts: sample_frame_packet.packet_start_ts,
-            //         // packet_read_start_offset: sample_frame_packet.packet_read_start_offset,
-            //         // ch_sample_frames,
-            //     })).await {
-            //         break;
-            //     }
-            // }
-
         });
 
         Ok(Response::new(ReceiverStream::new(rx)))

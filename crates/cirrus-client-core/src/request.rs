@@ -36,10 +36,6 @@ pub async fn get_audio_data_stream(
     packet_start_idx: u32,
     packet_num: u32,
     channels: u32,
-    // packet_start_ts: u64,
-    seek_start_pkt_idx: u64,
-    seek_start_pkt_ts: u64,
-    // pkt_read_start_offset: u32,
 ) -> Result<Streaming<AudioDataRes>, anyhow::Error> {
     let endpoint = create_endpoint(grpc_endpoint.to_string(), tls_config)?;
     let tonic_channels = endpoint.connect().await?;
@@ -52,9 +48,6 @@ pub async fn get_audio_data_stream(
             packet_start_idx,
             packet_num,
             channels,
-            seek_start_pkt_idx,
-            seek_start_pkt_ts,
-            // pkt_read_start_offset,
         }
     });
 
