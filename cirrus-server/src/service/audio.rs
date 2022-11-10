@@ -57,8 +57,6 @@ impl AudioDataSvcImpl {
 
 #[tonic::async_trait]
 impl AudioDataSvc for AudioDataSvcImpl {
-    type GetDataStream = ReceiverStream<Result<AudioDataRes, Status>>;
-
     async fn get_meta(
         &self,
         request: Request<AudioMetaReq>
@@ -82,6 +80,8 @@ impl AudioDataSvc for AudioDataSvcImpl {
         Ok(res)
     }
 
+    type GetDataStream = ReceiverStream<Result<AudioDataRes, Status>>;
+
     async fn get_data(
         &self,
         request: Request<AudioDataReq>
@@ -96,13 +96,13 @@ impl AudioDataSvc for AudioDataSvcImpl {
 
         let encoder = self.encoder_state.lock().unwrap().encoders.get(&req.audio_tag_id).unwrap().clone();
 
-        let mut audio_sample_iter = match logic::audio::AudioFile::get_audio_sample_iterator(
+        let mut packets = match logic::audio::AudioFile::get_audio_sample_iterator(
             self.mongodb_client.clone(), 
             &req.audio_tag_id, 
-            req.packet_start_idx, 
-            req.packet_num,
+            req.packet_start_idx.try_into().unwrap(), 
+            req.packet_num.try_into().unwrap(),
             req.channels,
-            req.seek_start_pkt_idx,
+            req.seek_start_pkt_idx.try_into().unwrap(),
             req.seek_start_pkt_ts,
             // req.pkt_read_start_offset,
             encoder,
@@ -112,35 +112,48 @@ impl AudioDataSvc for AudioDataSvcImpl {
         };
 
         tokio::spawn(async move {
-            let mut last_pkt_idx = 0;
+            while let Some(packet) = packets.next() {
+                let packet_res = AudioDataRes {
+                    packet_idx: packet.idx.try_into().unwrap(),
 
-            while let Some(sample_frame_packet) = audio_sample_iter.next() {
-                // let ch_sample_frames = sample_data.encoded_data.iter().enumerate()
-                //     .map(|(ch_idx, item)| AudioChannelSampleFrames {
-                //         ch_idx: ch_idx.try_into().unwrap(),
-                //         encoded_samples: item.to_owned()
-                //     })
-                //     .collect::<Vec<_>>();
-                last_pkt_idx = sample_frame_packet.packet_idx;
+                    sp_frame_duration: packet.frame_dur.try_into().unwrap(),
+                    sp_frame_num: packet.frame_len.try_into().unwrap(),
+                    packet_start_ts: packet.next_pkt_seek_ts,
 
-                if let Err(_err) = tx.send(Ok(AudioDataRes {
-                    // num_frames: ch_sample_frames[0].encoded_samples.len().try_into().unwrap(),
-                    // ch_sample_frames
-                    packet_idx: sample_frame_packet.packet_idx,
-                    sp_frame_duration: sample_frame_packet.sample_frame_duration,
-                    sp_frame_num: sample_frame_packet.sample_frame_num,
-                    encoded_samples: sample_frame_packet.encoded_data.to_owned(),
-                    packet_start_ts: sample_frame_packet.packet_start_ts,
-                    // packet_read_start_offset: sample_frame_packet.packet_read_start_offset,
-                    // ch_sample_frames,
-                })).await {
+                    encoded_samples: packet.frame.to_owned()
+                };
+
+                if let Err(_err) = tx.send(Ok(packet_res)).await {
                     break;
                 }
             }
 
-            // let t = audio_sample_iter.get_pos();
+            // let mut last_pkt_idx = 0;
 
-            let a = "foo";
+            // while let Some(sample_frame_packet) = audio_sample_iter.next() {
+            //     // let ch_sample_frames = sample_data.encoded_data.iter().enumerate()
+            //     //     .map(|(ch_idx, item)| AudioChannelSampleFrames {
+            //     //         ch_idx: ch_idx.try_into().unwrap(),
+            //     //         encoded_samples: item.to_owned()
+            //     //     })
+            //     //     .collect::<Vec<_>>();
+            //     last_pkt_idx = sample_frame_packet.packet_idx;
+
+            //     if let Err(_err) = tx.send(Ok(AudioDataRes {
+            //         // num_frames: ch_sample_frames[0].encoded_samples.len().try_into().unwrap(),
+            //         // ch_sample_frames
+            //         packet_idx: sample_frame_packet.packet_idx,
+            //         sp_frame_duration: sample_frame_packet.sample_frame_duration,
+            //         sp_frame_num: sample_frame_packet.sample_frame_num,
+            //         encoded_samples: sample_frame_packet.encoded_data.to_owned(),
+            //         packet_start_ts: sample_frame_packet.packet_start_ts,
+            //         // packet_read_start_offset: sample_frame_packet.packet_read_start_offset,
+            //         // ch_sample_frames,
+            //     })).await {
+            //         break;
+            //     }
+            // }
+
         });
 
         Ok(Response::new(ReceiverStream::new(rx)))

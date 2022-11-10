@@ -373,12 +373,12 @@ impl EncodedBuffer {
         while let Some(c) = ci.next() {
             let cc = c.lock().unwrap();
 
-            if cc.end_idx - cc.start_idx == 0 {
+            if cc.end_idx - cc.start_idx < 5 {
                 continue;
             }
 
             if cc.end_idx <= self.next_packet_idx {
-                let t3 = cc.end_idx -1;
+                let t3 = cc.end_idx -5;
 
                 let t = self.frame_buf.get(&t3);
                 // if t.is_none() {

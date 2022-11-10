@@ -33,6 +33,8 @@ use audio;
 use audio::ReadBuf as _;
 use audio::{io, wrap, WriteBuf, ExactSizeBuf, ChannelMut, Channels, Channel};
 
+use super::packet::Packets;
+
 pub struct AudioFile {}
 
 impl AudioFile {
@@ -94,18 +96,25 @@ impl AudioFile {
         })
     }
 
+    // pub async fn get_audio_source(
+    //     mongodb_client: mongodb::Client,
+    //     audio_tag_id: &str,
+    // ) -> File {
+
+    // }
+
     pub async fn get_audio_sample_iterator(
         mongodb_client: mongodb::Client,
         audio_tag_id: &str,
-        packet_start_idx: u32,
-        packet_num: u32,
+        packet_start_idx: usize,
+        packet_num: usize,
         channels: u32,
         // packet_start_ts: u64,
-        seek_start_pkt_idx: u64,
+        seek_start_pkt_idx: usize,
         seek_start_pkt_ts: u64,
         // pkt_read_start_offset: u32,
         opus_encoder: Arc<Mutex<opus::Encoder>>,
-    ) -> Result<AudioSampleIterator, anyhow::Error> {
+    ) -> Result<Packets, anyhow::Error> {
         let current_dir = env::current_dir().unwrap();
         let server_config_path = current_dir.join("configs/cirrus/server.toml");
         
@@ -130,22 +139,35 @@ impl AudioFile {
         settings.audio_sample_frame_packet.len as f64 
             / settings.audio_sample_frame_packet.sample_rate as f64;
 
-        let audio_sample_iter = AudioSampleIterator::new(
+        let packets = Packets::new(
             file,
+            opus_encoder,
             packet_start_idx,
             packet_num,
-            sample_frame_packet_dur,
-            settings.audio_sample_frame_packet.len,
-            settings.audio_sample_frame_packet.sample_rate,
-            channels.try_into().unwrap(),
-            // packet_start_ts
             seek_start_pkt_idx,
             seek_start_pkt_ts,
-            // pkt_read_start_offset,
-            opus_encoder,
+            settings.audio_sample_frame_packet.len.try_into().unwrap(),
+            settings.audio_sample_frame_packet.sample_rate.try_into().unwrap(),
         )?;
 
-        Ok(audio_sample_iter)
+        Ok(packets)
+
+        // let audio_sample_iter = AudioSampleIterator::new(
+        //     file,
+        //     packet_start_idx,
+        //     packet_num,
+        //     sample_frame_packet_dur,
+        //     settings.audio_sample_frame_packet.len,
+        //     settings.audio_sample_frame_packet.sample_rate,
+        //     channels.try_into().unwrap(),
+        //     // packet_start_ts
+        //     seek_start_pkt_idx,
+        //     seek_start_pkt_ts,
+        //     // pkt_read_start_offset,
+        //     opus_encoder,
+        // )?;
+
+        // Ok(audio_sample_iter)
     }
 }
 
