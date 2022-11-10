@@ -2,7 +2,7 @@ use std::fs::File;
 
 use anyhow::anyhow;
 use itertools::Itertools;
-use symphonia::core::{formats::{FormatReader, SeekMode, SeekTo}, io::MediaSourceStream, probe::Hint, codecs::{CODEC_TYPE_NULL, Decoder}, audio::SampleBuffer, units::Time};
+use symphonia::core::{formats::{FormatReader, SeekMode, SeekTo}, io::MediaSourceStream, probe::Hint, codecs::{CODEC_TYPE_NULL, Decoder}, audio::SampleBuffer, units::Time, errors::Error};
 
 
 pub struct SampleFrames {
@@ -132,14 +132,14 @@ impl SampleFrames {
         self.frame_len = frame_len;
     }
 
-    fn read_samples(&mut self) -> Result<(), anyhow::Error> {
+    fn read_samples(&mut self) -> Result<(), Error> {
         while self.frame_buf.len() / 2 < self.frame_len {
             let mut read_start_offset = 0;
 
             let packet = match self.media_reader.next_packet() {
                 Ok(packet) => packet,
                 Err(err) => {
-                    return Err(anyhow!(err));
+                    return Err(err);
                 },
             };
 
@@ -163,7 +163,7 @@ impl SampleFrames {
             let audio_buf = match self.audio_decoder.decode(&packet) {
                 Ok(buf_ref) => buf_ref,
                 Err(err) => {
-                    return Err(anyhow::anyhow!(err));
+                    return Err(err);
                 },
             };
 
@@ -196,9 +196,19 @@ impl Iterator for SampleFrames {
             return None;
         }
 
-        if let Err(err) = self.read_samples() {
-            return Some(Err(err));
+        match self.read_samples() {
+            Ok(_) => (),
+            Err(Error::IoError(_err)) => {
+                return None;
+            }
+            Err(err) => {
+                return Some(Err(anyhow::anyhow!(err)));
+            },
         }
+
+        // if let Err(err) = self.read_samples() {
+        //     return Some(Err(err));
+        // }
         
         let samples = self.frame_buf
             .drain(..self.frame_len*2)

@@ -76,7 +76,8 @@ impl AudioSample {
         let last_chunk_end_idx = last_buf_chunk.lock().unwrap().end_idx;
         let chunks_num = packet_buf.get_chunks_num_from_current();
 
-        if last_chunk_end_idx == content_packets && chunks_num == 1 {
+        // TODO: check last chunk end idx
+        if last_chunk_end_idx +1 >= content_packets && chunks_num == 1 {
             return;
         }
         
