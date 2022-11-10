@@ -95,7 +95,6 @@ impl AudioFile {
         packet_start_idx: usize,
         packet_num: usize,
         _channels: u32,
-        opus_encoder: Arc<Mutex<opus::Encoder>>,
     ) -> Result<Packets, anyhow::Error> {
         let current_dir = env::current_dir().unwrap();
         let server_config_path = current_dir.join("configs/cirrus/server.toml");
@@ -117,7 +116,6 @@ impl AudioFile {
 
         let packets = Packets::new(
             file,
-            opus_encoder,
             packet_start_idx,
             packet_num,
             settings.audio_sample_frame_packet.len.try_into().unwrap(),

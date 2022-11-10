@@ -14,7 +14,7 @@ pub struct Packets {
     resampler_input_buf: Vec<Vec<f32>>,
     resampler_output_buf: Vec<Vec<f32>>,
 
-    packet_encoder: Arc<Mutex<opus::Encoder>>,
+    packet_encoder: opus::Encoder,
     packet_dur_ms: u32,
 
     packet_start_idx: usize,
@@ -25,7 +25,6 @@ pub struct Packets {
 impl Packets {
     pub fn new(
         source: File,
-        packet_encoder: Arc<Mutex<opus::Encoder>>,
         pkt_start_idx: usize,
         pkt_num: usize,
         pkt_len: usize,
@@ -69,6 +68,8 @@ impl Packets {
             input_buf_ch.extend(vec![0.; resampler.input_frames_max()]);
         }
         let resampler_output_buf = resampler.output_buffer_allocate();
+
+        let packet_encoder = opus::Encoder::new(48_000, opus::Channels::Stereo, opus::Application::Audio)?;
 
         let mut packets = Self{
             sample_frames,
@@ -141,8 +142,7 @@ impl Packets {
             }
         }
 
-        let packet = self.packet_encoder.lock()
-            .unwrap()
+        let packet = self.packet_encoder
             .encode_vec_float(resampled_output.as_slice(), 4000)
             .unwrap();
 
