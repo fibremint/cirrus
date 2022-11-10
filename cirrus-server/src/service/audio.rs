@@ -116,6 +116,7 @@ impl AudioDataSvc for AudioDataSvcImpl {
                 let packet_res = AudioDataRes {
                     packet_idx: packet.idx.try_into().unwrap(),
 
+                    frame_ts: packet.frame_ts.try_into().unwrap(),
                     sp_frame_duration: packet.frame_dur.try_into().unwrap(),
                     sp_frame_num: packet.frame_len.try_into().unwrap(),
                     packet_start_ts: packet.next_pkt_seek_ts,

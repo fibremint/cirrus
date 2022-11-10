@@ -25,6 +25,7 @@ message AudioDataReq {
     uint32 channels = 4;
     uint64 seek_start_pkt_idx = 5;
     uint64 seek_start_pkt_ts = 6;
+    //double start_ts = 7;
     //uint32 pkt_read_start_offset = 7;
     //uint64 packet_start_ts = 5;
     //uint32 sample_frame_start_pos = 4;
@@ -44,6 +45,7 @@ message AudioDataRes {
     uint32 sp_frame_num = 3;
     bytes encoded_samples = 4;
     uint64 packet_start_ts = 5;
+    double frame_ts = 6;
     //uint32 packet_read_start_offset = 6;
     //uint32 padded_frame_start_pos = 4;
     //repeated AudioChannelSampleFrames ch_sample_frames = 3;

@@ -289,7 +289,7 @@ impl AudioSampleInner {
             return Ok(());
         }
 
-        let (pkt_seek_start_pkt_idx, next_pkt_start_ts) = self.packet_buf.lock().unwrap().get_next_packet_start_ts_from_current();
+        // let (pkt_seek_start_pkt_idx, next_pkt_start_ts) = self.packet_buf.lock().unwrap().get_next_packet_start_ts_from_current();
 
         let mut audio_data_stream = request::get_audio_data_stream(
             &self.source.server.grpc_endpoint,
@@ -298,8 +298,10 @@ impl AudioSampleInner {
             fetch_start_pkt_idx.try_into().unwrap(),
             fetch_packet_num.try_into().unwrap(),
             2,
-            pkt_seek_start_pkt_idx,
-            next_pkt_start_ts.into(),
+            0,
+            0,
+            // pkt_seek_start_pkt_idx,
+            // next_pkt_start_ts.into(),
         ).await?;
 
         println!("fetch packet: ({}..{})", fetch_start_pkt_idx, fetch_start_pkt_idx+fetch_packet_num);

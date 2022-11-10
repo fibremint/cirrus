@@ -133,11 +133,11 @@ impl AudioFile {
             Err(_err) => return Err(anyhow::anyhow!("failed to load file")),
         };
 
-        // let file = File::open("D:\\tmp\\file_example_WAV_10MG.wav").unwrap();
+        // let file = File::open("D:\\tmp\\file_example_OOG_5MG.ogg").unwrap();
 
-        let sample_frame_packet_dur = 
-        settings.audio_sample_frame_packet.len as f64 
-            / settings.audio_sample_frame_packet.sample_rate as f64;
+        // let sample_frame_packet_dur = 
+        // settings.audio_sample_frame_packet.len as f64 
+        //     / settings.audio_sample_frame_packet.sample_rate as f64;
 
         let packets = Packets::new(
             file,
@@ -145,7 +145,7 @@ impl AudioFile {
             packet_start_idx,
             packet_num,
             seek_start_pkt_idx,
-            seek_start_pkt_ts,
+            // seek_start_pkt_ts,
             settings.audio_sample_frame_packet.len.try_into().unwrap(),
             settings.audio_sample_frame_packet.sample_rate.try_into().unwrap(),
         )?;
