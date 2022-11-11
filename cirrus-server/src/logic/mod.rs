@@ -1,4 +1,7 @@
-pub mod audio;
-mod sample;
-mod packet;
-// pub use audio::*;
+mod file;
+mod library;
+mod tag;
+
+pub use file::AudioFile;
+pub use library::AudioLibrary;
+pub use tag::AudioTag;

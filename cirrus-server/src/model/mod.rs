@@ -1,14 +1,13 @@
 pub mod audio;
 pub mod document;
 
-// pub use audio::*;
-// pub use self::audio::*;
-// pub use self::document;
-
 use mongodb::{Client, options::ClientOptions};
 
-pub async fn get_mongodb_client(address: &str) -> Result<mongodb::Client, Box<dyn std::error::Error>> {
-    let client_options = ClientOptions::parse(address).await?;
+use crate::settings::Settings;
+
+pub async fn create_db_client() -> Result<mongodb::Client, anyhow::Error> {
+    let settings = Settings::get()?;
+    let client_options = ClientOptions::parse(settings.mongodb.address).await?;
 
     let client = Client::with_options(client_options)?;
 

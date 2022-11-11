@@ -1,6 +1,8 @@
-use std::{env, path::PathBuf};
+use std::env;
 use config::{Config, File, ConfigError};
 use serde_derive::{Serialize, Deserialize};
+
+const CONFIG_PATH: &'static str = "configs/cirrus/server.toml";
 
 #[derive(Serialize, Deserialize)]
 #[allow(unused)]
@@ -35,9 +37,12 @@ pub struct Settings {
 }
 
 impl Settings {
-    pub fn new(config_path: &PathBuf) -> Result<Self, ConfigError> {
+    pub fn get() -> Result<Self, ConfigError> {
+        let current_dir = env::current_dir().unwrap();
+        let server_config_path = current_dir.join(CONFIG_PATH);
+        
         let s = Config::builder()
-            .add_source(File::with_name(config_path.to_str().unwrap()))
+            .add_source(File::from(server_config_path))
             .build()?;
 
         s.try_deserialize()
