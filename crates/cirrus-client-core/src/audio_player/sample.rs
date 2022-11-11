@@ -76,7 +76,8 @@ impl AudioSample {
         let last_chunk_end_idx = last_buf_chunk.lock().unwrap().end_idx;
         let chunks_num = packet_buf.get_chunks_num_from_current();
 
-        if last_chunk_end_idx == content_packets && chunks_num == 1 {
+        // TODO: check last chunk end idx
+        if last_chunk_end_idx +1 >= content_packets && chunks_num == 1 {
             return;
         }
         
@@ -158,7 +159,7 @@ impl AudioSampleInner {
             return 0.
         }
 
-        remain_packets as f64 * 0.06
+        remain_packets as f64 * 0.02
     }
 
     fn get_playback_sample_frame_pos(&self) -> usize {
@@ -205,7 +206,7 @@ impl AudioSampleInner {
         }
 
         let position_sample_idx = self.get_playback_sample_frame_pos_from_sec(position_sec);
-        let updated_playback_pkt_idx = get_packet_idx_from_sec(position_sec, 0.06);
+        let updated_playback_pkt_idx = get_packet_idx_from_sec(position_sec, 0.02);
         self.packet_playback_idx.store(updated_playback_pkt_idx, Ordering::SeqCst);
         println!("updated playback packet index: {}", updated_playback_pkt_idx);
         
@@ -278,6 +279,8 @@ impl AudioSampleInner {
 
         if fetch_packet_num == 0 {
             println!("warn: attempted to fetch 0 packets");
+            // workaround
+            self.packet_buf.lock().unwrap().merge_node_from_current();
             return Ok(());
         }
 
@@ -291,7 +294,6 @@ impl AudioSampleInner {
         ).await?;
 
         println!("fetch packet: ({}..{})", fetch_start_pkt_idx, fetch_start_pkt_idx+fetch_packet_num);
-        // println!("seek buf chunk id: {}", self.packet_buf.lock().unwrap().seek_buf_chunk_node_idx);
         let mut last_idx = 0;
 
         while let Some(res) = audio_data_stream.next().await {

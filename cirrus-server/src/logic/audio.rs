@@ -1,8 +1,7 @@
 use std::{
     fs::File,
-    path::{Path, PathBuf}, collections::{HashMap, HashSet}, io::{BufReader, Read, Seek}, env,
+    path::{Path, PathBuf}, collections::{HashMap, HashSet}, env, sync::{Mutex, Arc},
 };
-use itertools::Itertools;
 
 use aiff::reader::AiffReader;
 use bson::oid::ObjectId;
@@ -12,7 +11,6 @@ use cirrus_protobuf::api::{
 };
 
 use mongodb::bson;
-use rubato::Resampler;
 use walkdir::{DirEntry, WalkDir};
 
 use crate::{
@@ -20,17 +18,15 @@ use crate::{
     model::{self, document}, settings::Settings,
 };
 
-use symphonia::core::{codecs::{CODEC_TYPE_NULL, DecoderOptions, Decoder}, audio::{AudioBufferRef, Signal, SampleBuffer, RawSampleBuffer}, formats::{FormatReader, SeekMode, SeekTo}, units::{TimeStamp, Time}};
-use symphonia::core::errors::Error;
+use symphonia::core::codecs::CODEC_TYPE_NULL;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::probe::Hint;
 
 use opus;
-use audio;
-use audio::ReadBuf as _;
-use audio::{io, wrap, WriteBuf, ExactSizeBuf, ChannelMut, Channels, Channel};
+
+use super::packet::Packets;
 
 pub struct AudioFile {}
 
@@ -96,10 +92,10 @@ impl AudioFile {
     pub async fn get_audio_sample_iterator(
         mongodb_client: mongodb::Client,
         audio_tag_id: &str,
-        packet_start_idx: u32,
-        packet_num: u32,
-        channels: u32,
-    ) -> Result<AudioSampleIterator, anyhow::Error> {
+        packet_start_idx: usize,
+        packet_num: usize,
+        _channels: u32,
+    ) -> Result<Packets, anyhow::Error> {
         let current_dir = env::current_dir().unwrap();
         let server_config_path = current_dir.join("configs/cirrus/server.toml");
         
@@ -118,235 +114,15 @@ impl AudioFile {
             Err(_err) => return Err(anyhow::anyhow!("failed to load file")),
         };
 
-        // let file = File::open("D:\\tmp\\file_example_WAV_10MG.wav").unwrap();
-
-        let sample_frame_packet_dur = 
-        settings.audio_sample_frame_packet.len as f64 
-            / settings.audio_sample_frame_packet.sample_rate as f64;
-
-        let audio_sample_iter = AudioSampleIterator::new(
+        let packets = Packets::new(
             file,
             packet_start_idx,
             packet_num,
-            sample_frame_packet_dur,
-            settings.audio_sample_frame_packet.len,
-            settings.audio_sample_frame_packet.sample_rate,
-            channels.try_into().unwrap(),
+            settings.audio_sample_frame_packet.len.try_into().unwrap(),
+            settings.audio_sample_frame_packet.sample_rate.try_into().unwrap(),
         )?;
 
-        Ok(audio_sample_iter)
-    }
-}
-
-pub struct SampleFramePacket {
-    pub packet_idx: u32,
-    pub sample_frame_duration: f64,
-    pub sample_frame_num: u32,
-    // pub original_frame_len: u16,
-    // pub padded_frame_start_pos: u16,
-    pub encoded_data: Vec<u8>
-}
-
-pub struct AudioSampleIterator {
-    // duration: f64,
-    packet_num: u32,
-    packet_dur: f64,
-    packet_sample_frame_num: u32,
-    packet_sample_rate: u32,
-    channel_size: usize,
-
-    ch_sample_buf: Vec<Vec<f32>>,
-    decoder: Box<dyn Decoder>,
-    format: Box<dyn FormatReader>,
-    resampler: rubato::FftFixedOut<f32>,
-    resampler_in_buf: Vec<Vec<f32>>,
-    resampler_out_buf: Vec<Vec<f32>>,
-
-    orig_sample_rate: u32,
-    
-    opus_encoder: opus::Encoder,
-    decoded_samples: Vec<Vec<f32>>,
-    
-    seek_packet_cnt: u32,
-    packet_seek_start_idx: u32,
-}
-
-impl AudioSampleIterator {
-    pub fn new(
-        source: File,
-        packet_start_idx: u32,
-        packet_num: u32,
-        packet_dur: f64,
-        packet_sample_frame_num: u32,
-        packet_sample_rate: u32,
-        channels: u32,
-    ) -> Result<Self, anyhow::Error> {
-        let mss = MediaSourceStream::new(Box::new(source), Default::default());
-        let hint = Hint::new();
-
-        let meta_opts: MetadataOptions = Default::default();
-        let fmt_opts: FormatOptions = Default::default();
-
-        let probed = symphonia::default::get_probe().format(&hint, mss, &fmt_opts, &meta_opts).unwrap();
-
-        let mut format = probed.format;
-            // Find the first audio track with a known (decodeable) codec.
-        let track = format.tracks()
-            .iter()
-            .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
-            .expect("no supported audio tracks");
-
-        // Use the default options for the decoder.
-        let dec_opts: DecoderOptions = Default::default();
-        // Create a decoder for the track.
-        let decoder = symphonia::default::get_codecs().make(&track.codec_params, &dec_opts)
-                                            .expect("unsupported codec");
-
-        let mut ch_sample_buf = Vec::with_capacity(channels.try_into().unwrap());
-        for _ in 0..channels {
-            ch_sample_buf.push(vec![0.; 0]);
-        }
-
-        let codec_sample_rate = track.codec_params.sample_rate.unwrap();
-
-        let resampler = rubato::FftFixedOut::new(
-            codec_sample_rate.try_into().unwrap(), 
-            packet_sample_rate.try_into().unwrap(),
-            packet_sample_frame_num.try_into().unwrap(), 
-            2,
-            2
-        )?;
-
-        let sample_frame_start_sec = packet_start_idx as f64 * packet_dur;
-
-        format.seek(
-            SeekMode::Accurate,
-            SeekTo::Time { 
-                time: Time::from(sample_frame_start_sec), 
-                track_id: Some(track.id) 
-            }
-        )?;
-
-        let resampler_in_buf = resampler.input_buffer_allocate();
-        let resampler_out_buf = resampler.output_buffer_allocate();
-
-        let opus_encoder = opus::Encoder::new(packet_sample_rate, opus::Channels::Stereo, opus::Application::Audio)?;
-
-        let mut decoded_samples = Vec::with_capacity(2);
-        for _ in 0..2 {
-            decoded_samples.push(Vec::new());
-        }
-
-        Ok(
-            Self {
-                // duration,
-                packet_num,
-                packet_dur,
-                packet_sample_frame_num,
-                packet_sample_rate,
-                channel_size: channels.try_into().unwrap(),
-    
-                ch_sample_buf,
-                // mss,
-                decoder,
-                format,
-                resampler,
-                resampler_in_buf,
-                resampler_out_buf,
-                orig_sample_rate: codec_sample_rate,
-                opus_encoder,
-                decoded_samples,
-                seek_packet_cnt: Default::default(),
-                packet_seek_start_idx: packet_start_idx,
-            }
-        )
-    }
-}
-
-impl Iterator for AudioSampleIterator {
-    type Item = SampleFramePacket;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut enc_output = Vec::new();
-        let rs_input_frame_next = self.resampler.input_frames_next();
-
-        while self.decoded_samples[0].len() < rs_input_frame_next {
-            let packet = match self.format.next_packet() {
-                Ok(packet) => packet,
-                Err(e) => {
-                    break
-                },
-            };
-
-            let decoded = match self.decoder.decode(&packet) {
-                Ok(decoded) => decoded,
-                Err(_) => break,
-            };
-
-            let mut sample_buf = SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec());
-            sample_buf.copy_planar_ref(decoded);
-
-            let samples = sample_buf.samples();
-            let sample_frame_len = samples.len() / 2;
-
-            self.decoded_samples[0].extend_from_slice(&samples[..sample_frame_len]);
-            self.decoded_samples[1].extend_from_slice(&samples[sample_frame_len..]);
-        }
-
-        if self.seek_packet_cnt == self.packet_num ||
-            self.decoded_samples[0].len() == 0 {
-            // println!("reach end of content");
-            return None;
-        }
-
-        let mut rs_input = Vec::with_capacity(2);
-        let dc_sp_frame_len = self.decoded_samples[0].len() as i32;
-        let zero_pad_len = std::cmp::max(rs_input_frame_next as i32 - dc_sp_frame_len, 0);
-        
-        for ch_idx in 0..2 {
-            let ch_sp_drain_len = std::cmp::min(rs_input_frame_next, dc_sp_frame_len.try_into().unwrap());
-            let mut ch_rs_input = self.decoded_samples[ch_idx].drain(..ch_sp_drain_len).collect_vec();
-            
-            if zero_pad_len > 0 {
-                ch_rs_input.extend_from_slice(&vec![0.; zero_pad_len.try_into().unwrap()]);
-            }
-
-            rs_input.push(ch_rs_input);
-        }
-
-        self.resampler.process_into_buffer(
-            &rs_input, 
-            &mut self.resampler_out_buf, 
-            None
-        ).unwrap();
-
-        let mut resampled_output = audio::Interleaved::<f32>::with_topology(2, self.resampler.output_frames_max());
-
-        for ch_idx in 0..2 {
-            for (c, s) in resampled_output
-                .get_mut(ch_idx)
-                .unwrap()
-                .iter_mut()
-                .zip(&self.resampler_out_buf[ch_idx])
-            {
-                *c = *s;
-            }
-        }
-
-        let encoded = self.opus_encoder.encode_vec_float(resampled_output.as_slice(), 4000).unwrap();
-        enc_output.extend(encoded);
-
-        let packet_idx = self.packet_seek_start_idx + self.seek_packet_cnt;
-        self.seek_packet_cnt += 1;
-
-        Some(        
-            SampleFramePacket {
-                packet_idx,
-                sample_frame_duration: self.packet_dur,
-                sample_frame_num: 2880,
-                encoded_data: enc_output,
-            }
-        )
+        Ok(packets)
     }
 }
 

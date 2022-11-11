@@ -166,7 +166,7 @@ impl EncodedBuffer {
         new_node_id
     }
 
-    fn merge_node_from_current(&mut self) {
+    pub fn merge_node_from_current(&mut self) {
         let bci_node = self.buf_chunk_info.get(&self.seek_buf_chunk_node_idx).unwrap().to_owned();        
         let mut bc = bci_node.lock().unwrap();
 
@@ -224,7 +224,7 @@ impl EncodedBuffer {
 
     pub fn get_fetch_required_packet_num(&self, fetch_start_idx: u32, duration_sec: f64) -> u32 {
         let max_avail_fetch_pkt = self.content_packets - fetch_start_idx;
-        let desired_fetch_pkt_num = get_packet_idx_from_sec(duration_sec, 0.06);
+        let desired_fetch_pkt_num = get_packet_idx_from_sec(duration_sec, 0.02);
         let default_val = std::cmp::min(desired_fetch_pkt_num, max_avail_fetch_pkt.try_into().unwrap());
 
         let bci = self.buf_chunk_info.get(&self.seek_buf_chunk_node_idx).unwrap();
@@ -244,7 +244,7 @@ impl EncodedBuffer {
         println!("previous seek index: {}", self.seek_buf_chunk_node_idx);
         println!("direction: {:?}", direction);
 
-        let packet_idx = get_packet_idx_from_sec(position_sec, 0.06) as u32;
+        let packet_idx = get_packet_idx_from_sec(position_sec, 0.02) as u32;
         let bci_node = self.buf_chunk_info.get(&self.seek_buf_chunk_node_idx).unwrap();                
         
         {
@@ -325,7 +325,7 @@ impl EncodedBuffer {
         let bci_node = self.buf_chunk_info.get(&self.seek_buf_chunk_node_idx).unwrap().to_owned();        
         let bc = bci_node.lock().unwrap();
 
-        let request_packet_idx = get_packet_idx_from_sec(position_sec, 0.06) as u32;
+        let request_packet_idx = get_packet_idx_from_sec(position_sec, 0.02) as u32;
 
         if request_packet_idx > bc.end_idx || 
             request_packet_idx < bc.start_idx {
