@@ -10,4 +10,4 @@ address = "mongodb://localhost:27017"
 
 [audio_sample_frame_packet]
 sample_rate = 48000
-len = 2880
+len = 960
