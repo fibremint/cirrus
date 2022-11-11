@@ -494,7 +494,7 @@ impl AudioStreamInner {
     }
     
     fn update(&self, rt_handle: Arc<Handle>) -> Result<&'static str, anyhow::Error> {
-        self.audio_sample.fetch_buffer(10., 5., rt_handle);
+        self.audio_sample.fetch_buffer(180., 20., rt_handle);
 
         match PlaybackStatus::from(self.audio_player_status.load(Ordering::SeqCst)) {
             PlaybackStatus::Play => {
