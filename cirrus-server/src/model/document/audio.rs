@@ -132,7 +132,7 @@ pub struct AudioTag {
     pub duration: Option<u32>,
     pub genre: Option<String>,
     // picture: Option<Vec<u8>>,
-    pub pictures: Vec<AudioFileMetadataPicture>,
+    // pub pictures: Vec<AudioFileMetadataPicture>,
     pub title: Option<String>,
     pub total_discs: Option<u32>,
     pub total_tracks: Option<u32>,
@@ -151,10 +151,10 @@ impl Hash for AudioTag {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug)]
-pub struct AudioFileMetadataPicture {
-    pub description: String,
-    pub mime_type: String,
-    pub picture_type: String,
-    pub data: Vec<u8>,
-}
+// #[derive(Deserialize, Serialize, Debug)]
+// pub struct AudioFileMetadataPicture {
+//     pub description: String,
+//     pub mime_type: String,
+//     pub picture_type: String,
+//     pub data: Vec<u8>,
+// }

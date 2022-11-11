@@ -503,15 +503,15 @@ impl AudioLibrary {
                 None => None,
             };
 
-            let pictures: Vec<_> = id3v2.tag.pictures()
-                .into_iter()
-                .map(|item| document::audio::AudioFileMetadataPicture {
-                    description: item.description.clone(),
-                    mime_type: item.mime_type.clone(),
-                    picture_type: item.picture_type.to_string(),
-                    data: item.data.to_owned(),
-                })
-                .collect();
+            // let pictures: Vec<_> = id3v2.tag.pictures()
+            //     .into_iter()
+            //     .map(|item| document::audio::AudioFileMetadataPicture {
+            //         description: item.description.clone(),
+            //         mime_type: item.mime_type.clone(),
+            //         picture_type: item.picture_type.to_string(),
+            //         data: item.data.to_owned(),
+            //     })
+            //     .collect();
 
             let artist = match id3v2.tag.artist() {
                 Some(item) => Some(item.to_owned()),
@@ -549,7 +549,7 @@ impl AudioLibrary {
                 disc: id3v2.tag.disc(),
                 duration: id3v2.tag.duration(),
                 genre: genre,
-                pictures: pictures,
+                // pictures: pictures,
                 title: title,
                 total_discs: id3v2.tag.total_discs(),
                 total_tracks: id3v2.tag.total_tracks(),
