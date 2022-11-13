@@ -1,5 +1,7 @@
-pub mod audio;
+// pub mod audio;
+pub mod dto;
 pub mod document;
+pub mod crud;
 
 use mongodb::{Client, options::ClientOptions};
 
@@ -15,5 +17,5 @@ pub async fn create_db_client() -> Result<mongodb::Client, anyhow::Error> {
 }
 
 pub trait GetCollection<T> {
-    fn get_collection(mongodb_client: mongodb::Client) -> mongodb::Collection<T>;
+    fn get_collection(db: mongodb::Client) -> mongodb::Collection<T>;
 }

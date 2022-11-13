@@ -9,11 +9,15 @@ use crate::{logic, model};
 
 use super::GetMongoClient;
 
-pub struct AudioTagSvcImpl {}
+pub struct AudioTagSvcImpl {
+    logic: logic::AudioTag,
+}
 
 impl Default for AudioTagSvcImpl {
     fn default() -> Self {
-        Self {  }
+        Self { 
+            logic: logic::AudioTag::default(),
+        }
     }
 }
 
@@ -49,7 +53,13 @@ impl AudioTagSvc for AudioTagSvcImpl {
         let req_items_per_page = request.get_ref().items_per_page;
 
         let (tx, rx) = mpsc::channel(req_items_per_page as usize);
-        let res = logic::AudioTag::list_audio_tags(self.create_db_client().await?, req_items_per_page, req_page).await.unwrap();
+        // let res = logic::AudioTag::list_audio_tags(self.create_db_client().await?, req_items_per_page, req_page).await.unwrap();
+
+        let res = self.logic.list_audio_tags(
+            self.create_db_client().await?, 
+            req_items_per_page, 
+            req_page
+        ).await.unwrap();
 
         tokio::spawn(async move {
             for r in res.into_iter() {

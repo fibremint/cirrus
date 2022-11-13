@@ -15,11 +15,15 @@ use crate::{logic, model};
 
 use super::GetMongoClient;
 
-pub struct AudioLibrarySvcImpl {}
+pub struct AudioLibrarySvcImpl {
+    logic: logic::AudioLibrary,
+}
 
 impl Default for AudioLibrarySvcImpl {
     fn default() -> Self {
-        Self {  }
+        Self { 
+            logic: Default::default()
+        }
     }
 }
 
@@ -51,12 +55,14 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
             println!("warn: unknown remote address tries to request");
         }
 
-        let res = match logic::AudioLibrary::add_audio_library(self.create_db_client().await?, path).await {
+        // self.logic.add_audio_library(db, library_root)
+
+        let res = match self.logic.add_audio_library(self.create_db_client().await?, path).await {
             Ok(_) => Response::new(CirrusResponse {
                 code: Code::Ok as u32,
                 status: Option::None,
             }),
-            Err(err) => return Err(Status::not_found(err)),
+            Err(err) => return Err(Status::not_found(err.to_string())),
         };
 
         Ok(res)
@@ -75,12 +81,12 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
             println!("warn: unknown remote address tries to request");
         }
 
-        let res = match logic::AudioLibrary::remove_audio_library(self.create_db_client().await?, path).await {
+        let res = match self.logic.remove_audio_library(self.create_db_client().await?, path).await {
             Ok(res) => Response::new(CirrusResponse {
                 code: Code::Ok as u32,
                 status: Some(res),
             }),
-            Err(err) => return Err(Status::not_found(err)),
+            Err(err) => return Err(Status::not_found(err.to_string())),
         };
 
         Ok(res)
@@ -96,12 +102,12 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
             println!("warn: unknown remote address tries to request");
         }
 
-        let res = match logic::AudioLibrary::analyze_audio_library(self.create_db_client().await?).await {
+        let res = match self.logic.analyze_audio_library(self.create_db_client().await?).await {
             Ok(_) => Response::new(CirrusResponse {
                 code: Code::Ok as u32,
                 status: Some(format!("Refreshed audio library"))
             }),
-            Err(err) => return Err(Status::internal(err)),
+            Err(err) => return Err(Status::internal(err.to_string())),
         };
 
         Ok(res)
@@ -117,12 +123,12 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
             println!("warn: unknown remote address tries to request");
         }
 
-        let res = match logic::AudioLibrary::refresh_audio_library(self.create_db_client().await?).await {
+        let res = match self.logic.refresh_audio_library(self.create_db_client().await?).await {
             Ok(_) => Response::new(CirrusResponse {
                 code: Code::Ok as u32,
                 status: Some(format!("Refreshed audio library"))
             }),
-            Err(err) => return Err(Status::internal(err)),
+            Err(err) => return Err(Status::internal(err.to_string())),
         };
 
         Ok(res)

@@ -6,23 +6,23 @@ use mongodb::{self, bson::doc, results::{UpdateResult, DeleteResult}, error::Err
 
 use crate::{
     util, 
-    model::{GetCollection, document}
+    model::{GetCollection, dto}
 };
 
 pub struct AudioLibrary {}
 
-impl GetCollection<document::audio::AudioLibrary> for AudioLibrary {
-    fn get_collection(mongodb_client: mongodb::Client) -> mongodb::Collection<document::audio::AudioLibrary> {
+impl GetCollection<dto::AudioLibrary> for AudioLibrary {
+    fn get_collection(mongodb_client: mongodb::Client) -> mongodb::Collection<dto::AudioLibrary> {
         mongodb_client
             .database("cirrus")
-            .collection::<document::audio::AudioLibrary>("libraries")
+            .collection::<dto::AudioLibrary>("libraries")
     }
 }
 
 impl AudioLibrary {
     pub async fn create(
         mongodb_client: mongodb::Client,
-        doc: document::audio::AudioLibrary
+        doc: dto::AudioLibrary
     ) -> Result<mongodb::results::InsertOneResult, Box<dyn std::error::Error>> {
         let collection = Self::get_collection(mongodb_client.clone());
 
@@ -33,7 +33,7 @@ impl AudioLibrary {
 
     pub async fn create_many(
         mongodb_client: mongodb::Client,
-        doc: Vec<document::audio::AudioLibrary>,
+        doc: Vec<dto::AudioLibrary>,
     ) -> Result<mongodb::results::InsertManyResult, Box<dyn std::error::Error>> {
         let collection = Self::get_collection(mongodb_client.clone());
 
@@ -45,8 +45,7 @@ impl AudioLibrary {
     pub async fn get_by_path(
         mongodb_client: mongodb::Client,
         path: &Path
-    ) -> Result<Vec<document::audio::AudioLibrary>, Box<dyn std::error::Error>> {
-        // let path = util::path::path_to_materialized(path.to_str().unwrap());
+    ) -> Result<Vec<dto::AudioLibrary>, Box<dyn std::error::Error>> {
         let path = util::path::path_to_materialized(path);
         let collection = Self::get_collection(mongodb_client.clone());
 
@@ -63,9 +62,7 @@ impl AudioLibrary {
     pub async fn get_by_materialized_path(
         mongodb_client: mongodb::Client,
         path: &str
-    ) -> Result<Vec<document::audio::AudioLibrary>, Box<dyn std::error::Error>> {
-        // let path = util::path::path_to_materialized(path.to_str().unwrap());
-        // let path = util::path::path_to_materialized(path);
+    ) -> Result<Vec<dto::AudioLibrary>, Box<dyn std::error::Error>> {
         let collection = Self::get_collection(mongodb_client.clone());
 
         let filter = doc! {
@@ -95,15 +92,11 @@ impl AudioLibrary {
 
     pub async fn update_modified_timestamp(
         mongodb_client: mongodb::Client,
-        // doc_id: &i64,
         doc_id: &str,
-        modified_timestamp: i64,
-        // tag_id: &i64,
-        
+        modified_timestamp: i64,        
     ) -> Result<UpdateResult, Error> {
         let collection = Self::get_collection(mongodb_client.clone());
 
-        // let doc_id = doc_id.to_string();
         let query = doc! {
             "_id": doc_id
         };
@@ -115,36 +108,13 @@ impl AudioLibrary {
         collection.update_one(query, update, None).await
     }
 
-    // pub async fn update_self(
-    //     mongodb_client: mongodb::Client,
-    //     // doc_id: &i64,
-    //     document: document::AudioLibrary,
-    //     // tag_id: &i64,
-        
-    // ) -> Result<UpdateResult, Error> {
-    //     let collection = Self::get_collection(mongodb_client.clone());
-        
-    //     // let doc_id = doc_id.to_string();
-    //     let query = doc! {
-    //         "_id": document.id,
-    //     };
-
-    //     let serialized_document = mongodb::bson::to_document(&document).unwrap();
-    //     // document.
-    //     let update = doc! {
-    //         "$set": serialized_document,
-    //     };
-
-    //     collection.update_one(query, update, None).await
-    // }
     pub async fn update_self(
         mongodb_client: mongodb::Client,
-        documents: &Vec<document::audio::AudioLibrary>,
+        documents: &Vec<dto::AudioLibrary>,
     ) -> Vec<Result<UpdateResult, Error>> {
         let collection = Self::get_collection(mongodb_client.clone());
-        
-        // let doc_id = doc_id.to_string();
         let mut update_results: Vec<Result<UpdateResult, Error>> = vec![];
+
         for document in documents.iter() {
             let query = doc! {
                 "_id": document.id.clone(),
@@ -166,59 +136,32 @@ impl AudioLibrary {
 
 pub struct AudioLibraryRoot {}
 
-impl GetCollection<document::audio::AudioLibrary> for AudioLibraryRoot {
-    fn get_collection(mongodb_client: mongodb::Client) -> mongodb::Collection<document::audio::AudioLibrary> {
+impl GetCollection<dto::AudioLibrary> for AudioLibraryRoot {
+    fn get_collection(mongodb_client: mongodb::Client) -> mongodb::Collection<dto::AudioLibrary> {
         mongodb_client
             .database("cirrus")
-            .collection::<document::audio::AudioLibrary>("library_roots")
+            .collection::<dto::AudioLibrary>("library_roots")
     }
 }
 
 impl AudioLibraryRoot {
     pub async fn create(
         mongodb_client: mongodb::Client,
-        doc: document::audio::AudioLibrary
+        doc: dto::AudioLibrary
     ) -> Result<mongodb::results::InsertOneResult, mongodb::error::Error> {
         let collection = Self::get_collection(mongodb_client.clone());
 
-        collection.insert_one(doc, None).await
-        
-        // Ok(insert_res)
+        collection.insert_one(doc, None).await        
     }
-
-    // pub async fn create_many(
-    //     mongodb_client: mongodb::Client,
-    //     doc: Vec<document::AudioLibrary>,
-    // ) -> Result<mongodb::results::InsertManyResult, Box<dyn std::error::Error>> {
-    //     let collection = Self::get_collection(mongodb_client.clone());
-
-    //     let insert_res = collection.insert_many(doc, None).await.unwrap();
-        
-    //     Ok(insert_res)audio
-    // }
-
-    // pub async fn get_count(
-    //     mongodb_client: mongodb::Client
-    // ) -> usize {
-    //     let collection = Self::get_collection(mongodb_client.clone());
-
-    //     let document_count = collection.cou
-    // }
 
     pub async fn get_all(
         mongodb_client: mongodb::Client,
-    ) -> Vec<document::audio::AudioLibrary> {
+    ) -> Vec<dto::AudioLibrary> {
         let collection = Self::get_collection(mongodb_client.clone());
 
         let find_res = collection.find(None, None).await.unwrap();
-        // let docs: Vec<_> = find_res.map(|item| item.unwrap()).collect();
-        // let docs: Vec<Result<document::AudioLibrary, mongodb::error::Error>> = find_res.collect().await;
-        // docs
 
         find_res.try_collect().await.unwrap_or_else(|_| vec![])
-
-        // let doc_collect = find_res.collect::<document::AudioLibrary>();
-        // let doc_collect = find_res.collect::<Vec<Result<document::AudioLibrary, mongodb::error::Error>>>();
     }
 
     pub async fn check_exists_by_path(
@@ -241,7 +184,7 @@ impl AudioLibraryRoot {
     pub async fn get_by_path(
         mongodb_client: mongodb::Client,
         path: &Path
-    ) -> Result<Option<document::audio::AudioLibrary>, Box<dyn std::error::Error>> {
+    ) -> Result<Option<dto::AudioLibrary>, Box<dyn std::error::Error>> {
         let path = util::path::path_to_materialized(path);
         let collection = Self::get_collection(mongodb_client.clone());
 
@@ -262,10 +205,6 @@ impl AudioLibraryRoot {
 
         let collection = Self::get_collection(mongodb_client.clone());
 
-        // let filter = doc! {
-        //     "path": path
-        // };
-
         let filter = doc! {
             "path": { "$regex": format!("^{}", path) }
         };
@@ -274,44 +213,22 @@ impl AudioLibraryRoot {
 
         delete_res
     }
-
-    // pub async fn delete_by_selfs(
-    //     mongodb_client: mongodb::Client,
-    //     target: &Vec<document::AudioLibrary>,
-    // ) -> Result<DeleteResult, mongodb::error::Error> {
-    //     let collection = Self::get_collection(mongodb_client.clone());
-        
-    //     let delete_ids: Vec<_> = target.iter()
-    //         .map(|item| item.id.unwrap())
-    //         .collect();
-
-    //     let query = doc! {
-    //         "_id": {
-    //             "$in": delete_ids,
-    //         }
-    //     };
-
-    //     let delete_res = collection.delete_many(query, None).await?;
-
-    //     Ok(delete_res)
-    // }
 }
 
 pub struct AudioFile {}
 
-impl GetCollection<document::audio::AudioFile> for AudioFile {
-    fn get_collection(mongodb_client: mongodb::Client) -> mongodb::Collection<document::audio::AudioFile> {
+impl GetCollection<dto::AudioFile> for AudioFile {
+    fn get_collection(mongodb_client: mongodb::Client) -> mongodb::Collection<dto::AudioFile> {
         mongodb_client
             .database("cirrus")
-            .collection::<document::audio::AudioFile>("audio")
+            .collection::<dto::AudioFile>("audio")
     }
 }
 
 impl AudioFile {
     pub async fn create(
-        // db_handle: MutexGuard<'_, mongodb::Database>,
         mongodb_client: mongodb::Client,
-        doc: document::audio::AudioFile
+        doc: dto::AudioFile
     ) -> Result<mongodb::results::InsertOneResult, Box<dyn std::error::Error>> {
         let collection = Self::get_collection(mongodb_client.clone());
 
@@ -321,9 +238,8 @@ impl AudioFile {
     }
 
     pub async fn create_many(
-        // db_handle: MutexGuard<'_, mongodb::Database>,
         mongodb_client: mongodb::Client,
-        doc: &Vec<document::audio::AudioFile>,
+        doc: &Vec<dto::AudioFile>,
     ) -> Result<mongodb::results::InsertManyResult, mongodb::error::Error> {
         let collection = Self::get_collection(mongodb_client.clone());
 
@@ -335,7 +251,7 @@ impl AudioFile {
     pub async fn find_by_audio_tag_id(
         mongodb_client: mongodb::Client,
         audio_tag_id: ObjectId
-    ) -> Result<Option<document::audio::AudioFile>, mongodb::error::Error> {
+    ) -> Result<Option<dto::AudioFile>, mongodb::error::Error> {
         let collection = Self::get_collection(mongodb_client.clone());
 
         let filter = doc! {
@@ -351,7 +267,7 @@ impl AudioFile {
         mongodb_client: mongodb::Client,
         path: &Path,
         filter_none_refer: bool,
-    ) -> Result<Vec<document::audio::AudioFile>, mongodb::error::Error> {
+    ) -> Result<Vec<dto::AudioFile>, mongodb::error::Error> {
         let collection = Self::get_collection(mongodb_client.clone());
         let path = util::path::path_to_materialized(path);
 
@@ -376,44 +292,13 @@ impl AudioFile {
         Ok(find_res.try_collect().await.unwrap_or_else(|_| vec![]))
     }
 
-    // pub async fn get_audio_tag_refer_id_by_self_id(
-    //     mongodb_client: mongodb::Client,
-    //     id: &ObjectId,
-    // ) -> Result<ObjectId, mongodb::error::Error> {
-    //     let collection = Self::get_collection(mongodb_client.clone());
-
-    //     let filter = {
-    //         if filter_none_refer {
-    //             doc! {
-    //                 "$and": [{
-    //                     "parent_path": { "$regex": format!("^{}", path) }
-    //                 }, {
-    //                     "audio_tag_refer": null,
-    //                 }]
-    //             }
-    //         } else {
-    //             doc! {
-    //                 "parent_path": { "$regex": format!("^{}", path) }
-    //             }
-    //         }
-    //     };
-
-    //     let find_res = collection.find(filter, None).await?;
-
-    //     Ok(find_res.try_collect().await.unwrap_or_else(|_| vec![]))
-    // }
-
     pub async fn set_audio_tag_refer(
         mongodb_client: mongodb::Client,
-        // doc_id: &i64,
         doc_id: &ObjectId,
-        tag_id: &ObjectId,
-        // tag_id: &i64,
-        
+        tag_id: &ObjectId,        
     ) -> Result<UpdateResult, Error> {
         let collection = Self::get_collection(mongodb_client.clone());
 
-        // let doc_id = doc_id.to_string();
         let query = doc! {
             "_id": doc_id
         };
@@ -428,7 +313,7 @@ impl AudioFile {
 
     pub async fn delete_by_selfs(
         mongodb_client: mongodb::Client,
-        target: &Vec<document::audio::AudioFile>,
+        target: &Vec<dto::AudioFile>,
     ) -> Result<DeleteResult, mongodb::error::Error> {
         let collection = Self::get_collection(mongodb_client.clone());
         
@@ -449,12 +334,11 @@ impl AudioFile {
 
     pub async fn update_self(
         mongodb_client: mongodb::Client,
-        documents: &Vec<document::audio::AudioFile>,
+        documents: &Vec<dto::AudioFile>,
     ) -> Vec<Result<UpdateResult, Error>> {
         let collection = Self::get_collection(mongodb_client.clone());
-        
-        // let doc_id = doc_id.to_string();
         let mut update_results: Vec<Result<UpdateResult, Error>> = vec![];
+
         for document in documents.iter() {
             let query = doc! {
                 "_id": document.id,
@@ -476,19 +360,18 @@ impl AudioFile {
 
 pub struct AudioTag {}
 
-impl GetCollection<document::audio::AudioTag> for AudioTag {
-    fn get_collection(mongodb_client: mongodb::Client) -> mongodb::Collection<document::audio::AudioTag> {
+impl GetCollection<dto::AudioTag> for AudioTag {
+    fn get_collection(mongodb_client: mongodb::Client) -> mongodb::Collection<dto::AudioTag> {
         mongodb_client
             .database("cirrus")
-            .collection::<document::audio::AudioTag>("audio_tag")
+            .collection::<dto::AudioTag>("audio_tag")
     }
 }
 
 impl AudioTag {
     pub async fn create(
-        // db_handle: MutexGuard<'_, mongodb::Database>,
         mongodb_client: mongodb::Client,
-        doc: document::audio::AudioTag
+        doc: dto::AudioTag
     ) -> Result<mongodb::results::InsertOneResult, mongodb::error::Error> {
         let collection = Self::get_collection(mongodb_client.clone());
         collection.insert_one(doc, None).await
@@ -498,12 +381,8 @@ impl AudioTag {
         mongodb_client: mongodb::Client,
         limit: i64,
         page: u64,
-    ) -> Vec<document::audio::AudioTag> {
+    ) -> Vec<dto::AudioTag> {
         let collection = Self::get_collection(mongodb_client.clone());
-        // let options = mongodb::options::FindOptions {
-        //     limit,
-        //     ..Default::default()
-        // };
 
         let options = mongodb::options::FindOptions::builder()
             .limit(limit)
@@ -511,20 +390,14 @@ impl AudioTag {
             .build();
 
         let find_res = collection.find(None, options).await.unwrap();
-        // let docs: Vec<_> = find_res.map(|item| item.unwrap()).collect();
-        // let docs: Vec<Result<document::AudioLibrary, mongodb::error::Error>> = find_res.collect().await;
-        // docs
 
         find_res.try_collect().await.unwrap_or_else(|_| vec![])
-
-        // let doc_collect = find_res.collect::<document::AudioLibrary>();
-        // let doc_collect = find_res.collect::<Vec<Result<document::AudioLibrary, mongodb::error::Error>>>();
     }
 
     pub async fn get_by_ids(
         mongodb_client: mongodb::Client,
         ids: Vec<ObjectId>,
-    ) -> Result<Vec<document::audio::AudioTag>, mongodb::error::Error> {
+    ) -> Result<Vec<dto::AudioTag>, mongodb::error::Error> {
         let collection = Self::get_collection(mongodb_client.clone());
 
         let filter = doc! {
@@ -555,44 +428,20 @@ impl AudioTag {
         Ok(delete_res)
     }
 
-    // pub async fn update_self(
-    //     mongodb_client: mongodb::Client,
-    //     // doc_id: &i64,
-    //     document: document::AudioTag,
-    //     // tag_id: &i64,
-        
-    // ) -> Result<UpdateResult, Error> {
-    //     let collection = Self::get_collection(mongodb_client.clone());
-        
-    //     // let doc_id = doc_id.to_string();
-    //     let query = doc! {
-    //         "_id": document.id,
-    //     };
-
-    //     let serialized_document = mongodb::bson::to_document(&document).unwrap();
-    //     // document.
-    //     let update = doc! {
-    //         "$set": serialized_document,
-    //     };
-
-    //     collection.update_one(query, update, None).await
-    // }
-
     pub async fn update_self(
         mongodb_client: mongodb::Client,
-        documents: &Vec<document::audio::AudioTag>,
+        documents: &Vec<dto::AudioTag>,
     ) -> Vec<Result<UpdateResult, Error>> {
         let collection = Self::get_collection(mongodb_client.clone());
-        
-        // let doc_id = doc_id.to_string();
         let mut update_results: Vec<Result<UpdateResult, Error>> = vec![];
+
         for document in documents.iter() {
             let query = doc! {
                 "_id": document.id,
             };
 
             let serialized_document = mongodb::bson::to_document(&document).unwrap();
-            // document.
+
             let update = doc! {
                 "$set": serialized_document,
             };

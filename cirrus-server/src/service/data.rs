@@ -9,11 +9,15 @@ use crate::{logic, model};
 
 use super::GetMongoClient;
 
-pub struct AudioDataSvcImpl {}
+pub struct AudioDataSvcImpl {
+    logic: logic::AudioFile,
+}
 
 impl Default for AudioDataSvcImpl {
     fn default() -> Self {
-        Self {  }
+        Self { 
+            logic: logic::AudioFile::default(),
+        }
     }
 }
 
@@ -44,7 +48,15 @@ impl AudioDataSvc for AudioDataSvcImpl {
             println!("warn: unknown remote address tries to request");
         }
 
-        let res = match logic::AudioFile::read_meta(self.create_db_client().await?, audio_tag_id).await {
+        // let res = match logic::AudioFile::read_meta(self.create_db_client().await?, audio_tag_id).await {
+        //     Ok(res) => Response::new(res),
+        //     Err(err) => return Err(Status::new(Code::Internal, err.to_string())),
+        // };
+
+        let res = match self.logic.read_meta(
+            self.create_db_client().await?, 
+            audio_tag_id
+        ).await {
             Ok(res) => Response::new(res),
             Err(err) => return Err(Status::new(Code::Internal, err.to_string())),
         };
@@ -66,12 +78,23 @@ impl AudioDataSvc for AudioDataSvcImpl {
             println!("warn: unknown remote address tries to request");
         }
 
-        let mut packets = match logic::AudioFile::get_audio_sample_iterator(
+        // let mut packets = match logic::AudioFile::get_audio_sample_iterator(
+        //     self.create_db_client().await?, 
+        //     &req.audio_tag_id, 
+        //     req.packet_start_idx.try_into().unwrap(), 
+        //     req.packet_num.try_into().unwrap(),
+        //     req.channels,
+        // ).await {
+        //     Ok(iter) => iter,
+        //     Err(err) => return Err(Status::new(Code::Internal, err.to_string())),
+        // };
+
+        let mut packets = match self.logic.get_audio_sample_iterator(
             self.create_db_client().await?, 
             &req.audio_tag_id, 
             req.packet_start_idx.try_into().unwrap(), 
-            req.packet_num.try_into().unwrap(),
-            req.channels,
+            req.packet_num.try_into().unwrap(), 
+            req.channels
         ).await {
             Ok(iter) => iter,
             Err(err) => return Err(Status::new(Code::Internal, err.to_string())),

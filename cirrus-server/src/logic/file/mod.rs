@@ -11,6 +11,7 @@ use cirrus_protobuf::api::AudioMetaRes;
 
 use mongodb::bson;
 
+use crate::model::{crud, document};
 use crate::{model, settings::Settings};
 
 use symphonia::core::codecs::CODEC_TYPE_NULL;
@@ -21,24 +22,56 @@ use symphonia::core::probe::Hint;
 
 use self::packet::Packets;
 
-pub struct AudioFile {}
+pub struct AudioFile {
+    crud_audio_file: crud::AudioFile,
+    crud_audio_tag: crud::AudioTag,
+}
+
+impl Default for AudioFile {
+    fn default() -> Self {
+        Self { 
+            crud_audio_file: Default::default(),
+            crud_audio_tag: Default::default(),
+        }
+    }
+}
 
 impl AudioFile {
     pub async fn read_meta(
-        mongodb_client: mongodb::Client,
+        &self,
+        db: mongodb::Client,
         audio_tag_id: &str
     ) -> Result<AudioMetaRes, anyhow::Error> {        
         let settings = Settings::get()?;
 
         let audio_tag_id = ObjectId::parse_str(audio_tag_id).unwrap();
-        let audio_file = model::audio::AudioFile::find_by_audio_tag_id(mongodb_client.clone(), audio_tag_id).await.unwrap();
+        // let audio_tag = match self.crud_audio_tag
+        //     .single
+        //     .get(db.clone(), &audio_tag_id)
+        //     .await? {
+        //         Some(item) => item,
+        //         None => return Err(anyhow::anyhow!("failed to find audio tag"))
+        //     };
+
+        let audio_file = self.crud_audio_file
+            .single
+            .get(
+                db.clone(),
+                None,
+                Some(
+                    document::audio::query_audio_tag_referer(&audio_tag_id)
+                ),
+            )
+            .await?;
+            
+        // let audio_file = model::audio::AudioFile::find_by_audio_tag_id(mongodb_client.clone(), audio_tag_id).await.unwrap();
 
         let audio_file = match audio_file {
             Some(audio_file) => audio_file,
             None => return Err(anyhow::anyhow!("failed to retrieve audio file information")),
         };
 
-        let file = match File::open(audio_file.get_path()) {
+        let file = match File::open(audio_file.get_os_path()) {
             Ok(file) => file,
             Err(_) => return Err(anyhow::anyhow!("failed to load file")),
         };
@@ -80,7 +113,8 @@ impl AudioFile {
     }
 
     pub async fn get_audio_sample_iterator(
-        mongodb_client: mongodb::Client,
+        &self,
+        db: mongodb::Client,
         audio_tag_id: &str,
         packet_start_idx: usize,
         packet_num: usize,
@@ -89,14 +123,23 @@ impl AudioFile {
         let settings = Settings::get()?;
         
         let audio_tag_id = ObjectId::parse_str(audio_tag_id).unwrap();
-        let audio_file = model::audio::AudioFile::find_by_audio_tag_id(mongodb_client.clone(), audio_tag_id).await.unwrap();
+        // let audio_file = model::audio::AudioFile::find_by_audio_tag_id(mongodb_client.clone(), audio_tag_id).await.unwrap();
+        let audio_file = self.crud_audio_file
+            .single
+            .get(
+                db.clone(),
+                None,
+                Some(
+                    document::audio::query_audio_tag_referer(&audio_tag_id)
+                )
+            ).await?;
 
         let audio_file = match audio_file {
             Some(audio_file) => audio_file,
             None => return Err(anyhow::anyhow!("failed to retrieve audio file information")),
         };
 
-        let file = match File::open(audio_file.get_path()) {
+        let file = match File::open(audio_file.get_os_path()) {
             Ok(file) => file,
             Err(_err) => return Err(anyhow::anyhow!("failed to load file")),
         };
