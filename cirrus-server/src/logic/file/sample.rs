@@ -1,7 +1,7 @@
 use std::fs::File;
 
 use itertools::Itertools;
-use symphonia::core::{formats::{FormatReader, SeekMode, SeekTo}, io::MediaSourceStream, probe::Hint, codecs::{CODEC_TYPE_NULL, Decoder}, audio::SampleBuffer, units::Time, errors::Error};
+use symphonia::core::{formats::{FormatReader, SeekMode, SeekTo}, io::MediaSourceStream, probe::Hint, codecs::{CODEC_TYPE_NULL, Decoder}, audio::SampleBuffer, errors::Error};
 
 pub struct SampleFrames {
     media_reader: Box<dyn FormatReader>,

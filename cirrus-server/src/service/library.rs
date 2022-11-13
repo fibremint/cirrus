@@ -55,8 +55,6 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
             println!("warn: unknown remote address tries to request");
         }
 
-        // self.logic.add_audio_library(db, library_root)
-
         let res = match self.logic.add_audio_library(self.create_db_client().await?, path).await {
             Ok(_) => Response::new(CirrusResponse {
                 code: Code::Ok as u32,

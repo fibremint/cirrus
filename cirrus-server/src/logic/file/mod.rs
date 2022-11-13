@@ -12,7 +12,7 @@ use cirrus_protobuf::api::AudioMetaRes;
 use mongodb::bson;
 
 use crate::model::{crud, document};
-use crate::{model, settings::Settings};
+use crate::settings::Settings;
 
 use symphonia::core::codecs::CODEC_TYPE_NULL;
 use symphonia::core::formats::FormatOptions;
@@ -24,14 +24,12 @@ use self::packet::Packets;
 
 pub struct AudioFile {
     crud_audio_file: crud::AudioFile,
-    crud_audio_tag: crud::AudioTag,
 }
 
 impl Default for AudioFile {
     fn default() -> Self {
         Self { 
             crud_audio_file: Default::default(),
-            crud_audio_tag: Default::default(),
         }
     }
 }
@@ -45,13 +43,6 @@ impl AudioFile {
         let settings = Settings::get()?;
 
         let audio_tag_id = ObjectId::parse_str(audio_tag_id).unwrap();
-        // let audio_tag = match self.crud_audio_tag
-        //     .single
-        //     .get(db.clone(), &audio_tag_id)
-        //     .await? {
-        //         Some(item) => item,
-        //         None => return Err(anyhow::anyhow!("failed to find audio tag"))
-        //     };
 
         let audio_file = self.crud_audio_file
             .single
@@ -64,8 +55,6 @@ impl AudioFile {
             )
             .await?;
             
-        // let audio_file = model::audio::AudioFile::find_by_audio_tag_id(mongodb_client.clone(), audio_tag_id).await.unwrap();
-
         let audio_file = match audio_file {
             Some(audio_file) => audio_file,
             None => return Err(anyhow::anyhow!("failed to retrieve audio file information")),
@@ -123,7 +112,7 @@ impl AudioFile {
         let settings = Settings::get()?;
         
         let audio_tag_id = ObjectId::parse_str(audio_tag_id).unwrap();
-        // let audio_file = model::audio::AudioFile::find_by_audio_tag_id(mongodb_client.clone(), audio_tag_id).await.unwrap();
+
         let audio_file = self.crud_audio_file
             .single
             .get(

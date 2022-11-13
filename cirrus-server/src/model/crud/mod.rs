@@ -1,8 +1,7 @@
 use std::path::Path;
 
-use async_trait::async_trait;
 use bson::{oid::ObjectId, Document};
-use futures::stream::{StreamExt, TryStreamExt};
+use futures::stream::TryStreamExt;
 use mongodb::results::{InsertOneResult, InsertManyResult, DeleteResult, UpdateResult};
 
 mod file;
@@ -16,21 +15,18 @@ pub use tag::AudioTag;
 
 use crate::util;
 
-use super::{GetCollection, document, dto::{self, GetPathKey, GetPathValue}};
+use super::{document, dto::{GetPathKey, GetPathValue}};
 
 
 pub struct Pagination<T> {
-    object: Option<T>,
+    _object: Option<T>,
     col_fn: fn(mongodb::Client) -> mongodb::Collection<T>,
 }
 
-impl<T> Pagination<T> 
-// where
-//     T: Serialize,
-{
+impl<T> Pagination<T> {
     fn new(col_fn: fn(mongodb::Client) -> mongodb::Collection<T>) -> Self {
         Self {
-            object: None,
+            _object: None,
             col_fn,
         }
     }
@@ -64,53 +60,19 @@ where
     }
 }
 
-
-// #[async_trait]
-// pub trait Pagination {
-//     async fn get_paginated<T>(
-//         db: mongodb::Client,
-//         limit: i64,
-//         page: u64
-//     ) -> Vec<T>;
-// }
-
-pub struct CrudMany<T> 
-// where
-//     T: Serialize,
-{
-    object: Option<T>,
+pub struct CrudMany<T> {
+    _object: Option<T>,
     col_fn: fn(mongodb::Client) -> mongodb::Collection<T>,
 }
 
-impl<T> CrudMany<T> 
-// where
-//     T: Serialize,
-{
+impl<T> CrudMany<T> {
     fn new(col_fn: fn(mongodb::Client) -> mongodb::Collection<T>) -> Self {
         Self {
-            object: None,
+            _object: None,
             col_fn,
         }
     }
 }
-
-// impl<T: Serialize> Default for CrudMany<T> {
-//     fn default() -> Self {
-//         Self { object: None }
-//     }
-// }
-
-// impl<T> CrudMany<T> {
-//     pub fn new() -> Self {
-//         Self { object: T }
-//     }
-// }
-
-// impl<T: Serialize> Default for CrudMany<T> {
-//     fn default() -> Self {
-//         Self { object: T }
-//     }
-// }
 
 impl<T> CrudMany<T> 
 where
@@ -132,8 +94,6 @@ where
         &self,
         db: mongodb::Client,
     ) -> Result<Vec<T>, anyhow::Error> {
-        // let col = db.database("cirrus").collection::<dto::AudioLibrary>("library_roots");
-
         let find_res = (self.col_fn)(db)
             .find(None, None)
             .await?;
@@ -162,8 +122,6 @@ where
             },
         };
 
-        // let query = document::query_many_id(ids);
-
         let find_res = (self.col_fn)(db)
             .find(query, None)
             .await?;
@@ -183,11 +141,6 @@ where
         todo!()
     }
 
-    // async fn delete_many(
-    //     db: mongodb::Client,
-    //     docs: &Vec<Self::Document>
-    // ) -> Result<DeleteResult, anyhow::Error>;
-
     pub async fn delete_many(
         &self,
         db: mongodb::Client,
@@ -205,17 +158,15 @@ where
     }
 }
 
-// #[async_trait]
-
 pub struct CrudSingle<T> {
-    object: Option<T>,
+    _object: Option<T>,
     col_fn: fn(mongodb::Client) -> mongodb::Collection<T>
 }
 
 impl<T> CrudSingle<T> {
     fn new(col_fn: fn(mongodb::Client) -> mongodb::Collection<T>) -> Self {
         Self {
-            object: None,
+            _object: None,
             col_fn,
         }
     }
@@ -255,8 +206,6 @@ where
                     document::query_single_id(id.unwrap())
                 },
             };
-
-        // let query = document::query_single_id(id);
 
         let found_doc = (self.col_fn)(db)
             .find_one(query, None)
@@ -299,14 +248,14 @@ where
 }
 
 pub struct PathOperation<T> {
-    object: Option<T>,
+    _object: Option<T>,
     col_fn: fn(mongodb::Client) -> mongodb::Collection<T>,
 }
 
 impl<T> PathOperation<T> {
     fn new(col_fn: fn(mongodb::Client) -> mongodb::Collection<T>) -> Self {
         Self {
-            object: None,
+            _object: None,
             col_fn,
         }
     }
@@ -340,7 +289,6 @@ where
         db: mongodb::Client,
         path: &str
     ) -> Result<Vec<T>, anyhow::Error> {
-        // let (path_key, path_val) = doc.get_mat_path();
         let query = document::path::query_path(T::get_mat_path_key(), path);
 
         let find_res = (self.col_fn)(db)
@@ -375,7 +323,6 @@ where
         doc: &T,
         timestamp: i64
     ) -> Result<UpdateResult, anyhow::Error> {
-        // let (path_key, path_val) = doc.get_mat_path();
         let query = document::path::query_path(T::get_mat_path_key(), doc.get_mat_path_val());
 
         let update = document::time::create_update_timestamp(timestamp);
@@ -402,34 +349,3 @@ where
         Ok(find_res.is_some())
     }
 }
-
-// #[async_trait]
-// pub trait PathOperation {
-//     type Document;
-
-//     async fn get_by_path(
-//         db: mongodb::Client,
-//         path: &Path
-//     ) -> Result<Vec<Self::Document>, anyhow::Error>;
-
-//     async fn get_by_materialized_path(
-//         db: mongodb::Client,
-//         path: &str
-//     ) -> Result<Vec<Self::Document>, anyhow::Error>;
-
-//     async fn delete_by_path(
-//         db: mongodb::Client,
-//         path: &Path
-//     ) -> Result<DeleteResult, anyhow::Error>;
-
-//     async fn update_modified_timestamp(
-//         db: mongodb::Client,
-//         doc: &Self::Document,
-//         timestamp: i64
-//     ) -> Result<UpdateResult, anyhow::Error>;
-
-//     async fn check_exists_by_path(
-//         db: mongodb::Client,
-//         path: &Path
-//     ) -> Result<bool, anyhow::Error>;
-// }

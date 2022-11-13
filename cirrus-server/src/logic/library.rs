@@ -1,11 +1,8 @@
 use std::{
-    fs::File,
     path::{Path, PathBuf}, collections::{HashMap, HashSet},
 };
 
-use aiff::reader::AiffReader;
 use bson::oid::ObjectId;
-use chrono::{Utc, TimeZone};
 
 use itertools::Itertools;
 use mongodb::bson;
@@ -13,7 +10,7 @@ use walkdir::{DirEntry, WalkDir};
 
 use crate::{
     util, 
-    model::{crud, dto::{self, GetPathValue}, document}
+    model::{crud, dto::{self, GetPathValue}}
 };
 
 // * path not exist -> return not found
@@ -87,7 +84,6 @@ impl AudioLibrary {
             return Err(anyhow::anyhow!("library {} does not exists", library_root.to_str().unwrap()))
         }
 
-        // if crud::AudioLibraryRoot::check_exists_by_path(db.clone(), library_root).await? {
         if self.crud_audio_lib_root.path.check_exists_by_path(db.clone(), library_root).await? {
             return Err(anyhow::anyhow!("path '{:?}' already exists", library_root))
         }
@@ -107,12 +103,6 @@ impl AudioLibrary {
             .map(|item| dto::AudioLibrary::new(&item.path()))
             .collect::<Vec<_>>();
 
-        // let audio_library_root_doc = dto::AudioLibrary::new(&library_root);
-
-        // let create_lib_res = Crud::<dto::AudioLibrary>::create(
-        // let al = crud::AudioLibrary::default();
-
-        // let create_lib_res = crud::AudioLibrary::default()::
         let create_lib_root_res = match self.crud_audio_lib_root.single.create(
                 db.clone(), 
                 &dto::AudioLibrary::new(&library_root)
@@ -120,24 +110,16 @@ impl AudioLibrary {
                 Ok(res) => res,
                 Err(err) => return Err(anyhow::anyhow!(err)),
         };
-        // let library_create_res = crud::AudioLibraryRoot::create(db.clone(), audio_library_root_doc).await;
 
         if !library_docs.is_empty() {
             self.crud_audio_lib.many.create_many(db.clone(), library_docs).await?;
-            // crud::AudioLibrary::create_many(db.clone(), library_docs).await.unwrap();
         }
         
         if !audio_file_docs.is_empty() {
             self.crud_audio_file.many.create_many(db.clone(), audio_file_docs).await?;
-            // crud::AudioFile::create_many(db.clone(), &audio_file_docs).await.unwrap();
         }
 
         Ok(format!("{:?}", create_lib_root_res.inserted_id))
-
-        // match create_lib_res {
-        //     Ok(res) => return Ok(format!("{:?}", res.inserted_id)),
-        //     Err(_err) => return Err(anyhow::anyhow!("failed to create library {:?}", library_root)),
-        // }
     }
 
     pub async fn remove_audio_library(
@@ -145,7 +127,6 @@ impl AudioLibrary {
         db: mongodb::Client,
         path: &Path
     ) -> Result<String, anyhow::Error> {
-        // if !crud::AudioLibraryRoot::check_exists_by_path(db.clone(), path).await? {
         if !self.crud_audio_lib_root.path.check_exists_by_path(db.clone(), path).await? {
             return Err(anyhow::anyhow!("path '{:?}' not exists", path))
         }
@@ -154,34 +135,16 @@ impl AudioLibrary {
         let mut delete_file_count = 0;
         let mut delete_library_count = 0;
 
-        // let delete_audio_libraries = crud::AudioLibrary::get_by_path(
-        //         db.clone(), 
-        //         path
-        //     ).await?;
-
         let delete_audio_libs = self.crud_audio_lib.path.get_by_path(
                 db.clone(), 
                 path
             ).await?;
         
         for audio_lib in delete_audio_libs.iter() {
-            // let delete_audio_library_path = util::path::materialized_to_path(&delete_audio_library.path.as_ref().unwrap());
-            // let delete_audio_library_path = Path::new(&delete_audio_library_path);
-            
-            // let audio_files = crud::AudioFile::get_by_materialized_path(
-            //         db.clone(), 
-            //         &audio_lib.materialized_path
-            //     ).await?;
-
             let audio_files = self.crud_audio_file.path.get_by_materialized_path(
                     db.clone(), 
                     &audio_lib.get_mat_path_val()
                 ).await?;
-            // let audio_files = crud::AudioFile::get_self_by_library_path(db.clone(), delete_audio_library_path, false).await.unwrap();
-            
-            // let delete_audio_tag_ids = audio_files.Wter()
-            //     .map(|item| (item.id.unwrap(), item.audio_tag_refer.unwrap()) )
-            //     .collect::<Vec<_>>();
 
             let (delete_file_ids, delete_tag_ids): (Vec<ObjectId>, Vec<Option<ObjectId>>)  = audio_files
                 .into_iter()
@@ -190,17 +153,11 @@ impl AudioLibrary {
                     item.audio_tag_refer
                 ))
                 .unzip();
-                // .collect::<Vec<_>>();
 
             let delete_tag_ids = delete_tag_ids
                 .into_iter()
                 .filter_map(|item| item)
                 .collect_vec();
-
-            // let delete_audio_tag_res = crud::AudioTag::delete_many(
-            //         db.clone(), 
-            //         &delete_tag_ids
-            //     ).await?;
 
             let delete_audio_tag_res = self.crud_audio_tag
                 .many
@@ -208,13 +165,8 @@ impl AudioLibrary {
                     db.clone(), 
                     &delete_tag_ids
                 ).await?;
-            // let audio_tag_delete_res = model::audio::AudioTag::delete_by_ids(db.clone(), &delete_audio_tag_ids).await.unwrap();
+
             delete_tag_count += delete_audio_tag_res.deleted_count;
-    
-            // let delete_audio_file_res = crud::AudioFile::delete_many(
-            //         db.clone(),
-            //         &delete_file_ids
-            //     ).await?;
 
             let delete_audio_file_res = self.crud_audio_file
                 .many
@@ -222,13 +174,8 @@ impl AudioLibrary {
                     db.clone(), 
                     &delete_file_ids
                 ).await?;
-            // let audio_file_delete_res = model::audio::AudioFile::delete_by_selfs(db.clone(), &audio_files).await.unwrap();
-            delete_file_count += delete_audio_file_res.deleted_count;
 
-            // let delete_lib_res = crud::AudioLibrary::delete(
-            //         db.clone(),
-            //         audio_lib.id.unwrap(),    
-            //     ).await?;
+            delete_file_count += delete_audio_file_res.deleted_count;
 
             let delete_lib_res = self.crud_audio_lib
                 .single
@@ -236,12 +183,10 @@ impl AudioLibrary {
                     db.clone(), 
                     &audio_lib.id.unwrap()
                 ).await?;
-            // let library_delete_res = model::audio::AudioLibrary::delete_by_path(db.clone(), delete_audio_library_path).await.unwrap();
+
             delete_library_count += delete_lib_res.deleted_count;
         }
 
-        // model::audio::AudioLibraryRoot::delete_by_path(db.clone(), path).await;
-        // crud::AudioLibraryRoot::delete_by_path(db.clone(), path).await?;
         self.crud_audio_lib_root
             .path
             .delete_by_path(
@@ -256,18 +201,12 @@ impl AudioLibrary {
         &self,
         db: mongodb::Client,
     ) -> Result<(), anyhow::Error> {
-        // let audio_libs = crud::AudioLibraryRoot::get_all(db.clone()).await?;
         let audio_libs = self.crud_audio_lib_root
             .many
             .get_all(db.clone())
             .await?;
-        // let audio_libraries = model::audio::AudioLibraryRoot::get_all(db.clone()).await;
 
         for audio_lib in audio_libs.into_iter() {
-            // let audio_files = crud::AudioFile::get_by_materialized_path(
-            //         db.clone(), 
-            //         &audio_lib.materialized_path
-            //     ).await?;
             let audio_files = self.crud_audio_file
                 .path
                 .get_by_materialized_path(
@@ -279,49 +218,15 @@ impl AudioLibrary {
                 .into_iter()
                 .filter(|item| item.audio_tag_refer.is_none())
                 .collect_vec();
-            // let audio_files = model::audio::AudioFile::get_self_by_library_path(db.clone(), Path::new(&audio_library.id), true).await.unwrap();
 
             for audio_file in audio_files.iter_mut() {
-                // let parent_path = util::path::materialized_to_path(&audio_file.parent_path);
-                // let audio_tag = Self::create_audio_tag(None, &parent_path, &audio_file.filename);
                 let audio_tag = dto::AudioTag::new(
                         None,
                         &util::path::materialized_to_path(&audio_file.parent_path), 
                         &audio_file.filename
                     )?;
 
-                // if let Err(err) = crud::AudioTag::create(
-                //         db.clone(),
-                //         audio_tag
-                //     ).await {
-                //         return Err(anyhow::anyhow!(err));
-                //     }
                 self.crud_audio_tag.single.create(db.clone(), &audio_tag).await?;
-
-                // let audio_tag_id = audio_tag.id.clone();
-                
-                // match model::audio::AudioTag::create(db.clone(), audio_tag).await {
-                //     Ok(_) => (),
-                //     Err(err) => return Err(format!("{}", err)),
-                // }
-
-                // let update_res = crud::AudioFile::update(
-                //         db.clone(),
-                //         &audio_file.id.unwrap(),
-                //         document::audio::update_audio_tag_referer(
-                //             &audio_file.id.unwrap()
-                //         )
-                //     ).await?;
-
-                // let update_res = self.crud_audio_file
-                //     .single
-                //     .update(
-                //         db.clone(), 
-                //         &audio_file.id.unwrap(), 
-                //         document::audio::update_audio_tag_referer(
-                //             &audio_tag.id.unwrap()
-                //         )
-                //     ).await?;
 
                 audio_file.audio_tag_refer = audio_tag.id.clone();
 
@@ -333,7 +238,6 @@ impl AudioLibrary {
                         audio_file
                     ).await?;
 
-                // let update_res = model::audio::AudioFile::set_audio_tag_refer(db.clone(), &audio_file.id.unwrap(), &audio_tag_id.unwrap()).await.unwrap();
                 println!("ur: {:?}", update_res);
             }
         }
@@ -346,7 +250,6 @@ impl AudioLibrary {
         db: mongodb::Client,
     ) -> Result<(), anyhow::Error> {
         let audio_lib_roots = self.crud_audio_lib_root.many.get_all(db.clone()).await?;
-        // let audio_library_roots = model::audio::AudioLibraryRoot::get_all(db.clone()).await;
         let audio_types = vec!["aiff"];
 
         for audio_lib_root in audio_lib_roots.iter() {
@@ -356,7 +259,7 @@ impl AudioLibrary {
                     db.clone(), 
                     &audio_lib_root.get_mat_path_val()
                 ).await?;
-            // let audio_libraries = model::audio::AudioLibrary::get_by_path(db.clone(), Path::new(&audio_library_root.id)).await.unwrap();
+
             let audio_libraries: HashMap<_, _> = audio_libs.iter()
                 .map(|item| (item.os_path.clone(), item))
                 .collect();
@@ -410,13 +313,12 @@ impl AudioLibrary {
                 for deleted_library_pathstr in deleted_library_pathstrs.iter() {
                     println!("sync delete audio library: {:?}", deleted_library_pathstr);
                     let deleted_audio_lib_path = Path::new(deleted_library_pathstr);
-                    // let audio_files = model::audio::AudioFile::get_self_by_library_path(db.clone(), delted_library_path, false).await.unwrap();
+
                     let audio_files = self.crud_audio_file.path.get_by_path(db.clone(), deleted_audio_lib_path).await?;
                     let delete_audio_tag_ids: Vec<_> = audio_files.iter()
                         .filter_map(|item| item.audio_tag_refer)
                         .collect();
 
-                    // let _audio_tag_delete_res = self.crud_audio_ AudioTag::delete_by_ids(db.clone(), &delete_audio_tag_ids).await.unwrap();
                     let _delete_audio_tag_res = self.crud_audio_tag
                         .many
                         .delete_many(
@@ -424,15 +326,12 @@ impl AudioLibrary {
                             &delete_audio_tag_ids
                         ).await?;
 
-                    // let _audio_file_delete_res = model::audio::AudioFile::delete_by_selfs(db.clone(), &audio_files).await.unwrap();
                     let _delete_audio_file_res = self.crud_audio_file
                         .many
                         .delete_many(
                             db.clone(), 
                             &audio_files.iter().map(|item| item.id.unwrap()).collect_vec()
                         ).await?;
-
-                    // let _library_delete_res = model::audio::AudioLibrary::delete_by_path(db.clone(), delted_library_path).await.unwrap();
             
                     let _delete_audio_lib_res = self.crud_audio_lib
                         .path
@@ -449,7 +348,6 @@ impl AudioLibrary {
                 for updated_local_library in updated_local_libraries.into_iter() {
                     let local_library_path = Path::new(&updated_local_library.os_path);
 
-                    // let audio_files = model::audio::AudioFile::get_self_by_library_path(db.clone(), local_library_path.clone(), false).await.unwrap();
                     let audio_files = self.crud_audio_file
                         .path
                         .get_by_path(
@@ -519,7 +417,6 @@ impl AudioLibrary {
                         .collect();
 
                     if !new_audio_file_docs.is_empty() {
-                        // model::audio::AudioFile::create_many(db.clone(), &new_audio_file_docs).await.unwrap();
                         self.crud_audio_file
                             .many
                             .create_many(
@@ -534,7 +431,6 @@ impl AudioLibrary {
                             .filter_map(|item| item.audio_tag_refer)
                             .collect();
 
-                        // model::audio::AudioTag::delete_by_ids(db.clone(), &deleted_audio_tag_ids).await.unwrap();
                         self.crud_audio_tag
                             .many
                             .delete_many(
@@ -542,7 +438,6 @@ impl AudioLibrary {
                                 &deleted_audio_tag_ids
                             ).await?;
 
-                        // model::audio::AudioFile::delete_by_selfs(db.clone(), &delete_audio_file_docs).await.unwrap();
                         self.crud_audio_file
                             .many
                             .delete_many(
@@ -552,7 +447,6 @@ impl AudioLibrary {
                     }
 
                     if !updated_audio_files.is_empty() {
-                        // model::audio::AudioFile::update_self(db.clone(), &updated_audio_files).await;
                         self.crud_audio_file
                             .many
                             .update_many(
@@ -562,7 +456,6 @@ impl AudioLibrary {
                     }
 
                     if !updated_audio_tags.is_empty() {
-                        // model::audio::AudioTag::update_self(db.clone(), &updated_audio_tags).await;
                         self.crud_audio_tag
                             .many
                             .update_many(
@@ -572,7 +465,6 @@ impl AudioLibrary {
                     }
 
                     let modified_ts = util::path::get_timestamp(&local_library_path);
-                    // let _update_local_library_res = model::audio::AudioLibrary::update_modified_timestamp(db.clone(), &updated_local_library.id, local_library_modified_timestamp).await;
                     let _update_local_library_res = self.crud_audio_lib
                         .path
                         .update_modified_timestamp(
@@ -584,12 +476,6 @@ impl AudioLibrary {
             }
 
         }
-        // collection; libraries - audio library root
-        //             libraries-detail - actual contents (sub_dirs, audio_files)
-
-
-
-        // filter updated path (by paths' modified datetime)
 
         Ok(())
     }

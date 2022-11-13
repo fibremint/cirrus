@@ -53,7 +53,6 @@ impl AudioTagSvc for AudioTagSvcImpl {
         let req_items_per_page = request.get_ref().items_per_page;
 
         let (tx, rx) = mpsc::channel(req_items_per_page as usize);
-        // let res = logic::AudioTag::list_audio_tags(self.create_db_client().await?, req_items_per_page, req_page).await.unwrap();
 
         let res = self.logic.list_audio_tags(
             self.create_db_client().await?, 
