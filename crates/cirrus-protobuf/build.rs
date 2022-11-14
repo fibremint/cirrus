@@ -15,6 +15,8 @@ fn main() -> Result<(), anyhow::Error> {
     let project_path = dunce::canonicalize(&project_path).unwrap();
     let proto_path = project_path.join("protobuf");
 
+    println!("proto_path: {:?}", proto_path);
+
     let mut tonic_builder = tonic_build::configure()
         .type_attribute(".cirrus.api.AudioTagRes", "#[derive(serde::Serialize, serde::Deserialize)]")
         .build_server(false)

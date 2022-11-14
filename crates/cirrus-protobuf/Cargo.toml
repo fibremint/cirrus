@@ -12,7 +12,7 @@ edition = "2021"
 [dependencies]
 tonic = { version = "0.6", features = ["codegen"] }
 prost = "0.9"
-serde = "1"
+serde = { version = "1", features = ["derive"] }
 
 [build-dependencies]
 anyhow = "1"
