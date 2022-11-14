@@ -1,4 +1,4 @@
-use std::{fs::File, sync::{Arc, Mutex}};
+use std::fs::File;
 
 use audio::{Buf, Channels};
 use rubato::Resampler;
