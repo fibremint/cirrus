@@ -28,7 +28,6 @@ impl AudioTag {
                 max_item_num as i64, 
                 page
             ).await?;
-        // let get_all_res = model::audio::AudioTag::get_all(mongodb_client.clone(), max_item_num as i64, page).await;
 
         let res = get_all_res
             .iter()
