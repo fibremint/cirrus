@@ -41,12 +41,8 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::set_playback_position,
         ])
         .setup(|app| {
-            let res_root_path = resolve_res_path(app, &RES_PATH_STR);
-
-            let state = state::AppState::new(
-                &res_root_path,
-                &CONFIG_PATH_STR
-            ).unwrap();
+            //let res_root_path = resolve_res_path(app, &RES_PATH_STR);
+            let state = state::AppState::new().unwrap();
 
             app.manage(state);
 

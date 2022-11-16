@@ -18,5 +18,4 @@ fn main() {
 #[cfg(not(target_os = "android"))]
 fn main() {
     add_lib("c++_shared", false);
-
 }

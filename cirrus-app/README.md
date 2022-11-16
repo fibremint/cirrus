@@ -1,5 +1,42 @@
 # Cirrus
 
+## Build and bundle Android APK instruction
+
+**Setting up Android build environemnt**
+
+Follow the instructions described on [Tauri mobile](https://hackmd.io/@lucasfernog/BkHI4e18j).
+
+**Set configuration values**
+
+By default, Cirrus tauri plugin reads the `configs` files located in the `resource` directory and specifies the settings, but at this time, when bundled with Android APK, access the file located in `resource` is restricted.
+
+So you have to specify the setting values manually
+
+* Cirrus gRPC API endpoint: `crates/cirrus-tauri-plugin/src/state.rs`
+
+**Set environment variables**
+
+Run `source ./scripts/android-build-env.sh`
+
+**Build Android target with Cargo**
+
+A command `cargo tauri android build` shall build libraries for Android target. 
+
+However, there will be an error when building `libopus`. 
+The library can be built based on CMake, and the required CMake arguments for Android target can be specified through the toolchain file. However, `cargo-mobile` does not deliver the environment variables/arguments values to `cargo build`.
+
+So you have to build Android target with `cargo` command manually.
+
+Move to `cirrus-app/src-tauri`
+
+Run `cargo build --release --target aarch64-linux-android`
+
+**Build Android target and bundle as APK**
+
+Move to `cirrus-app`
+
+Run `cargo tauri android build -t=aarch64 --apk`
+
 ## Framework7 CLI Options
 
 Framework7 app created with following options:
