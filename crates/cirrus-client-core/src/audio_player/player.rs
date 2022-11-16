@@ -391,7 +391,7 @@ impl AudioStreamInner {
                 source,
                 host_output_sample_rate,
                 host_output_channels as usize
-            )
+            )?
         );
 
         let sample_play_err_fn = |err: cpal::StreamError| {
