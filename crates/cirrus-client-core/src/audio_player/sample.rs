@@ -9,6 +9,7 @@ use std::iter::Iterator;
 
 // use anyhow::anyhow;
 use futures::StreamExt;
+use rubato::Resampler;
 use tokio::runtime::Handle;
 use opus;
 use audio::{Channels, AsInterleavedMut};
@@ -21,19 +22,21 @@ pub struct AudioSample {
 }
 
 impl AudioSample {
-    pub fn new(audio_source: AudioSource, host_sample_rate: u32, host_output_channels: usize) -> Self {
+    pub fn new(audio_source: AudioSource, host_sample_rate: u32, host_output_channels: usize) -> Result<Self, anyhow::Error> {
 
         let inner = Arc::new(
             AudioSampleInner::new(
                 audio_source,
                 host_sample_rate, 
                 host_output_channels
-            )
+            )?
         );
 
-        Self {
-            inner,
-        }
+        Ok(
+            Self {
+                inner,
+            }
+        )
     }
 
     pub fn get_current_playback_position_sec(&self) -> f64 {
@@ -114,10 +117,14 @@ pub struct AudioSampleInner {
     packet_buf: Arc<Mutex<EncodedBuffer>>,
     decoded_sample_frame_buf: Arc<Mutex<Vec<VecDeque<f32>>>>,
     opus_decoder: Arc<Mutex<opus::Decoder>>,
+
+    resampler: Arc<Mutex<rubato::FftFixedIn<f32>>>,
+    resampler_input_buf: Arc<Mutex<Vec<Vec<f32>>>>,
+    resampler_output_buf: Arc<Mutex<Vec<Vec<f32>>>>,
 }
 
 impl AudioSampleInner {
-    pub fn new(source: AudioSource, host_sample_rate: u32, host_output_channels: usize) -> Self {
+    pub fn new(source: AudioSource, host_sample_rate: u32, host_output_channels: usize) -> Result<Self, anyhow::Error> {
         let mut decoded_sample_frame_buf: Vec<VecDeque<f32>> = Vec::with_capacity(2);
 
         for _ in 0..host_output_channels {
@@ -128,21 +135,43 @@ impl AudioSampleInner {
 
         let content_pckts = source.content_packets;
 
-        Self {
-            source,
+        let resampler = rubato::FftFixedIn::new(
+            48_000,
+            host_sample_rate.try_into().unwrap(),
+            960,
+            2,
+            2
+        )?;
 
-            playback_sample_frame_pos: Arc::new(AtomicUsize::new(0)),
-            buffer_status: Arc::new(AtomicUsize::new(AudioSampleBufferStatus::StartFillBuffer as usize)),
-            host_sample_rate,
-            host_output_channels,
-            done_fill_buf_condvar: Arc::new((Mutex::new(true), Condvar::new())),
-
-            packet_playback_idx: Arc::new(AtomicUsize::new(0)),
-            packet_buf: Arc::new(Mutex::new(EncodedBuffer::new(content_pckts))),
-
-            decoded_sample_frame_buf: Arc::new(Mutex::new(decoded_sample_frame_buf)),
-            opus_decoder: Arc::new(Mutex::new(od)),
+        let mut resampler_input_buf = resampler.input_buffer_allocate();
+        
+        for input_buf_ch in resampler_input_buf.iter_mut() {
+            input_buf_ch.extend(vec![0.; 960]);
         }
+
+        let resampler_output_buf = resampler.output_buffer_allocate();
+
+        Ok(
+            Self {
+                source,
+    
+                playback_sample_frame_pos: Arc::new(AtomicUsize::new(0)),
+                buffer_status: Arc::new(AtomicUsize::new(AudioSampleBufferStatus::StartFillBuffer as usize)),
+                host_sample_rate,
+                host_output_channels,
+                done_fill_buf_condvar: Arc::new((Mutex::new(true), Condvar::new())),
+    
+                packet_playback_idx: Arc::new(AtomicUsize::new(0)),
+                packet_buf: Arc::new(Mutex::new(EncodedBuffer::new(content_pckts))),
+    
+                decoded_sample_frame_buf: Arc::new(Mutex::new(decoded_sample_frame_buf)),
+                opus_decoder: Arc::new(Mutex::new(od)),
+    
+                resampler: Arc::new(Mutex::new(resampler)),
+                resampler_input_buf: Arc::new(Mutex::new(resampler_input_buf)),
+                resampler_output_buf: Arc::new(Mutex::new(resampler_output_buf)),
+            }
+        )
     }
 
     fn get_remain_sample_buffer_sec(&self) -> f64 {
@@ -344,8 +373,25 @@ impl AudioSampleInner {
 
                 let r = audio::io::Read::new(decoded_samples);
 
+                let mut resampler_input_buf = self.resampler_input_buf.lock().unwrap(); 
+
+                for ch_idx in 0..2 {
+                    let samples_ch = r.channel(ch_idx);
+                    samples_ch.copy_into_iter(resampler_input_buf[ch_idx].iter_mut())
+                }
+
+                let mut resampler = self.resampler.lock().unwrap();
+                let mut resampler_output_buf = self.resampler_output_buf.lock().unwrap();
+
+                resampler.process_into_buffer(
+                    &resampler_input_buf, 
+                    &mut resampler_output_buf, 
+                    None
+                ).unwrap();
+
                 for (ch_idx, channel_sample_buffer) in ds_buf.iter_mut().enumerate() {
-                    channel_sample_buffer.extend(r.channel(ch_idx));
+                    // channel_sample_buffer.extend(r.channel(ch_idx));
+                    channel_sample_buffer.extend(resampler_output_buf[ch_idx].iter());
                 }
 
                 self.packet_playback_idx.store(p_pos as usize +1, Ordering::SeqCst);
