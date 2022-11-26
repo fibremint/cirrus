@@ -149,7 +149,13 @@ impl AudioSampleInner {
             input_buf_ch.extend(vec![0.; 960]);
         }
 
-        let resampler_output_buf = resampler.output_buffer_allocate();
+        let mut resampler_output_buf = resampler.output_buffer_allocate();
+
+        let rs_output_size = resampler.output_frames_max();
+
+        for output_buf_ch in resampler_output_buf.iter_mut() {
+            output_buf_ch.extend(vec![0.; rs_output_size/2]);
+        }
 
         Ok(
             Self {

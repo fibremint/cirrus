@@ -22,7 +22,8 @@ serde = "1"
 opus = "0.3.0"
 audio = "0.2.0-alpha.3"
 rand = "0.8.5"
-rubato = "0.12.0"
+rubato = { git = "https://github.com/HEnquist/rubato", branch = "next-0.13" }
+#rubato = "0.12.0"
 
 #[build-dependencies]
 #tonic-build = "0.6"
