@@ -1,17 +1,17 @@
 use std::{
-    collections::VecDeque,
+    collections::{VecDeque, HashMap},
     sync::{
         Arc, 
-        atomic::{AtomicUsize, Ordering, AtomicBool},
+        atomic::{AtomicUsize, Ordering, AtomicBool}, Mutex, RwLock
     },
-    thread, path::PathBuf,
+    thread, path::PathBuf, fmt::Display,
 };
 
 use anyhow::anyhow;
 use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
 use tokio::{
     time::Duration, 
-    sync::{mpsc, RwLock}, runtime::Handle,
+    sync::{mpsc}, runtime::Handle,
 };
 use tonic::transport::ClientTlsConfig;
 
@@ -27,9 +27,10 @@ pub struct ServerState {
 }
 
 pub struct AudioPlayer {
-    inner: Arc<RwLock<AudioPlayerInner>>,
+    inner: Arc<AudioPlayerInner>,
     pub server_state: ServerState,
     thread_run_states: Vec<Arc<AtomicBool>>,
+    add_audio_tickets: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
 
 impl AudioPlayer {
@@ -38,37 +39,34 @@ impl AudioPlayer {
     ) -> Self {
         let (tx, mut rx) = mpsc::channel(64);
 
-        let inner = Arc::new(
-            RwLock::new(
-                AudioPlayerInner::new(tx.clone())
-            )
-        );
+        let inner = Arc::new(AudioPlayerInner::new(tx.clone()));
 
         let mut thread_run_states: Vec<Arc<AtomicBool>> = Vec::new();
 
-        let _inner_1 = inner.clone();
+        let inner_1 = inner.clone();
 
         // ref: https://www.reddit.com/r/rust/comments/nwbtsz/help_understanding_how_to_start_and_stop_threads/
-        let thread_run_state_1 = Arc::new(AtomicBool::new(true));
-        let thread_run_state_1_clone = thread_run_state_1.clone();
+        // let thread_run_state_1 = Arc::new(AtomicBool::new(true));
+        // let thread_run_state_1_clone = thread_run_state_1.clone();
+
         thread::spawn(move || loop {
-            println!("start receiver");
-            if !thread_run_state_1_clone.load(Ordering::Relaxed) {
-                println!("terminate receiver");
-                break;
-            }
+            // println!("start receiver");
+            // if !thread_run_state_1_clone.load(Ordering::Relaxed) {
+            //     println!("terminate receiver");
+            //     break;
+            // }
 
             while let Some(data) = rx.blocking_recv() {
             // while let Ok(data) = rx.recv() {
                 println!("received message: {:?}", data);
                 match data {
-                    "stop" => _inner_1.blocking_write().remove_audio(),
+                    "stop" => inner_1.remove_audio(),
                     _ => (),
                 }
             }
         });
         
-        thread_run_states.push(thread_run_state_1);
+        // thread_run_states.push(thread_run_state_1);
 
         let server_state = ServerState {
             grpc_endpoint: grpc_endpoint.to_string(),
@@ -78,7 +76,8 @@ impl AudioPlayer {
         Self {
             inner,
             server_state,
-            thread_run_states
+            thread_run_states,
+            add_audio_tickets: Default::default(),
         }
     }
 
@@ -92,40 +91,75 @@ impl AudioPlayer {
         &self, 
         audio_tag_id: &str
     ) -> Result<f64, anyhow::Error> {
-        self.inner
-            .write()
-            .await.add_audio(
-                &self.server_state,
-                audio_tag_id
-            ).await
+        if self.add_audio_tickets.lock().unwrap().contains_key(audio_tag_id) {
+            return Ok(0.);
+        }
+
+        let add_audio_ticket = Arc::new(
+            AtomicBool::new(true)
+        );
+        let add_audio_ticket2 = add_audio_ticket.clone();
+
+        self.add_audio_tickets.lock().unwrap().insert(audio_tag_id.to_string(), add_audio_ticket);
+
+        let content_len = self.inner.add_audio(
+            &self.server_state, 
+            audio_tag_id,
+            add_audio_ticket2,
+        ).await?;
+
+        self.add_audio_tickets.lock().unwrap().remove(audio_tag_id);
+
+        Ok(content_len)
+
+        // let inner = self.inner.clone();
+        // let ss = self.server_state.clone();
+        // let audio_id = audio_tag_id.to_string();
+
+        // tokio::spawn(async move {
+        //     inner.add_audio(&ss, &audio_id).await.unwrap();
+        // });
+
+        // Ok(0.)
+
+        // self.inner
+        //     .write()
+        //     .await.add_audio(
+        //         &self.server_state,
+        //         audio_tag_id
+        //     ).await
     }
 
     pub fn play(&self) -> Result<(), anyhow::Error> {
-        self.inner.blocking_read().play()
+        self.inner.play()
     }
 
     pub fn stop(&self) {
-        self.inner.blocking_write().remove_audio()
+        for at in self.add_audio_tickets.lock().unwrap().values() {
+            at.store(false, Ordering::Relaxed);
+        }
+
+        self.inner.remove_audio()
     }
 
     pub fn pause(&self) -> Result<(), anyhow::Error> {
-        self.inner.blocking_read().pause()
+        self.inner.pause()
     }
 
     pub fn get_playback_position(&self) -> f64 {
-        self.inner.blocking_read().get_playback_position()
+        self.inner.get_playback_position()
     }
 
     pub fn set_playback_position(&self, position_sec: f64) -> Result<(), anyhow::Error> {
-        self.inner.blocking_read().set_playback_position(position_sec)
+        self.inner.set_playback_position(position_sec)
     }
 
     pub fn get_remain_sample_buffer_sec(&self) -> f64 {
-        self.inner.blocking_read().get_remain_sample_buffer_sec()
+        self.inner.get_remain_sample_buffer_sec()
     }
 
     pub fn get_status(&self) -> PlaybackStatus {
-        self.inner.blocking_read().get_status()
+        self.inner.get_status()
     }
 }
 
@@ -137,11 +171,18 @@ impl Drop for AudioPlayer {
     }
 }
 
+// #[derive(Error, Debug)]
+// enum AudioPlayerErr {
+//     ExipredTicet(String),
+// }
+
 pub struct AudioPlayerInner {
-    ctx: Arc<AudioContext>,
-    streams: VecDeque<AudioStream>,
+    // ctx: Arc<AudioContext>,
+    ctx: AudioContext,
+    streams: RwLock<VecDeque<AudioStream>>,
     tx: mpsc::Sender<&'static str>,
-    status: Arc<AtomicUsize>
+    status: Arc<AtomicUsize>,
+    curr_audio_id: Option<String>,
 }
 
 impl AudioPlayerInner {
@@ -149,20 +190,23 @@ impl AudioPlayerInner {
         tx: mpsc::Sender<&'static str>,
     ) -> Self {
         let ctx = AudioContext::new().unwrap();
-        let ctx = Arc::new(ctx);
+        // let ctx = Arc::new(ctx);
 
         Self {
             ctx,
-            streams: VecDeque::new(),
+            // streams: VecDeque::new(),
+            streams: RwLock::new(VecDeque::new()),
             tx,
-            status: Arc::new(AtomicUsize::new(PlaybackStatus::Stop as usize))
+            status: Arc::new(AtomicUsize::new(PlaybackStatus::Stop as usize)),
+            curr_audio_id: None,
         }
     }
 
     pub async fn add_audio(
-        &mut self, 
+        &self, 
         server_state: &ServerState,
-        audio_tag_id: &str
+        audio_tag_id: &str,
+        add_audio_ticket: Arc<AtomicBool>,
     ) -> Result<f64, anyhow::Error> {
         let audio_source = AudioSource::new(
             &server_state.grpc_endpoint, 
@@ -170,40 +214,67 @@ impl AudioPlayerInner {
             audio_tag_id
         ).await?;
 
-        let audio_ctx_1_clone = self.ctx.clone();
+        // let audio_ctx_1_clone = self.ctx.clone();
         let tx_1_clone = self.tx.clone();
         let status_1_clone = self.status.clone();
 
-        let audio_stream = AudioStream::new(
-            audio_ctx_1_clone, 
+        let mut audio_stream = AudioStream::new(
+            // audio_ctx_1_clone,
+            &self.ctx,
             audio_source,
             tx_1_clone, 
             status_1_clone
         ).unwrap();
+        audio_stream.start_update_loop();
 
         println!("done add audio stream");
 
-        let content_length = audio_stream.inner.read().await.get_content_length();
+        // let content_length = audio_stream.inner.read().await.get_content_length();
+        let content_length = audio_stream.inner.get_content_length();
         println!("content length: {}", content_length);
 
-        self.streams.push_back(audio_stream);
-        println!("done add audio");
+        // self.streams.push_back(audio_stream);
 
-        Ok(content_length)
+        if add_audio_ticket.load(Ordering::Relaxed) {
+            self.streams.write().unwrap().push_back(audio_stream);
+
+            println!("done add audio");
+    
+            return Ok(content_length);
+        }
+
+        Ok(0.)
+
+        // Err(
+        //     anyhow::anyhow!(
+        //         AudioPlayerErr::ExipredTicet(audio_tag_id.to_string())
+        //     )
+        // )
+
     }
 
-    pub fn remove_audio(&mut self) {
+    pub fn remove_audio(&self) {
         // self.streams.remove(0).unwrap();
-        match self.streams.remove(0) {
+        match self.streams.write().unwrap().pop_front() {
             Some(_) => self.status.store(PlaybackStatus::Stop as usize, Ordering::SeqCst),
-            None => (),
+            None => {
+                println!("foo");
+            },
         }
     }
 
     pub fn play(&self) -> Result<(), anyhow::Error> {
         println!("play audio");
 
-        let current_stream = self.streams.front().unwrap();
+        let binding = self.streams.write().unwrap();
+        let current_stream = match binding.front() {
+            Some(cs) => cs,
+            None => {
+                println!("foo");
+
+                return Err(anyhow::anyhow!("fix me"));
+            },
+        };
 
         match current_stream.play() {
             Ok(_) => self.status.store(PlaybackStatus::Play as usize, Ordering::SeqCst),
@@ -220,8 +291,9 @@ impl AudioPlayerInner {
     pub fn pause(&self) -> Result<(), anyhow::Error> {
         println!("pause audio");
 
-        let current_stream = self.streams.front().unwrap();
-        // current_stream.pause()?;
+        let binding = self.streams.read().unwrap();
+        let current_stream = binding.front().unwrap();
+
         match current_stream.pause() {
             Ok(_) => self.status.store(PlaybackStatus::Pause as usize, Ordering::SeqCst),
             Err(e) => {
@@ -235,22 +307,22 @@ impl AudioPlayerInner {
     }
 
     pub fn get_playback_position(&self) -> f64 {
-        match self.streams.front() {
-            Some(stream) => return stream.inner.blocking_read().audio_sample.get_current_playback_position_sec(),
+        match self.streams.read().unwrap().front() {
+            Some(stream) => return stream.inner.audio_sample.get_current_playback_position_sec(),
             None => return 0.0,
         }
     }
 
     pub fn get_remain_sample_buffer_sec(&self) -> f64 {
-        match self.streams.front() {
-            Some(stream) => return stream.inner.blocking_read().audio_sample.get_remain_sample_buffer_sec(),
+        match self.streams.read().unwrap().front() {
+            Some(stream) => return stream.inner.audio_sample.get_remain_sample_buffer_sec(),
             None => return 0.0,
         }
     }
 
     pub fn set_playback_position(&self, position_sec: f64) -> Result<(), anyhow::Error> {
-        match self.streams.front() {
-            Some(stream) => stream.inner.blocking_write().set_playback_position(position_sec)?,
+        match self.streams.read().unwrap().front() {
+            Some(stream) => stream.inner.set_playback_position(position_sec)?,
             None => todo!(),
         }
 
@@ -290,70 +362,64 @@ impl AudioContext {
 }
 
 struct AudioStream {
-    inner: Arc<RwLock<AudioStreamInner>>,
+    inner: Arc<AudioStreamInner>,
     thread_run_states: Vec<Arc<AtomicBool>>,
 }
 
 impl AudioStream {
     pub fn new(
-        ctx: Arc<AudioContext>, 
+        ctx: &AudioContext,
         source: AudioSource, 
         tx: mpsc::Sender<&'static str>,
         audio_player_status: Arc<AtomicUsize>
     ) -> Result<Self, anyhow::Error> {
-        let source_id = source.id.clone();
-
         let inner = AudioStreamInner::new(
             ctx,
             source, 
             tx,
             audio_player_status
         )?;
-        let inner = Arc::new(RwLock::new(inner));
 
-        let mut thread_run_states: Vec<Arc<AtomicBool>> = Vec::new();
-
-        let inner_1_clone = inner.clone();
-        let thread_run_state_2 = Arc::new(AtomicBool::new(true));
-        let thread_run_state_2_clone = thread_run_state_2.clone();
-        let source_id_2 = source_id.clone();
-
-        let rt_handle = tokio::runtime::Handle::current();
-        let rt_handle = Arc::new(rt_handle);
-
-        thread::spawn(move || 
-            loop {
-                if !thread_run_state_2_clone.load(Ordering::Relaxed) {
-                    println!("stop thread: audio stream playback management, source id: {}", source_id_2);
-                    break;
-                }
-
-                let inner_guard = inner_1_clone.blocking_read();
-                match inner_guard.update(rt_handle.clone()) {
-                    Ok("stop") => thread_run_state_2_clone.store(false, Ordering::Relaxed),
-                    Ok(&_) => (),
-                    Err(e) => println!("error at manage playback: {}, source id: {}", e, source_id_2),
-                }
-
-                drop(inner_guard);
-
-                thread::sleep(Duration::from_millis(10));
-        });
-
-        thread_run_states.push(thread_run_state_2);
+        let inner = Arc::new(inner);
 
         Ok(Self {
             inner,
-            thread_run_states
+            thread_run_states: Default::default(),
         })
     }
 
+    pub fn start_update_loop(&mut self) {
+        let rt_handle = tokio::runtime::Handle::current();
+        let inner = self.inner.clone();
+
+        let run_state = Arc::new(AtomicBool::new(true));
+        let rs = run_state.clone();
+
+        thread::spawn(move || loop {
+            if !rs.load(Ordering::Relaxed) {
+                let source_id = &inner.audio_sample.inner.source.id;
+                println!("stop thread: audio stream playback management, source id: {}", source_id);
+
+                break;
+            }
+
+            let _rt_guard = rt_handle.enter();
+            let rt_handle2 = tokio::runtime::Handle::current();
+
+            inner.update(rt_handle2).unwrap();
+
+            thread::sleep(Duration::from_millis(20));
+        });
+
+        self.thread_run_states.push(run_state);
+    }
+
     pub fn play(&self) -> Result<(), anyhow::Error> {
-        self.inner.blocking_write().set_stream_playback_status(PlaybackStatus::Play)
+        self.inner.set_stream_playback_status(PlaybackStatus::Play)
     }
 
     pub fn pause(&self) -> Result<(), anyhow::Error> {
-        self.inner.blocking_write().set_stream_playback_status(PlaybackStatus::Pause)
+        self.inner.set_stream_playback_status(PlaybackStatus::Pause)
     }
 }
 
@@ -378,7 +444,7 @@ unsafe impl Sync for AudioStreamInner {}
 
 impl AudioStreamInner {
     pub fn new(
-        ctx: Arc<AudioContext>,
+        ctx: &AudioContext,
         source: AudioSource, 
         tx: mpsc::Sender<&'static str>,
         audio_player_status: Arc<AtomicUsize>,
@@ -424,7 +490,7 @@ impl AudioStreamInner {
         self.audio_sample.get_content_length()
     }
 
-    pub fn set_playback_position(&mut self, position_sec: f64) -> Result<(), anyhow::Error> {
+    pub fn set_playback_position(&self, position_sec: f64) -> Result<(), anyhow::Error> {
         println!("set stream playback position: {}", position_sec);
 
         self.set_stream_playback_status(PlaybackStatus::Pause)?;
@@ -493,7 +559,7 @@ impl AudioStreamInner {
         Ok(())
     }
     
-    fn update(&self, rt_handle: Arc<Handle>) -> Result<&'static str, anyhow::Error> {
+    fn update(&self, rt_handle: Handle) -> Result<&'static str, anyhow::Error> {
         self.audio_sample.fetch_buffer(180., 20., rt_handle);
 
         match PlaybackStatus::from(self.audio_player_status.load(Ordering::SeqCst)) {

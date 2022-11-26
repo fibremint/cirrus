@@ -59,7 +59,7 @@ impl AudioSample {
         self.inner.source.length
     }
 
-    pub fn fetch_buffer(&self, min_avail_buf_sec: f64, fetch_start_margin_sec: f64, rt_handle: Arc<Handle>) {
+    pub fn fetch_buffer(&self, min_avail_buf_sec: f64, fetch_start_margin_sec: f64, rt_handle: Handle) {
         if self.get_buffer_status() != AudioSampleBufferStatus::StartFillBuffer {
             return;
         }
