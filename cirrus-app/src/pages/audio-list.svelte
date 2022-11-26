@@ -19,11 +19,13 @@
   let latestFetchDatetime = 0;
 
   let playbackContext = {
-    audioId: '',
+    audioId: null,
     audioLength: 0,
-    selectedAudioItemIndex: -1,
+    // selectedAudioItemIndex: -1,
     position: 0,
   } 
+
+  let selectedAudioItemIndex = -1;
   
   let updatePlaybackPosEventUnlisten = undefined;
 
@@ -43,10 +45,10 @@
 
       if (payload.status === 'Stop') {
         updatePlaybackContext({
-          audioId: '',
+          audioId: null,
           audioLength: 0,
           position: 0,
-          selectedAudioItemIndex: -1
+          // selectedAudioItemIndex: -1
         });
 
         updateAudioButton(false);
@@ -56,7 +58,7 @@
           audioId: loadedAudioId,
           audioLength: loadedAudioLength,
           position: Math.floor(payload.pos),
-          selectedAudioItemIndex: loadedAudioId
+          // selectedAudioItemIndex: loadedAudioId
         });
 
         if (!isUserModifyPlaybackPos) {
@@ -78,11 +80,11 @@
     await command.stopAudio();
   });
 
-  function updatePlaybackContext({ audioId, audioLength, selectedAudioItemIndex, position }) {
+  function updatePlaybackContext({ audioId, audioLength, position }) {
     playbackContext = {
       audioId,
       audioLength,
-      selectedAudioItemIndex,
+      // selectedAudioItemIndex,
       position
     }
   }
@@ -153,18 +155,19 @@
   }
 
   async function onAudioListItemClick({ itemIndex, audioId }) {
-    // let loadedAudioLength;
-
-    if (playbackContext.audioId === audioId) {
+    if (selectedAudioItemIndex === itemIndex) {
       console.log(`selected same audio`);
-
       return;
     }
 
+    selectedAudioItemIndex = itemIndex;
+
     try {
-      if (playbackContext.audioId !== null) {
-        await command.stopAudio();
-      }
+      // if (playbackContext.audioId !== null) {
+      //   await command.stopAudio();
+      // }
+
+      await command.stopAudio();
 
       loadedAudioLength = await command.loadAudio(audioId);
       loadedAudioId = audioId;
