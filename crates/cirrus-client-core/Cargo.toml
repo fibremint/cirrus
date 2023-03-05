@@ -20,7 +20,7 @@ tokio = { version = "1.0", features = ["rt-multi-thread", "time", "macros", "fs"
 tonic = { version = "0.6.2", features = ["default", "tls-roots"] }
 serde = "1"
 opus = "0.3.0"
-audio = "0.2.0-alpha.3"
+audio = "0.2.0-alpha.4"
 rand = "0.8.5"
 rubato = "0.12.0"
 

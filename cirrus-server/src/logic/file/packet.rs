@@ -1,6 +1,6 @@
 use std::fs::File;
 
-use audio::{Buf, Channels};
+use audio::Buf;
 use rubato::Resampler;
 
 use super::sample::SampleFrames;
@@ -116,8 +116,13 @@ impl Packets {
         let samples_reader = audio::io::Read::new(samples);
 
         for ch_idx in 0..samples_reader.channels() {
-            let samples_ch = samples_reader.channel(ch_idx);
-            samples_ch.copy_into_iter(self.resampler_input_buf[ch_idx].iter_mut());
+            let sample_ch_buf = samples_reader
+                .get(ch_idx)
+                .unwrap()
+                .iter()
+                .collect::<Vec<_>>();
+
+            self.resampler_input_buf[ch_idx] = sample_ch_buf;
         }
 
         self.resampler.process_into_buffer(
@@ -126,7 +131,7 @@ impl Packets {
             None
         ).unwrap();
 
-        let mut resampled_output = audio::Interleaved::<f32>::with_topology(
+        let mut resampled_output = audio::buf::Interleaved::<f32>::with_topology(
             2, 
             self.packet_len
         );
