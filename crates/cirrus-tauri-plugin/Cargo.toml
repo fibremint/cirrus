@@ -1,6 +1,6 @@
 [package]
 name = "cirrus-tauri-plugin"
-version = "0.2.0"
+version = "0.3.0"
 description = "Cirrus client plugin for Tauri"
 authors = ["fibremint"]
 license = "MIT"

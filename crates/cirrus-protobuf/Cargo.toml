@@ -1,6 +1,6 @@
 [package]
 name = "cirrus-protobuf"
-version = "0.2.0"
+version = "0.3.0"
 description = "Cirrus protobuf builder"
 authors = ["fibremint"]
 license = "MIT"

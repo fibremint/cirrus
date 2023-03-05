@@ -1,6 +1,6 @@
 [package]
 name = "cirrus-client-core"
-version = "0.2.0"
+version = "0.3.0"
 description = "Cirrus client core library"
 authors = ["fibremint"]
 license = "MIT"
