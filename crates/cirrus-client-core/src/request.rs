@@ -1,4 +1,4 @@
-use futures::StreamExt;
+use tokio_stream::StreamExt;
 use tonic::{Request, Response, Streaming, transport::{ClientTlsConfig, Channel, Endpoint}};
 
 use cirrus_protobuf::{

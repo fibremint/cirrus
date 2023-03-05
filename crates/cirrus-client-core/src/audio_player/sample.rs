@@ -10,7 +10,7 @@ use std::iter::Iterator;
 use audio::{InterleavedBufMut, Buf};
 
 // use anyhow::anyhow;
-use futures::StreamExt;
+use tokio_stream::StreamExt;
 use rubato::Resampler;
 use tokio::runtime::Handle;
 use opus;
