@@ -53,7 +53,7 @@ async fn serve_grpc_service() -> Result<(), anyhow::Error> {
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    println!("Cirrus v0.2.0");
+    println!("Cirrus v0.3.0");
 
     serve_grpc_service().await?;
 
