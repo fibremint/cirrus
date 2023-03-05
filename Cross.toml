@@ -4,4 +4,4 @@ passthrough = [
 ]
 
 [target.aarch64-unknown-linux-gnu]
-dockerfile = "../docker/server-cross-aarch64.Dockerfile"
+dockerfile = "../docker/cross-aarch64-linux.Dockerfile"
