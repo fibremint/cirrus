@@ -1,6 +1,6 @@
 [package]
 name = "cirrus-protobuf"
-version = "0.2.0"
+version = "0.3.0"
 description = "Cirrus protobuf builder"
 authors = ["fibremint"]
 license = "MIT"
@@ -10,14 +10,14 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tonic = { version = "0.6", features = ["codegen"] }
-prost = "0.9"
+tonic = { version = "0.8.3", features = ["codegen"] }
+prost = "0.11"
 serde = "1"
 
 [build-dependencies]
 anyhow = "1"
 dunce = "1"
-tonic-build = "0.6"
+tonic-build = { version = "0.8.3", features = ["prost"] }
 
 [features]
 #default = ["server", "client"]

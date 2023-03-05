@@ -15,20 +15,25 @@ At now, supported audio format is restricted as `AIFF` and `16-bit, 2-channel`.
 
 ### Server
 
-* Configure address
-  * MongoDB: (**Warning: Cirrus will create and write documents under `cirrus` collection**) Set your MongoDB address to the variable in `get_mongodb_client` function (located at `cirrus-server/src/model/mod.rs`). default address is `127.0.0.1:27017`
-  * Server: Set your listen address (located at `cirrus-server/src/main.rs`). default address is `127.0.0.1:50000`
+**Warning: Cirrus will create and write documents to MongoDB server under `cirrus` collection**
+
+* Requirements
+  * MongoDB
 * Build Cirrus server with `cargo build --release` under `cirrus-server` directory
+* Configuration
+  * Copy the `configs` directory from `cirrus-server` to the working directory where you're launch `cirrus-server` (e.g. `cirrus-server/target/release`)
+  * Copy configuration file `server.sample.toml` to `server.toml` at `configs/cirrus`, and set your configuration values in `server.toml` 
 * Run Cirrus server with `cargo run --release`
 * Add your musics to Cirrus
-  * At now, gRPC client (e.g. BloomRPC) is required to request audio management actions. You can import proto file that defines API in Cirrus (located at `proto/cirrus.proto`)
+  * At now, gRPC client (e.g. BloomRPC) is required to request audio management actions. You can import proto file that defines API in Cirrus (located at `protobuf/cirrus.proto`)
   * Add audio directory with `cirrus.AudioLibrarySvc/AddAudioLibrary`
   * Read ID3 tags in audio file with `cirrus.AudioLibrarySvc/AnalyzeAudioLibrary`
 
 ### Client
 
-* Configure address
-  * Set your address of the Cirrus server to each of the arguments in `crates/cirrus-client-core/src/request.rs`. default address is `http://127.0.0.1:50000`
+* Configuration
+  * Copy `client.sample.toml` to `client.toml` at `cirrus-app/src-tauri/resources/configs/cirrus`
+  * Set your configuration values in `client.toml` 
 * Move to `cirrus-app` directory
 * Install dependencies by run `yarn`
 * Build and run client
@@ -46,12 +51,13 @@ At now, supported audio format is restricted as `AIFF` and `16-bit, 2-channel`.
 ### Project Strucutre
 
 * cirrus-app: Cirrus client frontend that provides UI and interact backend with Tauri plugin
+* cirrus-server: manages audio metadata and serves audio data
 * crates
   * aiff-rs: read idv3 tags and audio data from AIFF audio file
   * cirrus-client-core: implementation of core audio player
   * cirrus-protobuf: contains protobuf definition and provide interoperability with Rust
   * cirrus-tauri-plugin: Tauri plugin that initialize and utilize core audio player
-* cirrus-server: manages audio metadata and serves audio data
+* protobuf: Cirrus protobuf files
 
 ### Stack
 
@@ -79,7 +85,9 @@ For example, if user clicks audio item from UI to play, UI (frontend) invokes au
 
 An client creates audio playback object (`cpal::Stream`) with configuration (e.g. sample rate) and calls `play` method that run audio output thread. An audio play process is take audio samples from audio data buffer and give them to mutable array to output an audio, and is registered as audio play callback at stream creation.
 
-And an audio buffer is filled by audio buffer thread that fetch data, process and fill to audio buffer queue. The audio data is part of PCM from audio file and is responsed from server as `u8` array. To read audio data, pre-process is required. As a case of the 16-bit audio, read as a step size 2 for each, convert to `i16` and divide by sample rate.
+And an audio buffer is filled by audio buffer thread that fetch data, process and fill to audio buffer queue.
+
+The client requests Opus packets to fill the audio buffer with an amout of packets and seek start packet index. An Opus packet means that original PCM audio samples are encoded with `Opus` library, and one packet corresponds to an audio sample is a length of 20ms. 
 
 ### How server reads and manages audio files?
 

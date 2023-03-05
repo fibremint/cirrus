@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use chrono::{TimeZone, Utc, DateTime};
+use chrono::DateTime;
 
 pub fn replace_with_common_separator(path: &str) -> String {
     path.replace(std::path::MAIN_SEPARATOR, "/")

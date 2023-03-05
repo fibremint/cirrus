@@ -1,5 +1,5 @@
-use futures::StreamExt;
-use tonic::{Request, Response, Streaming};
+use tokio_stream::StreamExt;
+use tonic::{Request, Response, Streaming, transport::{ClientTlsConfig, Channel, Endpoint}};
 
 use cirrus_protobuf::{
     api::{AudioDataReq, AudioDataRes, AudioMetaReq, AudioMetaRes, AudioTagRes},
@@ -8,8 +8,15 @@ use cirrus_protobuf::{
     audio_tag_svc_client::AudioTagSvcClient,
 };
 
-pub async fn get_audio_meta(audio_tag_id: &str) -> Result<Response<AudioMetaRes>, anyhow::Error> {
-    let mut client = AudioDataSvcClient::connect("http://127.0.0.1:50000").await?;
+pub async fn get_audio_meta(
+    grpc_endpoint: &str,
+    tls_config: &Option<ClientTlsConfig>,
+    audio_tag_id: &str
+) -> Result<Response<AudioMetaRes>, anyhow::Error> {
+    let endpoint = create_endpoint(grpc_endpoint.to_string(), tls_config)?;
+    let tonic_channels = endpoint.connect().await?;
+
+    let mut client = AudioDataSvcClient::new(tonic_channels);
 
     let request = Request::new({
         AudioMetaReq {
@@ -23,19 +30,24 @@ pub async fn get_audio_meta(audio_tag_id: &str) -> Result<Response<AudioMetaRes>
 }
 
 pub async fn get_audio_data_stream(
+    grpc_endpoint: &str,
+    tls_config: &Option<ClientTlsConfig>,
     audio_tag_id: &str,
-    samples_size: u32,
-    samples_start_idx: u32, 
-    samples_end_idx: u32
+    packet_start_idx: u32,
+    packet_num: u32,
+    channels: u32,
 ) -> Result<Streaming<AudioDataRes>, anyhow::Error> {
-    let mut client = AudioDataSvcClient::connect("http://127.0.0.1:50000").await?;
+    let endpoint = create_endpoint(grpc_endpoint.to_string(), tls_config)?;
+    let tonic_channels = endpoint.connect().await?;
+
+    let mut client = AudioDataSvcClient::new(tonic_channels);
 
     let request = Request::new({
         AudioDataReq {
             audio_tag_id: audio_tag_id.to_string(),
-            samples_size,
-            samples_start_idx,
-            samples_end_idx,
+            packet_start_idx,
+            packet_num,
+            channels,
         }
     });
 
@@ -46,15 +58,23 @@ pub async fn get_audio_data_stream(
     Ok(stream)
 }
 
-pub async fn get_audio_tags(items_per_page: u64, page: u64) -> Result<Vec<AudioTagRes>, Box<dyn std::error::Error>> {
-    let mut client = AudioTagSvcClient::connect("http://127.0.0.1:50000").await?;
+pub async fn get_audio_tags(
+    grpc_endpoint: &str,
+    tls_config: &Option<ClientTlsConfig>,
+    items_per_page: u64,
+    page: u64
+) -> Result<Vec<AudioTagRes>, Box<dyn std::error::Error>> {
+    let endpoint = create_endpoint(grpc_endpoint.to_string(), tls_config)?;
+    let tonic_channels = endpoint.connect().await?;
 
-    let request = Request::new( {
+    let mut client = AudioTagSvcClient::new(tonic_channels);
+
+    let request = Request::new( 
         ListRequest {
             items_per_page,
             page,
         }
-    });
+    );
 
     let response = client.list_audio_tags(request).await.unwrap();
     let mut res: Vec<_> = Vec::new();
@@ -69,4 +89,16 @@ pub async fn get_audio_tags(items_per_page: u64, page: u64) -> Result<Vec<AudioT
     }
 
     Ok(res)
+}
+
+fn create_endpoint(
+    grpc_endpoint: String, 
+    tls_config: &Option<ClientTlsConfig>
+) -> Result<Endpoint, anyhow::Error> {
+    let mut endpoint = Channel::from_shared(grpc_endpoint)?;
+    if let Some(tc) = tls_config {
+        endpoint = endpoint.tls_config(tc.clone()).unwrap();
+    }
+
+    Ok(endpoint)
 }

@@ -11,7 +11,7 @@
   let showPreloader = true;
 
   let currentPage = 1;
-  const itemsPerPage = 20;
+  const itemsPerPage = 100;
 
   let audioTags = [];
 

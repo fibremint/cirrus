@@ -2,27 +2,150 @@
     // See https://go.microsoft.com/fwlink/?LinkId=733558
     // for the documentation about the tasks.json format
     "version": "2.0.0",
+    "inputs": [
+      {
+        "id": "terminate",
+        "type": "command",
+        "command": "workbench.action.tasks.terminate",
+        "args": "terminateAll"
+      }
+    ],
     "tasks": [
       {
-        "label": "ui:dev",
+        "label": "client:build-rust-debug",
         "type": "shell",
-        // `dev` keeps running in the background
-        // ideally you should also configure a `problemMatcher`
-        // see https://code.visualstudio.com/docs/editor/tasks#_can-a-background-task-be-used-as-a-prelaunchtask-in-launchjson
+        "isBackground": false,
+        "command": "cargo",
+        "args": ["build", "--bin", "app"],
+        "options": {
+          "cwd": "${workspaceFolder}"
+        },
+        "presentation": {
+          "reveal": "always",
+          "revealProblems": "onProblem",
+          "close": true
+        }
+      },
+      {
+        "label": "client:build-rust-release",
+        "type": "shell",
+        "isBackground": false,
+        "command": "cargo",
+        "args": ["build", "--release"],
+        "options": {
+          "cwd": "${workspaceFolder}/cirrus-app/src-tauri"
+        },
+        "presentation": {
+          "reveal": "always",
+          "revealProblems": "onProblem",
+          "close": true
+        }
+      },
+      // {
+      //   "label": "server:build-rust-debug",
+      //   "type": "shell",
+      //   "isBackground": false,
+      //   "command": "cargo",
+      //   "args": ["build", "--bin", "cirrus-server"],
+      //   "options": {
+      //     "cwd": "${workspaceFolder}"
+      //   },
+      //   "presentation": {
+      //     "reveal": "always",
+      //     "revealProblems": "onProblem",
+      //     "close": true
+      //   }
+      // },
+      {
+        "label": "server:build-rust-debug",
+        "type": "shell",
+        "isBackground": false,
+        "command": "cargo",
+        "args": ["build", "--bin", "cirrus-server"],
+        "options": {
+          "cwd": "${workspaceFolder}"
+        },
+        "presentation": {
+          "reveal": "always",
+          "revealProblems": "onProblem",
+          "close": true
+        }
+      },
+      {
+        "label": "server:build-rust-release",
+        "type": "shell",
+        "isBackground": false,
+        "command": "cargo",
+        "args": ["build", "--bin", "cirrus-server", "--release"],
+        "options": {
+          "cwd": "${workspaceFolder}"
+        },
+        "presentation": {
+          "reveal": "always",
+          "revealProblems": "onProblem",
+          "close": true
+        }
+      },
+      {
+        "label": "client:dev",
+        "type": "shell",
         "isBackground": true,
-        // change this to your `beforeDevCommand`:
+        // ref: https://stackoverflow.com/a/54017304
+        "problemMatcher": [
+          {
+            "pattern": [
+              {
+                "regexp": ".",
+                "file": 1,
+                "location": 2,
+                "message": 3
+              }
+            ],
+            "background": {
+              "activeOnStart": true,
+              "beginsPattern": ".",
+              "endsPattern": ".",
+            }
+          }
+        ],
+
         "command": "yarn",
         "args": ["dev"],
         "options": {
           "cwd": "${workspaceFolder}/cirrus-app"
-        }
+        },
+        "presentation": {
+          "reveal": "always",
+          "revealProblems": "onProblem",
+          "close": true
+        },
+        "dependsOn": [
+          "client:build-rust-debug"
+        ]
       },
       {
-        "label": "ui:build",
+        "label": "client:release",
         "type": "shell",
         // change this to your `beforeBuildCommand`:
         "command": "yarn",
-        "args": ["build"]
+        "args": ["build"],
+        "options": {
+          "cwd": "${workspaceFolder}/cirrus-app"
+        },
+        "presentation": {
+          "reveal": "always",
+          "revealProblems": "onProblem",
+          "close": true
+        },
+        "dependsOn": [
+          "client:build-rust-release"
+        ]
+      },
+      {
+        "label": "task:terminate-all",
+        "command": "echo ${input:terminate}",
+        "type": "shell",
+        "problemMatcher": []
       }
     ]
   }

@@ -1,12 +1,14 @@
-pub mod audio;
+pub mod dto;
 pub mod document;
-
-pub use audio::*;
+pub mod crud;
 
 use mongodb::{Client, options::ClientOptions};
 
-pub async fn get_mongodb_client() -> Result<mongodb::Client, Box<dyn std::error::Error>> {
-    let client_options = ClientOptions::parse("mongodb://localhost:27017").await?;
+use crate::settings::Settings;
+
+pub async fn create_db_client() -> Result<mongodb::Client, anyhow::Error> {
+    let settings = Settings::get()?;
+    let client_options = ClientOptions::parse(settings.mongodb.address).await?;
 
     let client = Client::with_options(client_options)?;
 
@@ -14,5 +16,5 @@ pub async fn get_mongodb_client() -> Result<mongodb::Client, Box<dyn std::error:
 }
 
 pub trait GetCollection<T> {
-    fn get_collection(mongodb_client: mongodb::Client) -> mongodb::Collection<T>;
+    fn get_collection(db: mongodb::Client) -> mongodb::Collection<T>;
 }
