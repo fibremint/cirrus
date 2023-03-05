@@ -1,0 +1,7 @@
+[build.env]
+passthrough = [
+    "RUST_BACKTRACE"
+]
+
+[target.aarch64-unknown-linux-gnu]
+dockerfile = "../docker/server-cross-aarch64"
