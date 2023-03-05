@@ -38,7 +38,7 @@ walkdir = "2"
 itertools = "0.10"
 rubato = "0.12.0"
 opus = "0.3.0"
-audio = "0.2.0-alpha.3"
+audio = "0.2.0-alpha.4"
 async-trait = "0.1.58"
 
 [build-dependencies]

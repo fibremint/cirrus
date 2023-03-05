@@ -7,12 +7,13 @@ use std::{
 };
 use std::iter::Iterator;
 
+use audio::{InterleavedBufMut, Buf};
+
 // use anyhow::anyhow;
 use futures::StreamExt;
 use rubato::Resampler;
 use tokio::runtime::Handle;
 use opus;
-use audio::{Channels, AsInterleavedMut};
 
 use crate::{dto::AudioSource, request};
 use super::{state::AudioSampleBufferStatus, packet::{EncodedBuffer, get_packet_idx_from_sec, NodeSearchDirection}};
@@ -371,14 +372,18 @@ impl AudioSampleInner {
                       println!("{:?}", err);
                 }
 
-                let r = audio::io::Read::new(decoded_samples);
-
-                let mut resampler_input_buf = self.resampler_input_buf.lock().unwrap(); 
+                let audio_buf_reader = audio::io::Read::new(decoded_samples);
+                let mut resampler_input_buf = self.resampler_input_buf.lock().unwrap();
 
                 for ch_idx in 0..2 {
-                    let samples_ch = r.channel(ch_idx);
-                    samples_ch.copy_into_iter(resampler_input_buf[ch_idx].iter_mut())
-                }
+                    let audio_ch_buf = audio_buf_reader
+                        .get(ch_idx)
+                        .unwrap()
+                        .iter()
+                        .collect::<Vec<_>>();
+
+                    resampler_input_buf[ch_idx] = audio_ch_buf;
+                } 
 
                 let mut resampler = self.resampler.lock().unwrap();
                 let mut resampler_output_buf = self.resampler_output_buf.lock().unwrap();
@@ -390,7 +395,6 @@ impl AudioSampleInner {
                 ).unwrap();
 
                 for (ch_idx, channel_sample_buffer) in ds_buf.iter_mut().enumerate() {
-                    // channel_sample_buffer.extend(r.channel(ch_idx));
                     channel_sample_buffer.extend(resampler_output_buf[ch_idx].iter());
                 }
 
