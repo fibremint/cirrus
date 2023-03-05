@@ -1,5 +1,5 @@
-FROM ghcr.io/cross-rs/aarch64-unknown-linux-gnu:latest
+FROM ghcr.io/cross-rs/aarch64-unknown-linux-gnu:edge
 
 RUN dpkg --add-architecture arm64 && \
     apt-get update && \
-    apt-get install --assume-yes protobuf-compiler libprotobuf-dev
+    apt-get install -y protobuf-compiler libprotobuf-dev
