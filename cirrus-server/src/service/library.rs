@@ -58,7 +58,7 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
         let res = match self.logic.add_audio_library(self.create_db_client().await?, path).await {
             Ok(_) => Response::new(CirrusResponse {
                 code: Code::Ok as u32,
-                status: Option::None,
+                status: String::new(),
             }),
             Err(err) => return Err(Status::not_found(err.to_string())),
         };
@@ -82,7 +82,7 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
         let res = match self.logic.remove_audio_library(self.create_db_client().await?, path).await {
             Ok(res) => Response::new(CirrusResponse {
                 code: Code::Ok as u32,
-                status: Some(res),
+                status: res,
             }),
             Err(err) => return Err(Status::not_found(err.to_string())),
         };
@@ -103,7 +103,7 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
         let res = match self.logic.analyze_audio_library(self.create_db_client().await?).await {
             Ok(_) => Response::new(CirrusResponse {
                 code: Code::Ok as u32,
-                status: Some(format!("Refreshed audio library"))
+                status: "Refreshed audio library".to_string()
             }),
             Err(err) => return Err(Status::internal(err.to_string())),
         };
@@ -124,7 +124,7 @@ impl AudioLibrarySvc for AudioLibrarySvcImpl {
         let res = match self.logic.refresh_audio_library(self.create_db_client().await?).await {
             Ok(_) => Response::new(CirrusResponse {
                 code: Code::Ok as u32,
-                status: Some(format!("Refreshed audio library"))
+                status: "Refreshed audio library".to_string()
             }),
             Err(err) => return Err(Status::internal(err.to_string())),
         };

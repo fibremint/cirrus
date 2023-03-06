@@ -1,6 +1,6 @@
 [package]
 name = "cirrus-client-core"
-version = "0.2.0"
+version = "0.3.0"
 description = "Cirrus client core library"
 authors = ["fibremint"]
 license = "MIT"
@@ -13,14 +13,13 @@ edition = "2021"
 anyhow = "1"
 #bytes = "1"
 cirrus-protobuf = { path = "../cirrus-protobuf", features = ["client"] }
-cpal = "0.14"
-futures = "0.3"
+cpal = "0.13"
 tokio = { version = "1.0", features = ["rt-multi-thread", "time", "macros", "fs"] }
-#tonic = "0.6"
-tonic = { version = "0.6.2", features = ["default", "tls-roots"] }
+tokio-stream = "0.1.12"
+tonic = { version = "0.8.3", features = ["default", "tls-roots"] }
 serde = "1"
 opus = "0.3.0"
-audio = "0.2.0-alpha.3"
+audio = "0.2.0-alpha.4"
 rand = "0.8.5"
 rubato = "0.12.0"
 

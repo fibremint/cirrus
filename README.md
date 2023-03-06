@@ -85,7 +85,9 @@ For example, if user clicks audio item from UI to play, UI (frontend) invokes au
 
 An client creates audio playback object (`cpal::Stream`) with configuration (e.g. sample rate) and calls `play` method that run audio output thread. An audio play process is take audio samples from audio data buffer and give them to mutable array to output an audio, and is registered as audio play callback at stream creation.
 
-And an audio buffer is filled by audio buffer thread that fetch data, process and fill to audio buffer queue. The audio data is part of PCM from audio file and is responsed from server as `u8` array. To read audio data, pre-process is required. As a case of the 16-bit audio, read as a step size 2 for each, convert to `i16` and divide by sample rate.
+And an audio buffer is filled by audio buffer thread that fetch data, process and fill to audio buffer queue.
+
+The client requests Opus packets to fill the audio buffer with an amout of packets and seek start packet index. An Opus packet means that original PCM audio samples are encoded with `Opus` library, and one packet corresponds to an audio sample is a length of 20ms. 
 
 ### How server reads and manages audio files?
 
