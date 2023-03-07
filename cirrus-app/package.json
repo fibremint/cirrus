@@ -20,8 +20,8 @@
     "Samsung >= 12"
   ],
   "dependencies": {
-    "@tauri-apps/api": "^1.0.0-rc.7",
-    "@tauri-apps/cli": "^1.0.0-rc.7",
+    "@tauri-apps/api": "^2.0.0-alpha.0",
+    "@tauri-apps/cli": "^2.0.0-alpha.2",
     "dom7": "^4.0.4",
     "framework7": "^7.0.7",
     "framework7-icons": "^5.0.5",

@@ -40,7 +40,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::send_audio_player_status,
             commands::set_playback_position,
         ])
-        .setup(|app| {
+        .setup(|app, _api| {
             //let res_root_path = resolve_res_path(app, &RES_PATH_STR);
             let state = state::AppState::new().unwrap();
 
