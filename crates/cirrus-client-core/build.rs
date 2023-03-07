@@ -9,13 +9,7 @@ fn add_lib(_name: impl AsRef<str>, _static: bool) {
     );
 }
 
-#[cfg(target_os = "android")]
 fn main() {
-    // println!("cargo:rustc-link-lib==c++_shared")
-    add_lib("c++_shared", false);
-}
-
-#[cfg(not(target_os = "android"))]
-fn main() {
+    #[cfg(target_os = "android")]
     add_lib("c++_shared", false);
 }
