@@ -10,6 +10,49 @@
     "beforeBuildCommand": "yarn build"
   },
   "tauri": {
+    "pattern": {
+      "use": "isolation",
+      "options": {
+        "dir": "../isolation-dist/"
+      }
+    },
+    "macOSPrivateApi": true,
+    "cli": {
+      "description": "Tauri API example",
+      "args": [
+        {
+          "short": "c",
+          "name": "config",
+          "takesValue": true,
+          "description": "Config path"
+        },
+        {
+          "short": "t",
+          "name": "theme",
+          "takesValue": true,
+          "description": "App theme",
+          "possibleValues": ["light", "dark", "system"]
+        },
+        {
+          "short": "v",
+          "name": "verbose",
+          "multipleOccurrences": true,
+          "description": "Verbosity level"
+        }
+      ],
+      "subcommands": {
+        "update": {
+          "description": "Updates the app",
+          "args": [
+            {
+              "short": "b",
+              "name": "background",
+              "description": "Update in background"
+            }
+          ]
+        }
+      }
+    },
     "bundle": {
       "active": true,
       "targets": "all",
@@ -41,26 +84,67 @@
         "entitlements": null
       },
       "windows": {
-        "certificateThumbprint": null,
-        "digestAlgorithm": "sha256",
-        "timestampUrl": ""
+        "wix": {
+          "language": {
+            "en-US": {},
+            "pt-BR": {
+              "localePath": "locales/pt-BR.wxl"
+            }
+          }
+        }
       }
     },
     "updater": {
       "active": false
     },
-    "allowlist": {},
-    "windows": [
-      {
-        "title": "Cirrus",
-        "width": 800,
-        "height": 600,
-        "resizable": true,
-        "fullscreen": false
+    "allowlist": {
+      "all": true,
+      "fs": {
+        "scope": {
+          "allow": ["$APPDATA/db/**", "$DOWNLOAD/**", "$RESOURCE/**"],
+          "deny": ["$APPDATA/db/*.stronghold"]
+        }
+      },
+      "shell": {
+        "open": true,
+        "scope": [
+          {
+            "name": "sh",
+            "cmd": "sh",
+            "args": ["-c", { "validator": "\\S+" }]
+          },
+          {
+            "name": "cmd",
+            "cmd": "cmd",
+            "args": ["/C", { "validator": "\\S+" }]
+          }
+        ]
+      },
+      "protocol": {
+        "asset": true,
+        "assetScope": {
+          "allow": ["$APPDATA/db/**", "$RESOURCE/**"],
+          "deny": ["$APPDATA/db/*.stronghold"]
+        }
+      },
+      "http": {
+        "scope": ["http://localhost:3003"]
       }
-    ],
+    },
+    "windows": [],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": "'self' customprotocol: asset:",
+        "font-src": ["https://fonts.gstatic.com"],
+        "img-src": "'self' asset: https://asset.localhost blob: data:",
+        "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com"
+      },
+      "freezePrototype": true
+    },
+    "systemTray": {
+      "iconPath": "../../.icons/tray_icon_with_transparency.png",
+      "iconAsTemplate": true,
+      "menuOnLeftClick": false
     }
   }
 }
