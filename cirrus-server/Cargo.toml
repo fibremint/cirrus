@@ -23,7 +23,7 @@ futures = "0.3"
 cirrus-protobuf = { path = "../crates/cirrus-protobuf", features = ["server"] }
 http = "0.2"
 notify = "4"
-mongodb = { version = "2.1", default-features = false, features = ["tokio-runtime"] }
+mongodb = { version = "2.4.0", default-features = false, features = ["tokio-runtime"] }
 serde = "1"
 serde_derive = "1"
 # symphonia = "0.5.1"
