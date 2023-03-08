@@ -14,7 +14,7 @@ use tauri::Manager;
 // pub use mobile::*;
 
 #[cfg(mobile)]
-use mobile_plugin::CirrusCoreExt;
+use mobile_plugin::MobilePluginExt;
 
 #[derive(Clone, Serialize)]
 struct Reply {

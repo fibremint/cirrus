@@ -16,18 +16,18 @@ mod desktop;
 mod mobile;
 
 #[cfg(desktop)]
-use desktop::CirrusCore;
+use desktop::MobilePlugin;
 #[cfg(mobile)]
-use mobile::CirrusCore;
+use mobile::MobilePlugin;
 
 /// Extensions to [`tauri::App`], [`tauri::AppHandle`] and [`tauri::Window`] to access the Cirrus Core APIs.
 pub trait MobilePluginExt<R: Runtime> {
-    fn cirrus_core(&self) -> &CirrusCore<R>;
+    fn mobile_plugin(&self) -> &MobilePlugin<R>;
 }
 
 impl<R: Runtime, T: Manager<R>> crate::MobilePluginExt<R> for T {
-    fn cirrus_core(&self) -> &CirrusCore<R> {
-      self.state::<CirrusCore<R>>().inner()
+    fn mobile_plugin(&self) -> &MobilePlugin<R> {
+      self.state::<MobilePlugin<R>>().inner()
     }
 }
   
