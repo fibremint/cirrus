@@ -1,0 +1,27 @@
+set(CMAKE_SYSTEM_NAME Android)
+set(CMAKE_SYSTEM_PROCESSOR $ENV{CMAKE_ANDROID_TARGET})
+
+cmake_path(SET NDK_HOME $ENV{NDK_HOME})
+set(CMAKE_ANDROID_NDK ${NDK_HOME})
+
+cmake_path(SET NDK_SYSROOT $ENV{NDK_SYSROOT})
+#set(CMAKE_ANDROID_API $ENV{ANDROID_API_VERSION})
+#cmake_path(SET ANDROID_LIB_PATH ${NDK_SYSROOT}/usr/lib/${CMAKE_SYSTEM_PROCESSOR}-linux-android/${CMAKE_ANDROID_API})
+
+#link_directories(${ANDROID_LIB_PATH})
+
+set(NDK_BIN_PATH ${NDK_HOME}/toolchains/llvm/prebuilt/$ENV{HOST_OS}-x86_64/bin)
+
+set(CMAKE_C_COMPILER ${NDK_BIN_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux-android${CMAKE_ANDROID_API}-clang)
+set(CMAKE_CXX_COMPILER ${NDK_BIN_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux-android${CMAKE_ANDROID_API}-clang++)
+set(CMAKE_ASM_COMPILER ${NDK_BIN_PATH}/${CMAKE_SYSTEM_PROCESSOR}-linux-android${CMAKE_ANDROID_API}-clang)
+#set(CMAKE_LINKER ${NDK_HOME}/toolchains/llvm/prebuilt/windows-x86_64/bin/ld.exe)
+
+#set(CMAME_C_FLAGS "${CMAKE_C_FLAGS} -fuse-ld=lld")
+
+#set(CMAKE_EXE_LINKER_FLAGS_INIT "-fuse-ld=lld")
+#set(CMAKE_MODULE_LINKER_FLAGS_INIT "-fuse-ld=lld")
+#set(CMAKE_SHARED_LINKER_FLAGS_INIT "-fuse-ld=lld")
+
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --sysroot=${SYSROOT} ")
+#set(CMAKE_SYSROOT ${SYSROOT})
