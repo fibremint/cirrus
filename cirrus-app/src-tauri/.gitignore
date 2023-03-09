@@ -13,7 +13,7 @@ resources/tls/*
 
 # cargo-mobile
 .cargo/
-/gen
+#/gen
 
 # macOS
 .DS_Store
