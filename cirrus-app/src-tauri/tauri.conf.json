@@ -1,13 +1,14 @@
 {
   "package": {
     "productName": "cirrus",
-    "version": "0.1.0"
+    "version": "0.3.0"
   },
   "build": {
-    "distDir": "../www",
+    "distDir": "../dist",
     "devPath": "http://localhost:5173",
     "beforeDevCommand": "yarn dev",
-    "beforeBuildCommand": "yarn build"
+    "beforeBuildCommand": "yarn build",
+    "withGlobalTauri": true
   },
   "tauri": {
     "pattern": {
