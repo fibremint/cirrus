@@ -20,7 +20,7 @@ class RustWebView(context: Context): WebView(context) {
         settings.databaseEnabled = true
         settings.mediaPlaybackRequiresUserGesture = false
         settings.javaScriptCanOpenWindowsAutomatically = true
-        
+        this.settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
     }
 
     fun loadUrlMainThread(url: String) {

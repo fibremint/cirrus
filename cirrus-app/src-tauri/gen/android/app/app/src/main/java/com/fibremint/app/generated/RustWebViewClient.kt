@@ -38,4 +38,9 @@ class RustWebViewClient(context: Context): WebViewClient() {
     private external fun handleRequest(request: WebResourceRequest): WebResourceResponse?
 
     
+    @android.annotation.SuppressLint("WebViewClientOnReceivedSslError")
+    override fun onReceivedSslError(view: WebView?, handler: SslErrorHandler, error: android.net.http.SslError) {
+        handler.proceed()
+    }
+
 }

@@ -10,6 +10,8 @@ import app.tauri.plugin.PluginManager
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 
+import com.plugin.sample.ExamplePlugin
+
 class MainActivity : TauriActivity() {
     private var manager: PluginManager? = null
     
