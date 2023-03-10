@@ -5,13 +5,16 @@
   import { listen } from '@tauri-apps/api/event';
   // import { audioStore } from '../js/store';
 
+  import differenceBy from 'lodash/differenceBy';
+
   import * as command from '../js/command';
+  import { filter } from 'dom7';
 
   let allowInfinite = true;
   let showPreloader = true;
 
   let currentPage = 1;
-  const itemsPerPage = 100;
+  const itemsPerPage = 50;
 
   let audioTags = [];
 
@@ -106,9 +109,12 @@
         return;
     }
 
-    audioTags = [...audioTags, ...response];
+    const uniqueItems = differenceBy(response, audioTags, "id");
+    audioTags = [...audioTags, ...uniqueItems];
 
-    currentPage++;
+    if (uniqueItems.length === itemsPerPage) {
+      currentPage++;
+    }
 
     allowInfinite = true;
     showPreloader = false;

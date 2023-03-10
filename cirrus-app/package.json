@@ -26,6 +26,7 @@
     "framework7": "^7.0.7",
     "framework7-icons": "^5.0.5",
     "framework7-svelte": "^7.0.7",
+    "lodash": "^4.17.21",
     "material-icons": "^1.11.11",
     "skeleton-elements": "^4.0.0",
     "svelte": "^3.50.1",
