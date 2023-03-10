@@ -9,6 +9,7 @@ use tauri::{
 };
 
 pub use error::*;
+pub use models::*;
 
 #[cfg(desktop)]
 mod desktop;
@@ -30,4 +31,20 @@ impl<R: Runtime, T: Manager<R>> crate::MobilePluginExt<R> for T {
       self.state::<MobilePlugin<R>>().inner()
     }
 }
+
+pub fn init<R: Runtime>() -> TauriPlugin<R> {
+    Builder::new("sample")
+      .setup(|app, api| {
+        #[cfg(mobile)]
+        let sample = mobile::init(app, api)?;
+        #[cfg(desktop)]
+        let sample = desktop::init(app, api)?;
+
+        // let sample = mobile::init(app, api)?;
+
+        app.manage(sample);
   
+        Ok(())
+      })
+      .build()
+  }
