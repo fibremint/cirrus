@@ -14,7 +14,7 @@ use tauri::Manager;
 // pub use mobile::*;
 
 #[cfg(mobile)]
-use mobile_plugin::MobilePluginExt;
+use mobile_plugin::{SetPlayerStatusRequest, MobilePluginExt};
 
 #[derive(Clone, Serialize)]
 struct Reply {
@@ -28,8 +28,17 @@ pub type OnEvent = Box<dyn FnMut(&AppHandle, RunEvent)>;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[allow(unused_mut)]
-    let mut builder = tauri::Builder::default()
-        .plugin(cirrus_tauri_plugin::init())
+    let mut builder = tauri::Builder::default();
+
+    // init plugins
+    builder = builder.plugin(cirrus_tauri_plugin::init());
+
+    #[cfg(mobile)] 
+    {
+        builder = builder.plugin(mobile_plugin::init());
+    }
+
+    builder = builder
         .setup(move |app| {
             // #[cfg(desktop)]
             // tray::create_try(app)?;
@@ -90,6 +99,15 @@ pub fn run() {
                 }
             });
 
+            #[cfg(mobile)] 
+            {
+                let payload = SetPlayerStatusRequest {
+                    is_playing: Some(true)
+                };
+
+                app.mobile_plugin().set_player_status(payload);
+            }
+            
             Ok(())
         })
         .on_page_load(|window, _| {

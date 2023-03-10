@@ -3,5 +3,5 @@ include ':app'
 include ':tauri-android'
 project(':tauri-android').projectDir = new File('../../../../../crates/mobile-plugin/android/tauri-api')
 
-include ':tauri-example-plugin'
-project(':tauri-example-plugin').projectDir = new File('../../../../../crates/mobile-plugin/android')
+// include ':tauri-example-plugin'
+// project(':tauri-example-plugin').projectDir = new File('../../../../../crates/mobile-plugin/android')
