@@ -105,7 +105,7 @@ pub fn run() {
                     is_playing: Some(true)
                 };
 
-                app.mobile_plugin().set_player_status(payload);
+                let res = app.mobile_plugin().set_player_status(payload);
             }
             
             Ok(())
