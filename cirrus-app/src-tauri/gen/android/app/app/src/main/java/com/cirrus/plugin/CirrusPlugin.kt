@@ -29,8 +29,8 @@ class CirrusPlugin(private val activity: Activity): Plugin(activity) {
 
     (activity as? MainActivity)?.updateService(statusIsPlaying)
     
-//    val ret = JSObject()
-//    ret.put("value", implementation.pong(value))
-//    invoke.resolve(ret)
+    val ret = JSObject()
+    ret.put("is_playing", isPlaying)
+    invoke.resolve(ret)
   }
 }
