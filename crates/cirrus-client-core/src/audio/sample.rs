@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::{mpsc, Arc}, mem::MaybeUninit};
+use std::{collections::VecDeque, sync::{mpsc, Arc, Mutex}, mem::MaybeUninit, time::Duration};
 use audio::{InterleavedBufMut, wrap::Interleaved, InterleavedBuf, Buf};
 use cirrus_protobuf::api::AudioDataRes;
 use ringbuf::{SharedRb, Producer};
@@ -11,6 +11,43 @@ use crate::{dto::AudioSource, request};
 use super::{packet::EncodedBuffer, context::HostStreamConfig};
 
 pub struct AudioSample {
+    inner: Arc<Mutex<AudioSampleInner>>,
+}
+
+impl AudioSample {
+    pub fn new(
+        source: AudioSource,
+        host_stream_config: HostStreamConfig,
+        ringbuf_producer: Producer<f32, Arc<SharedRb<f32, Vec<MaybeUninit<f32>>>>>,
+    ) -> Result<Self, anyhow::Error> {
+
+        Ok(Self {
+            inner: Arc::new(
+                Mutex::new(
+                    AudioSampleInner::new(source, host_stream_config, ringbuf_producer)?
+                )
+            )
+        })
+    }
+
+    pub fn fetch_buffer(
+        &self,
+        rt_handle: &Arc<Handle>
+    ) -> Result<(), anyhow::Error> {
+        self.inner.lock().unwrap().fetch_buffer(rt_handle)
+    }
+
+    pub fn start_process_buf(
+        &self,
+    ) {
+        let _inner = self.inner.clone();
+        std::thread::spawn(move || {
+            _inner.lock().unwrap().process_buf()
+        });
+    }
+}
+
+pub struct AudioSampleInner {
     pub source: AudioSource,
     context: AudioSampleContext,
 
@@ -27,7 +64,7 @@ pub struct AudioSample {
     // resampler: AudioResampler,
 }
 
-impl AudioSample {
+impl AudioSampleInner {
     pub fn new(
         source: AudioSource,
         host_stream_config: HostStreamConfig,
@@ -183,6 +220,8 @@ impl AudioSample {
             self.ringbuf_producer.push_slice(resampled_output.as_interleaved());
 
             packet_idx += 1;
+
+            std::thread::sleep(Duration::from_millis(10));
         }
     }
 }

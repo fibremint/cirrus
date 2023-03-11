@@ -41,13 +41,15 @@ impl AudioStream {
         let ringbuf = HeapRb::<f32>::new(latency_samples * 2);
         let (rb_prod, mut rb_con) = ringbuf.split();
         
-        let mut audio_sample = AudioSample::new(
+        let audio_sample = AudioSample::new(
             source,
             audio_ctx.host_stream_config(),
             // audio_data_tx,
             rb_prod
         )?;
+
         audio_sample.fetch_buffer(rt_handle).unwrap();
+        audio_sample.start_process_buf();
 
         // let audio_sample_tx = audio_sample.tx.clone();
 
@@ -84,7 +86,6 @@ impl AudioStream {
 
     pub fn play(&mut self) -> Result<(), anyhow::Error> {
         self.stream.play()?;
-        self.audio_sample.process_buf();
 
         Ok(())
     }
