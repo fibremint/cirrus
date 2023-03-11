@@ -1,5 +1,5 @@
 use std::{path::PathBuf, sync::{Arc, mpsc, Mutex}, collections::HashMap};
-use cirrus_client_core::{AudioPlayer, audio::AudioPlayerMessage};
+use cirrus_client_core::{AudioPlayer, audio::{AudioPlayerMessage, AudioPlayerRequest}};
 use crossbeam_channel::{Receiver, Sender};
 // use cirrus_client_core::AudioPlayer2;
 
@@ -79,7 +79,7 @@ impl AudioPlayerState {
 
 pub struct AudioPlayerChannelState {
     // pub audio_cmd_sender: Mutex<mpsc::Sender<String>>,
-    pub audio_cmd_sender: Sender<String>,
+    pub audio_cmd_sender: Sender<AudioPlayerRequest>,
 
     // pub msg_rx: Mutex<mpsc::Receiver<AudioPlayerMessage>>,
 

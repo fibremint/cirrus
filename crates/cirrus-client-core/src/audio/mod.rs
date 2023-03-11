@@ -6,4 +6,4 @@ mod decoder;
 mod resampler;
 mod packet;
 
-pub use player::{AudioPlayer, AudioPlayerMessage};
+pub use player::{AudioPlayer, AudioPlayerMessage, AudioPlayerRequest, SetPlaybackPosMessage, LoadAudioMessage};

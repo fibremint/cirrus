@@ -41,14 +41,39 @@ pub struct AudioMeta {
     content_length: f64,
 }
 
+pub struct CommonMessage {
+    status: String,
+}
+
 pub enum AudioPlayerMessage {
     ResponsePlayerStatus(PlayerStatus),
     ResponseAudioMeta(AudioMeta),
+    Common(CommonMessage)
+}
+
+pub enum AudioPlayerRequest {
+    LoadAudio(LoadAudioMessage),
+    SetPlaybackPos(SetPlaybackPosMessage),
+    GetPlayerStatus,
+    StartAudio,
+    StopAudio,
+    PauseAudio,
+    AddAudioSource(AudioSource),
+}
+
+pub struct LoadAudioMessage {
+    pub audio_tag_id: String,
+}
+
+pub struct SetPlaybackPosMessage {
+    pub position_sec: f64,
 }
 
 pub struct AudioPlayer {
     inner: AudioPlayerInner,
     message_senders: HashMap<String, Sender<AudioPlayerMessage>>,
+
+    command_tx: Option<Sender<AudioPlayerRequest>>,
 }
 
 impl AudioPlayer {
@@ -60,6 +85,7 @@ impl AudioPlayer {
         Ok(Self {
             inner: AudioPlayerInner::new(grpc_endpoint)?,
             message_senders: HashMap::default(),
+            command_tx: None,
         })
     }
 
@@ -73,29 +99,120 @@ impl AudioPlayer {
 
     pub fn start_command_handler(
         &mut self,
-        command_rx: Receiver<String>,
+        rt_handle: Arc<Handle>,
+        command_tx: Sender<AudioPlayerRequest>,
+        command_rx: Receiver<AudioPlayerRequest>,
     ) {
+        // self.command_tx = Some(command_tx);
         loop {
             while let Ok(value) = command_rx.try_recv() {
-                println!("cmd value: {}", value);
-                self.dispatch_message(&value);
+                self.dispatch_message(rt_handle.clone(), value, command_tx.clone());
             }
         }
     }
 
-    pub fn dispatch_message(&mut self, message: &str) {
-        match message {
+    pub fn dispatch_message(
+        &mut self,
+        rt_handle: Arc<Handle>,
+        message_type: AudioPlayerRequest,
+        // command_rx: Receiver<AudioPlayerRequest>,
+        command_tx: Sender<AudioPlayerRequest>,
+    ) {
+        match message_type {
             // TODO: match method name
-            "load_audio" => {
-                let sender = self.message_senders.get(message).unwrap();
-                let content_length = self.inner.add_audio().unwrap();
+            AudioPlayerRequest::LoadAudio(value) => {
+                // let sender = self.message_senders.get("load_audio").unwrap();
+                // let content_length = self.inner.add_audio(&value.audio_tag_id).await.unwrap();
+                // let content_length = self.inner.add_audio(&value.audio_tag_id).unwrap();
+                // self.inner.add_audio(&value.audio_tag_id, sender).unwrap();
 
+                // let rt_handle = tokio::runtime::Handle::current();
+                // rt_handle.spawn(async move {
+                //     let audio_source = AudioSource::new(
+                //         "http://localhost:50000", 
+                //         &None, 
+                //         &value.audio_tag_id,
+                //     ).await.unwrap();
+                    
+                //     command_tx.send(AudioPlayerRequest::AddAudioSource(audio_source)).unwrap();
+                // });
+
+                thread::spawn(move || {
+                    // let rt = tokio::runtime::Runtime::new().unwrap();
+                    // let rt = tokio::runtime::Handle::current();
+                    
+                    rt_handle.block_on(async move {
+                        let audio_source = AudioSource::new(
+                            "http://localhost:50000", 
+                            &None, 
+                            &value.audio_tag_id,
+                        ).await.unwrap();
+
+                        command_tx.send(AudioPlayerRequest::AddAudioSource(audio_source)).unwrap();
+                    });
+                });
+
+                // sender.send(AudioPlayerMessage::ResponseAudioMeta(
+                //     AudioMeta { content_length }
+                // )).unwrap();
+
+                // tokio::runtime::Handle::current().spawn(async move {
+                //     let content_length = self.inner.add_audio(&value.audio_tag_id).unwrap();
+
+                //     sender.send(AudioPlayerMessage::ResponseAudioMeta(
+                //         AudioMeta { content_length }
+                //     )).unwrap();
+                // });
+            },
+            AudioPlayerRequest::SetPlaybackPos(value) => {
+                let sender = self.message_senders.get("set_playback_pos").unwrap();
+                let res = self.inner.set_playback_position(value.position_sec).unwrap();
+
+                sender.send(AudioPlayerMessage::Common(
+                    CommonMessage { status: "ok".to_string() }
+                )).unwrap();
+            },
+            AudioPlayerRequest::GetPlayerStatus => {
+                let sender = self.message_senders.get("get_player_status").unwrap();
+                let player_status = self.inner.get_player_status();
+
+                sender.send(AudioPlayerMessage::ResponsePlayerStatus(player_status)).unwrap();
+            },
+            AudioPlayerRequest::StartAudio => {
+                let sender = self.message_senders.get("start_audio").unwrap();
+                self.inner.play().unwrap();
+
+                sender.send(AudioPlayerMessage::Common(
+                    CommonMessage { status: "ok".to_string() }
+                )).unwrap();
+            },
+            AudioPlayerRequest::StopAudio => {
+                let sender = self.message_senders.get("stop_audio").unwrap();
+                self.inner.stop().unwrap();
+
+                sender.send(AudioPlayerMessage::Common(
+                    CommonMessage { status: "ok".to_string() }
+                )).unwrap();
+            },
+            AudioPlayerRequest::PauseAudio => {
+                let sender = self.message_senders.get("pause_audio").unwrap();
+                self.inner.pause().unwrap();
+
+                sender.send(AudioPlayerMessage::Common(
+                    CommonMessage { status: "ok".to_string() }
+                )).unwrap();
+            },
+            AudioPlayerRequest::AddAudioSource(value) => {
+                let sender = self.message_senders.get("load_audio").unwrap();
+
+                let content_length = self.inner.add_audio(value).unwrap();
+  
                 sender.send(AudioPlayerMessage::ResponseAudioMeta(
                     AudioMeta { content_length }
                 )).unwrap();
-            },
+            }
 
-            _ => println!("got message: {}", message),
+            _ => println!("got unexpected message"),
         }
     }
 }
@@ -119,40 +236,47 @@ impl AudioPlayerInner {
         })
     }
 
-    pub fn add_audio(&mut self) -> Result<f64, anyhow::Error> {
-        Ok(120.)
+    pub fn add_audio(
+        &mut self,
+        // audio_tag_id: &str,
+        // sender: &Sender<AudioPlayerMessage>,
+        audio_source: AudioSource,
+    ) -> Result<f64, anyhow::Error> {
+        println!("process add audio request, params: {:?}", audio_source);
+
+        Ok(0.)
     }
 
     pub fn play(&self) -> Result<(), anyhow::Error> {
-        todo!()
+        println!("process play request");
+
+        Ok(())
     }
 
-    pub fn stop(&self) {
+    pub fn stop(&self) -> Result<(), anyhow::Error> {
+        println!("process stop request");
 
-    }
+        Ok(())    }
 
     pub fn pause(&self) -> Result<(), anyhow::Error> {
-        todo!()
+        println!("process pause request");
 
-    }
-
-    pub fn get_playback_position(&self) -> f64 {
-        todo!()
-
+        Ok(())
     }
 
     pub fn set_playback_position(&self, position_sec: f64) -> Result<(), anyhow::Error> {
-        todo!()
+        println!("process set_playback_position request, params: {}", position_sec);
 
+        Ok(())
     }
 
-    pub fn get_remain_sample_buffer_sec(&self) -> f64 {
-        todo!()
+    pub fn get_player_status(&self) -> PlayerStatus {
+        println!("process get_player_status");
 
-    }
-
-    pub fn get_status(&self) -> PlaybackStatus {
-        todo!()
-
+        PlayerStatus {
+            status: 0,
+            pos: 1000,
+            remain_buf: 2000.0,
+        }
     }
 }

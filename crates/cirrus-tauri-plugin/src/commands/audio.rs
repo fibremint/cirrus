@@ -1,4 +1,7 @@
 use cirrus_client_core::audio::AudioPlayerMessage;
+use cirrus_client_core::audio::AudioPlayerRequest;
+use cirrus_client_core::audio::LoadAudioMessage;
+use cirrus_client_core::audio::SetPlaybackPosMessage;
 use tauri::{State, Window, Runtime};
 
 use cirrus_client_core::{
@@ -35,7 +38,12 @@ pub fn set_playback_position(
     //     Ok(content_length) => return Ok(content_length),
     //     Err(_) => return Err("tauri-plugin: failed to add audio"),
     // }
-    state.audio_cmd_sender.send("set_playback_pos".to_string()).unwrap();
+    // state.audio_cmd_sender.send("set_playback_pos".to_string()).unwrap();
+    state.audio_cmd_sender.send(AudioPlayerRequest::SetPlaybackPos(
+        SetPlaybackPosMessage {
+            position_sec: playback_pos
+        }
+    )).unwrap();
 
     // let mut sel = crossbeam_channel::Select::new();
     // let oper = sel.recv(state.audio_msg_receivers.get("set_playback_pos").unwrap());
@@ -45,8 +53,11 @@ pub fn set_playback_position(
     // let mut sel = crossbeam_channel::Select::new();
     // state.audio_cmd_sender.lock().unwrap().send("t")
     let receiver = state.audio_msg_receivers.get("set_playback_pos").unwrap();
-    let res = receiver.recv().unwrap();
 
+    // let res = receiver.recv().unwrap();
+    // if let AudioPlayerMessage::ResponsePlayerStatus(status) = res {
+    //     println!("value: {:?}", status);
+    // }
     // println!("set_playback_pos res: {:?}", );
     // let recv_oper = sel.recv(receiver);
     // let res = sel.s
@@ -61,14 +72,21 @@ pub fn send_audio_player_status<R: Runtime>(
 ) {
     // let audio_player = state.audio_player.clone();
     println!("got send audio player status");
-    state.audio_cmd_sender.send("send_audio_player_status".to_string()).unwrap();
+    // state.audio_cmd_sender.send("get_player_status".to_string()).unwrap();
+    state.audio_cmd_sender.send(AudioPlayerRequest::GetPlayerStatus).unwrap();
 
-    let receiver = state.audio_msg_receivers.get("load_audio").unwrap();
-    // let res = receiver.recv().unwrap();
+    let receiver = state.audio_msg_receivers.get("get_player_status").unwrap();
+
+    let res = receiver.recv().unwrap();
+    if let AudioPlayerMessage::ResponsePlayerStatus(status) = res {
+        println!("value: {:?}", status);
+    }
 
     // while let Ok(value) = receiver.try_recv() {
     //     if let AudioPlayerMessage::ResponsePlayerStatus(status) = value {
     //         println!("value: {:?}", status);
+    //     } else {
+    //         println!("foo");
     //     }
     // }
 
@@ -94,7 +112,12 @@ pub async fn load_audio(
 ) -> Result<f64, &'static str> {
 
     println!("got load audio command");
-    state.audio_cmd_sender.send("load_audio".to_string()).unwrap();
+    // state.audio_cmd_sender.send("load_audio".to_string()).unwrap();
+    state.audio_cmd_sender.send(AudioPlayerRequest::LoadAudio(
+        LoadAudioMessage {
+            audio_tag_id,
+        }
+    )).unwrap();
 
     let receiver = state.audio_msg_receivers.get("load_audio").unwrap();
     let res = receiver.recv().unwrap();
@@ -120,7 +143,8 @@ pub fn start_audio(
 
     println!("got start audio command");
 
-    state.audio_cmd_sender.send("set_playback_pos".to_string()).unwrap();
+    // state.audio_cmd_sender.send("start_audio".to_string()).unwrap();
+    state.audio_cmd_sender.send(AudioPlayerRequest::StartAudio).unwrap();
 
     // match state.audio_player.play() {
     //     Ok(())=> return Ok(()),
@@ -137,23 +161,29 @@ pub fn stop_audio(
 
     println!("got stop audio command");
 
-    state.audio_cmd_sender.send("stop".to_string()).unwrap();
+    // state.audio_cmd_sender.send("stop_audio".to_string()).unwrap();
+    state.audio_cmd_sender.send(AudioPlayerRequest::StopAudio).unwrap();
+
     // state.audio_player.stop();
 
     Ok(())
 }
 
-// #[tauri::command]
-// pub fn pause_audio(
-//     state: State<'_, AppState>
-// ) -> Result<(), &'static str> {
-//     println!("got pause audio command");
+#[tauri::command]
+pub fn pause_audio(
+    state: State<'_, AudioPlayerChannelState>
+) -> Result<(), &'static str> {
+    println!("got pause audio command");
+    // state.audio_cmd_sender.send("pause_audio".to_string()).unwrap();
+    state.audio_cmd_sender.send(AudioPlayerRequest::PauseAudio).unwrap();
 
-//     match state.audio_player.pause() {
-//         Ok(_) => Ok(()),
-//         Err(_) => Err("failed to pause audio"),
-//     }
-// }
+    // match state.audio_player.pause() {
+    //     Ok(_) => Ok(()),
+    //     Err(_) => Err("failed to pause audio"),
+    // }
+
+    Ok(())
+}
 
 #[tauri::command]
 pub async fn get_audio_tags(
@@ -182,10 +212,3 @@ pub async fn get_audio_tags(
         Err(_) => return Err("failed to get audio tags from server"),
     }
 }
-
-// #[tauri::command]
-// pub async fn test(
-//     state: State<'_, AppState>
-// ) {
-//     state.audio_player2;
-// }
