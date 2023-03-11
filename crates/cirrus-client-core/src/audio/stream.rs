@@ -1,8 +1,9 @@
 use std::{sync::{Arc, mpsc::{SyncSender, Sender, self}, Mutex}, mem::MaybeUninit};
 use ringbuf::{HeapRb, SharedRb, Consumer};
 
-use cpal::traits::DeviceTrait;
+use cpal::traits::{DeviceTrait, StreamTrait};
 use cirrus_protobuf::api::AudioDataRes;
+use tokio::runtime::Handle;
 // use tokio::sync::mpsc;
 
 use super::{sample::AudioSample, context::AudioContext};
@@ -16,6 +17,7 @@ pub struct AudioStream {
 
 impl AudioStream {
     pub fn new(
+        rt_handle: &Arc<Handle>,
         audio_ctx: &AudioContext,
         source: AudioSource,
     ) -> Result<Self, anyhow::Error> {
@@ -39,12 +41,13 @@ impl AudioStream {
         let ringbuf = HeapRb::<f32>::new(latency_samples * 2);
         let (rb_prod, mut rb_con) = ringbuf.split();
         
-        let audio_sample = AudioSample::new(
-            source, 
+        let mut audio_sample = AudioSample::new(
+            source,
             audio_ctx.host_stream_config(),
             // audio_data_tx,
             rb_prod
         )?;
+        audio_sample.fetch_buffer(rt_handle).unwrap();
 
         // let audio_sample_tx = audio_sample.tx.clone();
 
@@ -65,21 +68,11 @@ impl AudioStream {
             }
         };
 
-        // let stream = audio_ctx.device.build_output_stream(
-        //     &audio_ctx.stream_config, 
-        //     move |output: &mut [f32], _: &cpal::OutputCallbackInfo| {
-        //         // let _tx = audio_sample_tx.clone();
-        //         // audio_stream_pipeline(output, rb_con)
-
-        //     }, 
-        //     err_fn
-        // )?;
         let stream = audio_ctx.device.build_output_stream(
             &audio_ctx.stream_config, 
             output_data_fn, 
             err_fn
         )?;
-        // stream.pause().unwrap();
 
         Ok(Self {
             stream,
@@ -87,6 +80,19 @@ impl AudioStream {
             status: 0,
         })
 
+    }
+
+    pub fn play(&mut self) -> Result<(), anyhow::Error> {
+        self.stream.play()?;
+        self.audio_sample.process_buf();
+
+        Ok(())
+    }
+
+    pub fn pause(&self) -> Result<(), anyhow::Error> {
+        self.stream.pause()?;
+
+        Ok(())
     }
 }
 

@@ -121,26 +121,7 @@ impl AudioPlayer {
         match message_type {
             // TODO: match method name
             AudioPlayerRequest::LoadAudio(value) => {
-                // let sender = self.message_senders.get("load_audio").unwrap();
-                // let content_length = self.inner.add_audio(&value.audio_tag_id).await.unwrap();
-                // let content_length = self.inner.add_audio(&value.audio_tag_id).unwrap();
-                // self.inner.add_audio(&value.audio_tag_id, sender).unwrap();
-
-                // let rt_handle = tokio::runtime::Handle::current();
-                // rt_handle.spawn(async move {
-                //     let audio_source = AudioSource::new(
-                //         "http://localhost:50000", 
-                //         &None, 
-                //         &value.audio_tag_id,
-                //     ).await.unwrap();
-                    
-                //     command_tx.send(AudioPlayerRequest::AddAudioSource(audio_source)).unwrap();
-                // });
-
                 thread::spawn(move || {
-                    // let rt = tokio::runtime::Runtime::new().unwrap();
-                    // let rt = tokio::runtime::Handle::current();
-                    
                     rt_handle.block_on(async move {
                         let audio_source = AudioSource::new(
                             "http://localhost:50000", 
@@ -151,18 +132,6 @@ impl AudioPlayer {
                         command_tx.send(AudioPlayerRequest::AddAudioSource(audio_source)).unwrap();
                     });
                 });
-
-                // sender.send(AudioPlayerMessage::ResponseAudioMeta(
-                //     AudioMeta { content_length }
-                // )).unwrap();
-
-                // tokio::runtime::Handle::current().spawn(async move {
-                //     let content_length = self.inner.add_audio(&value.audio_tag_id).unwrap();
-
-                //     sender.send(AudioPlayerMessage::ResponseAudioMeta(
-                //         AudioMeta { content_length }
-                //     )).unwrap();
-                // });
             },
             AudioPlayerRequest::SetPlaybackPos(value) => {
                 let sender = self.message_senders.get("set_playback_pos").unwrap();
@@ -205,7 +174,7 @@ impl AudioPlayer {
             AudioPlayerRequest::AddAudioSource(value) => {
                 let sender = self.message_senders.get("load_audio").unwrap();
 
-                let content_length = self.inner.add_audio(value).unwrap();
+                let content_length = self.inner.add_audio(&rt_handle, value).unwrap();
   
                 sender.send(AudioPlayerMessage::ResponseAudioMeta(
                     AudioMeta { content_length }
@@ -240,15 +209,24 @@ impl AudioPlayerInner {
         &mut self,
         // audio_tag_id: &str,
         // sender: &Sender<AudioPlayerMessage>,
+        rt_handle: &Arc<Handle>,
         audio_source: AudioSource,
     ) -> Result<f64, anyhow::Error> {
         println!("process add audio request, params: {:?}", audio_source);
 
+        let audio_stream = AudioStream::new(rt_handle, &self.ctx, audio_source)?;
+
+        self.streams.push_back(audio_stream);
+
         Ok(0.)
     }
 
-    pub fn play(&self) -> Result<(), anyhow::Error> {
+    pub fn play(&mut self) -> Result<(), anyhow::Error> {
         println!("process play request");
+        
+        let audio_stream = self.streams.get_mut(0).unwrap();
+        audio_stream.play()?;
+        // self.streams.get(0).unwrap().play()?;
 
         Ok(())
     }
