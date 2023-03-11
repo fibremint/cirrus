@@ -47,39 +47,18 @@ pub enum AudioPlayerMessage {
 }
 
 pub struct AudioPlayer {
-    ctx: AudioContext,
-    streams: VecDeque<AudioStream>,
-    status: usize,
-    // pub command_tx: Option<mpsc::Sender<String>>,
-    // command_rx: mpsc::Receiver<String>,
-
-    // message_tx: Option<mpsc::Sender<AudioPlayerMessage>>,
-
+    inner: AudioPlayerInner,
     message_senders: HashMap<String, Sender<AudioPlayerMessage>>,
 }
 
 impl AudioPlayer {
     pub fn new(
         grpc_endpoint: &str,
-        // message_tx: Option<mpsc::Sender<AudioPlayerMessage>>,
     ) -> Result<Self, anyhow::Error> {
-        // let (command_tx, mut command_rx) = mpsc::channel();
-
-        // thread::spawn(move || {
-        //     loop {
-        //         let msg = command_rx.recv().unwrap();
-        //     }
-        // });
-
         println!("create audio player core");
 
         Ok(Self {
-            ctx: AudioContext::new()?,
-            streams: VecDeque::default(),
-            status: 0,
-            // command_tx: None,
-            // command_rx,
-            // message_tx,
+            inner: AudioPlayerInner::new(grpc_endpoint)?,
             message_senders: HashMap::default(),
         })
     }
@@ -94,26 +73,8 @@ impl AudioPlayer {
 
     pub fn start_command_handler(
         &mut self,
-        // command_rx: mpsc::Receiver<String>,
         command_rx: Receiver<String>,
     ) {
-        // let (command_tx, command_rx) = mpsc::channel::<String>();
-
-        // self.command_tx = Some(command_tx);
-        // let _self = Arc::new(self);
-        // _self.foo();
-
-        // let handle = thread::spawn(move || {
-        //     loop {
-        //         let msg = command_rx.recv().unwrap();
-        //         ;
-        //     }
-        // });
-        // loop {
-        //     let msg = command_rx.recv().unwrap();
-        //     self.dispatch_message(msg);
-        // }
-
         loop {
             while let Ok(value) = command_rx.try_recv() {
                 println!("cmd value: {}", value);
@@ -122,19 +83,44 @@ impl AudioPlayer {
         }
     }
 
-    pub fn dispatch_message(&self, message: &str) {
+    pub fn dispatch_message(&mut self, message: &str) {
         match message {
+            // TODO: match method name
             "load_audio" => {
-                let sender = self.message_senders.get("load_audio").unwrap();
-                let test_audio_meta = AudioMeta {
-                    content_length: 100.
-                };
+                let sender = self.message_senders.get(message).unwrap();
+                let content_length = self.inner.add_audio().unwrap();
 
-                sender.send(AudioPlayerMessage::ResponseAudioMeta(test_audio_meta));
+                sender.send(AudioPlayerMessage::ResponseAudioMeta(
+                    AudioMeta { content_length }
+                )).unwrap();
             },
 
             _ => println!("got message: {}", message),
         }
+    }
+}
+
+pub struct AudioPlayerInner {
+    ctx: AudioContext,
+    streams: VecDeque<AudioStream>,
+    status: usize,
+}
+
+impl AudioPlayerInner {
+    pub fn new(
+        grpc_endpoint: &str,
+    ) -> Result<Self, anyhow::Error> {
+        println!("create audio player core");
+
+        Ok(Self {
+            ctx: AudioContext::new()?,
+            streams: VecDeque::default(),
+            status: 0,
+        })
+    }
+
+    pub fn add_audio(&mut self) -> Result<f64, anyhow::Error> {
+        Ok(120.)
     }
 
     pub fn play(&self) -> Result<(), anyhow::Error> {
@@ -169,14 +155,4 @@ impl AudioPlayer {
         todo!()
 
     }
-
-    // pub fn start_message_handler(&self) {
-        
-    //     let handle = thread::spawn(move || {
-    //         loop {
-    //             let msg = self.command_rx.recv().unwrap();
-
-    //         }
-    //     });
-    // }
 }
