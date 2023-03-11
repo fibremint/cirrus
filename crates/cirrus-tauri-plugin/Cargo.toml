@@ -13,6 +13,7 @@ edition = "2021"
 anyhow = "1"
 cirrus-client-core = { path = "../cirrus-client-core" }
 cirrus-protobuf = { path = "../cirrus-protobuf" }
+crossbeam-channel = "0.5"
 config = "0.13.1"
 dunce = "1"
 http = "0.2"
