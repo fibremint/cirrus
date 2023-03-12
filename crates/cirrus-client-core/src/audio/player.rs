@@ -103,11 +103,9 @@ impl AudioPlayer {
         command_tx: Sender<AudioPlayerRequest>,
         command_rx: Receiver<AudioPlayerRequest>,
     ) {
-        // self.command_tx = Some(command_tx);
         loop {
-            while let Ok(value) = command_rx.try_recv() {
-                self.dispatch_message(rt_handle.clone(), value, command_tx.clone());
-            }
+            let request = command_rx.recv().unwrap();
+            self.dispatch_message(rt_handle.clone(), request, command_tx.clone());
         }
     }
 
