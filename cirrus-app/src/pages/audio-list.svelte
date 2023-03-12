@@ -38,11 +38,14 @@
   let loadedAudioItemIndex = -1;
   let loadedAudioId = '';
 
+  const UPDATED_AUDIO_PLAYER_EVENT_NAME = "update-playback"
+
   onMount(async() => {
     fetchAudioTags();
 
-    const unlisten = await listen('update-playback-pos', event => {
+    const unlisten = await listen(UPDATED_AUDIO_PLAYER_EVENT_NAME, event => {
       const payload = event.payload;
+      console.log("got event: ", payload);
 
       if (payload.status === 'Stop') {
         updatePlaybackContext({
@@ -72,7 +75,7 @@
 
     updatePlaybackPosEventUnlisten = unlisten;
 
-    await command.sendAudioPlayerStatus();
+    await command.setListenUpdatedEvents(true);
   });
 
   onDestroy(async() => {

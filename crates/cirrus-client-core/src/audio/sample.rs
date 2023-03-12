@@ -8,7 +8,7 @@ use tokio_stream::StreamExt;
 
 use crate::{dto::AudioSource, request};
 
-use super::{packet::EncodedBuffer, context::HostStreamConfig};
+use super::{packet::EncodedBuffer, stream::StreamPlaybackContext};
 
 pub struct AudioSample {
     inner: Arc<Mutex<AudioSampleInner>>,
@@ -17,14 +17,21 @@ pub struct AudioSample {
 impl AudioSample {
     pub fn new(
         source: AudioSource,
-        host_stream_config: HostStreamConfig,
+        // host_stream_config: HostStreamConfig,
+        output_stream_config: &cpal::StreamConfig,
         ringbuf_producer: Producer<f32, Arc<SharedRb<f32, Vec<MaybeUninit<f32>>>>>,
+        stream_playback_context: &Arc<RwLock<StreamPlaybackContext>>,
     ) -> Result<Self, anyhow::Error> {
 
         Ok(Self {
             inner: Arc::new(
                 Mutex::new(
-                    AudioSampleInner::new(source, host_stream_config, ringbuf_producer)?
+                    AudioSampleInner::new(
+                        source,
+                        output_stream_config,
+                        ringbuf_producer,
+                        stream_playback_context,
+                    )?
                 )
             )
         })
@@ -32,7 +39,7 @@ impl AudioSample {
 
     pub fn fetch_buffer(
         &self,
-        rt_handle: &Arc<Handle>
+        rt_handle: &Handle,
     ) -> Result<(), anyhow::Error> {
         self.inner.lock().unwrap().fetch_buffer(rt_handle)
     }
@@ -44,6 +51,10 @@ impl AudioSample {
         std::thread::spawn(move || {
             _inner.lock().unwrap().process_buf()
         });
+    }
+
+    pub fn update_from_output_stream_config(&self) {
+        todo!()
     }
 }
 
@@ -57,7 +68,7 @@ pub struct AudioSampleInner {
     packet_decoder: opus::Decoder,
     resampler: AudioResampler,
 
-    ringbuf_producer: Producer<f32, Arc<SharedRb<f32, Vec<MaybeUninit<f32>>>>>,
+    audio_stream_buf_producer: Producer<f32, Arc<SharedRb<f32, Vec<MaybeUninit<f32>>>>>,
     // pub tx: mpsc::Sender<&'static str>,
     // rx: mpsc::Receiver<&'static str>,
     // audio_data_res_tx: mpsc::Sender<AudioDataRes>,
@@ -67,13 +78,14 @@ pub struct AudioSampleInner {
 impl AudioSampleInner {
     pub fn new(
         source: AudioSource,
-        host_stream_config: HostStreamConfig,
-        ringbuf_producer: Producer<f32, Arc<SharedRb<f32, Vec<MaybeUninit<f32>>>>>,
+        output_stream_config: &cpal::StreamConfig,
+        audio_stream_buf_producer: Producer<f32, Arc<SharedRb<f32, Vec<MaybeUninit<f32>>>>>,
+        stream_playback_context: &Arc<RwLock<StreamPlaybackContext>>
         // audio_data_res_tx: mpsc::Sender<AudioDataRes>,
     ) -> Result<Self, anyhow::Error> {
         let mut sample_frame_buf: Vec<VecDeque<f32>> = Vec::with_capacity(2);
 
-        for _ in 0..host_stream_config.output_channels {
+        for _ in 0..output_stream_config.channels {
             sample_frame_buf.push(VecDeque::new());
         }
 
@@ -88,9 +100,12 @@ impl AudioSampleInner {
             sample_frame_buf,
             packet_buf: Arc::new(RwLock::new(packet_buf)),
             packet_decoder,
-            resampler: AudioResampler::new(host_stream_config.sample_rate.try_into()?, 960)?,
+            resampler: AudioResampler::new(
+                output_stream_config.sample_rate.0.try_into()?,
+                960
+            )?,
             context: AudioSampleContext::default(),
-            ringbuf_producer,
+            audio_stream_buf_producer,
             // tx,
             // rx,
             // audio_data_res_tx,
@@ -99,7 +114,7 @@ impl AudioSampleInner {
 
     pub fn fetch_buffer(
         &mut self,
-        rt_handle: &Arc<Handle>,
+        rt_handle: &Handle,
     ) -> Result<(), anyhow::Error> {
         let packet_buf = self.packet_buf.blocking_read();
 
@@ -117,7 +132,7 @@ impl AudioSampleInner {
         let _packet_buf = self.packet_buf.clone();
 
         rt_handle.spawn(async move {
-            let mut audio_data_steram = request::get_audio_data_stream(
+            let mut audio_data_stream = request::get_audio_data_stream(
                 "http://localhost:50000", 
                 &None, 
                 &audio_tag_id, 
@@ -126,7 +141,7 @@ impl AudioSampleInner {
                 2
             ).await.unwrap();
 
-            while let Some(res) = audio_data_steram.next().await {
+            while let Some(res) = audio_data_stream.next().await {
                 let audio_data = match res {
                     Ok(data) => data,
                     Err(e) => {
@@ -151,7 +166,7 @@ impl AudioSampleInner {
             // buffer has not enough spaces to fill buffer
             // wait for consumer consumes buffer
             let processed_sample_len = self.resampler.resampler.output_frames_max() * 2;
-            if processed_sample_len > self.ringbuf_producer.free_len() {
+            if processed_sample_len > self.audio_stream_buf_producer.free_len() {
                 // println!("buffer has not enough spaces to fill buffer");
                 std::thread::sleep(Duration::from_millis(50));
 
@@ -209,7 +224,7 @@ impl AudioSampleInner {
                 }
             }
             
-            self.ringbuf_producer.push_slice(resampled_output.as_interleaved());
+            self.audio_stream_buf_producer.push_slice(resampled_output.as_interleaved());
 
             packet_idx += 1;
 
