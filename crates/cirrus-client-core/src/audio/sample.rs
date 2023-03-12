@@ -148,23 +148,22 @@ impl AudioSampleInner {
         let mut packet_idx = 0;
 
         loop {
-            let _packet_buf_guard = self.packet_buf.blocking_read();
-            let data = _packet_buf_guard.frame_buf.get(&packet_idx);
+            // buffer has not enough spaces to fill buffer
+            // wait for consumer consumes buffer
+            let processed_sample_len = self.resampler.resampler.output_frames_max() * 2;
+            if processed_sample_len > self.ringbuf_producer.free_len() {
+                // println!("buffer has not enough spaces to fill buffer");
+                std::thread::sleep(Duration::from_millis(50));
 
-            if data.is_none() {
                 continue;
             }
 
-            let a = self.resampler.resampler.output_frames_next();
-            let b = self.ringbuf_producer.free_len();
+            // audio data is not fetched  
+            let _packet_buf_guard = self.packet_buf.blocking_read();
+            let data = _packet_buf_guard.frame_buf.get(&packet_idx);
+            if data.is_none() {
+                // println!("data is not fetched");
 
-            // if self.ringbuf_producer.is_full() {
-            //     // println!("buf is full, continue");
-            //     continue;
-            // }
-
-            if a * 2 > b {
-                // println!("not enough spaces to fill buf, continue");
                 continue;
             }
 
@@ -191,19 +190,6 @@ impl AudioSampleInner {
             ) {
                 println!("{:?}", err);
             }
-            
-            // let audio_buf_reader = audio::io::Read::new(decoded_samples);
-            // // let mut resampler_input_buf = self.resampler_input_buf.lock().unwrap();
-
-            // for ch_idx in 0..2 {
-            //     let audio_ch_buf = audio_buf_reader
-            //         .get(ch_idx)
-            //         .unwrap()
-            //         .iter()
-            //         .collect::<Vec<_>>();
-
-            //     self.resampler.input_buf[ch_idx] = audio_ch_buf;
-            // }
 
             self.resampler.resample(decoded_samples);
 
@@ -231,47 +217,6 @@ impl AudioSampleInner {
         }
     }
 }
-
-// fn decode_opus_packet<'a>(audio_data: &'a AudioDataRes, decoder: &'a mut opus::Decoder) -> audio::wrap::Interleaved<&'a mut [f32]> {
-//     // const a: usize = audio_data.sp_frame_num * 2;
-//     // let t = [0.; a];
-//     let mut decoded_samples = vec![0.; (audio_data.sp_frame_num*2).try_into().unwrap()];
-//     let mut ds = audio::wrap::interleaved(decoded_samples.as_mut_slice(), 2);
-
-//     // let mut ds = audio::wrap::interleaved(decoded_samples.as_mut_slice(), 2);
-//     // let mut ds = audio::wrap::interleaved(&mut[0.; (audio_data.sp_frame_num * 2).try_into().unwrap()], 2);
-
-//     if let Err(err) = decoder.decode_float(
-//         &audio_data.encoded_samples,
-//         &mut ds.as_interleaved_mut(),
-//         false
-//     ) {
-//         println!("{:?}", err);
-//     }
-
-//     ds
-// }
-
-
-// fn decode_opus_packet<'a>(audio_data: &'a AudioDataRes, decoder: &'a mut opus::Decoder) -> audio::wrap::Interleaved<&'a mut [f32]> {
-//     // const a: usize = audio_data.sp_frame_num * 2;
-//     // let t = [0.; a];
-//     let mut decoded_samples = vec![0.; (audio_data.sp_frame_num*2).try_into().unwrap()];
-//     let mut ds = audio::wrap::interleaved(decoded_samples.as_mut_slice(), 2);
-
-//     // let mut ds = audio::wrap::interleaved(decoded_samples.as_mut_slice(), 2);
-//     // let mut ds = audio::wrap::interleaved(&mut[0.; (audio_data.sp_frame_num * 2).try_into().unwrap()], 2);
-
-//     if let Err(err) = decoder.decode_float(
-//         &audio_data.encoded_samples,
-//         &mut ds.as_interleaved_mut(),
-//         false
-//     ) {
-//         println!("{:?}", err);
-//     }
-
-//     ds
-// }
 
 struct AudioSampleContext {
     pub playback_sample_frame_pos: usize,
