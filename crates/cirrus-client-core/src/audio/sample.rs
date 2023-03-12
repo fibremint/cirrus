@@ -150,7 +150,7 @@ impl AudioSampleInner {
         loop {
             let _packet_buf_guard = self.packet_buf.blocking_read();
             let data = _packet_buf_guard.frame_buf.get(&packet_idx);
-            
+
             if data.is_none() {
                 continue;
             }
@@ -170,22 +170,28 @@ impl AudioSampleInner {
 
             let data = data.unwrap();
 
-            // let decoded_samples = decode_opus_packet(data.unwrap(), &mut self.packet_decoder);
+            let es_ptr = data.encoded_samples.as_ptr();
+            let es_len = data.encoded_samples.len();
 
-            let mut decoded_samples = vec![0.; (data.sp_frame_num*2).try_into().unwrap()];
+            let es = unsafe {
+                std::slice::from_raw_parts(es_ptr, es_len)
+            };
+
+            let sp_frame_num = data.sp_frame_num;
+
+            drop(_packet_buf_guard);
+
+            let mut decoded_samples = vec![0.; (sp_frame_num*2).try_into().unwrap()];
             let mut decoded_samples = audio::wrap::interleaved(decoded_samples.as_mut_slice(), 2);
-        
-            // let mut ds = audio::wrap::interleaved(decoded_samples.as_mut_slice(), 2);
-            // let mut ds = audio::wrap::interleaved(&mut[0.; (audio_data.sp_frame_num * 2).try_into().unwrap()], 2);
-        
+
             if let Err(err) = self.packet_decoder.decode_float(
-                &data.encoded_samples,
+                es,
                 &mut decoded_samples.as_interleaved_mut(),
                 false
             ) {
                 println!("{:?}", err);
             }
-
+            
             // let audio_buf_reader = audio::io::Read::new(decoded_samples);
             // // let mut resampler_input_buf = self.resampler_input_buf.lock().unwrap();
 
