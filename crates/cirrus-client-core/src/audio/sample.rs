@@ -1,6 +1,7 @@
-use std::{collections::VecDeque, sync::{mpsc, Arc, Mutex}, mem::MaybeUninit, time::Duration};
+use std::{collections::VecDeque, sync::{mpsc, Arc, Mutex, Condvar, atomic::{AtomicUsize, Ordering}}, mem::MaybeUninit, time::Duration};
 use audio::{InterleavedBufMut, wrap::Interleaved, InterleavedBuf, Buf};
 use cirrus_protobuf::api::AudioDataRes;
+use rand::Fill;
 use ringbuf::{SharedRb, Producer};
 use rubato::Resampler;
 use tokio::{runtime::Handle, sync::RwLock};
@@ -8,10 +9,87 @@ use tokio_stream::StreamExt;
 
 use crate::{dto::AudioSource, request};
 
-use super::{packet::EncodedBuffer, stream::StreamPlaybackContext};
+use super::{packet::EncodedBuffer, stream::{StreamPlaybackContext, AudioStreamBufferProducer}};
+
+#[derive(Debug, PartialEq, Clone, serde_derive::Serialize)]
+pub enum FetchBufferStatus {
+    Init,
+    Filling,
+    Filled,
+    Error,
+}
+
+impl From<usize> for FetchBufferStatus {
+    fn from(value: usize) -> Self {
+        use self::FetchBufferStatus::*;
+        match value {
+            0 => Init,
+            1 => Filling,
+            2 => Filled,
+            3 => Error,
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, serde_derive::Serialize)]
+pub enum ProcessAudioDataStatus {
+    Init,
+    Processing,
+    Paused,
+    WaitConsume,
+    DataNotExist,
+    Error,
+}
+
+impl From<usize> for ProcessAudioDataStatus {
+    fn from(value: usize) -> Self {
+        use self::ProcessAudioDataStatus::*;
+        match value {
+            0 => Init,
+            1 => Processing,
+            2 => Paused,
+            3 => WaitConsume,
+            4 => DataNotExist,
+            5 => Error,
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, serde_derive::Serialize)]
+pub enum RequestAction {
+    StartFetch,
+    StopFetch,
+    StartDecodeSample,
+    StopDecodeSample,
+}
+
+#[derive(Debug, PartialEq, Clone, serde_derive::Serialize)]
+pub enum RunState {
+    Start,
+    Stop,
+}
+
+impl From<usize> for RunState {
+    fn from(value: usize) -> Self {
+        use self::RunState::*;
+        match value {
+            0 => Start,
+            1 => Stop,
+            _ => unreachable!(),
+        }
+    }
+}
+
+#[derive(Clone, serde_derive::Serialize)]
+pub enum UpdatedBufferMessage {
+    RemainSampleBufferSec(f32),
+    BufferStatus(FetchBufferStatus),
+}
 
 pub struct AudioSample {
-    inner: Arc<Mutex<AudioSampleInner>>,
+    pub inner: Arc<Mutex<AudioSampleInner>>,
 }
 
 impl AudioSample {
@@ -19,7 +97,7 @@ impl AudioSample {
         source: AudioSource,
         // host_stream_config: HostStreamConfig,
         output_stream_config: &cpal::StreamConfig,
-        ringbuf_producer: Producer<f32, Arc<SharedRb<f32, Vec<MaybeUninit<f32>>>>>,
+        ringbuf_producer: AudioStreamBufferProducer,
         stream_playback_context: &Arc<RwLock<StreamPlaybackContext>>,
     ) -> Result<Self, anyhow::Error> {
 
@@ -40,27 +118,47 @@ impl AudioSample {
     pub fn fetch_buffer(
         &self,
         rt_handle: &Handle,
+        fetch_sec: u32,
     ) -> Result<(), anyhow::Error> {
-        self.inner.lock().unwrap().fetch_buffer(rt_handle)
+        self.inner.lock().unwrap().fetch_buffer(rt_handle, fetch_sec)
     }
 
-    pub fn start_process_buf(
+    pub fn start_process_audio_data_thread(
         &self,
     ) {
         let _inner = self.inner.clone();
-        std::thread::spawn(move || {
-            _inner.lock().unwrap().process_buf()
+        let _process_sample_condvar = _inner.lock().unwrap().context.process_sample_condvar.clone();
+
+        std::thread::spawn(move || loop {
+            // let _process_sample_condvar = _inner.lock().unwrap().context.process_sample_condvar.clone();
+
+            {
+                let (process_sample_mutex, process_sample_cv) = &*_process_sample_condvar;
+                let mut process_sample_guard = process_sample_mutex.lock().unwrap();
+    
+                // Wait until the value of condvar is changed to true and notified
+                while !*process_sample_guard {
+                    process_sample_guard = process_sample_cv.wait(process_sample_guard).unwrap();
+                }
+    
+            }
+
+            _inner.lock().unwrap().process_audio_data();
         });
     }
 
     pub fn update_from_output_stream_config(&self) {
         todo!()
     }
+
+    // pub fn get_process_sample_condvar(&self) -> Arc<(Mutex<bool>, Condvar)> {
+    //     self.inner.lock().unwrap().context.process_sample_condvar.clone()
+    // }
 }
 
 pub struct AudioSampleInner {
     pub source: AudioSource,
-    context: AudioSampleContext,
+    pub context: AudioSampleContext,
 
     sample_frame_buf: Vec<VecDeque<f32>>,
     packet_buf: Arc<RwLock<EncodedBuffer>>,
@@ -68,18 +166,22 @@ pub struct AudioSampleInner {
     packet_decoder: opus::Decoder,
     resampler: AudioResampler,
 
-    audio_stream_buf_producer: Producer<f32, Arc<SharedRb<f32, Vec<MaybeUninit<f32>>>>>,
+    audio_stream_buf_producer: AudioStreamBufferProducer,
     // pub tx: mpsc::Sender<&'static str>,
     // rx: mpsc::Receiver<&'static str>,
     // audio_data_res_tx: mpsc::Sender<AudioDataRes>,
     // resampler: AudioResampler,
 }
 
+// fn set_status<T>(status_store: Arc<AtomicUsize>, state: T) {
+//     status_store.store(state as usize, Ordering::SeqCst);
+// }
+
 impl AudioSampleInner {
     pub fn new(
         source: AudioSource,
         output_stream_config: &cpal::StreamConfig,
-        audio_stream_buf_producer: Producer<f32, Arc<SharedRb<f32, Vec<MaybeUninit<f32>>>>>,
+        audio_stream_buf_producer: AudioStreamBufferProducer,
         stream_playback_context: &Arc<RwLock<StreamPlaybackContext>>
         // audio_data_res_tx: mpsc::Sender<AudioDataRes>,
     ) -> Result<Self, anyhow::Error> {
@@ -109,12 +211,14 @@ impl AudioSampleInner {
             // tx,
             // rx,
             // audio_data_res_tx,
+            // process_sample_condvar: Arc::new((Mutex::new(false), Condvar::new()))
         })
     }
 
     pub fn fetch_buffer(
         &mut self,
         rt_handle: &Handle,
+        fetch_sec: u32,
     ) -> Result<(), anyhow::Error> {
         let packet_buf = self.packet_buf.blocking_read();
 
@@ -159,87 +263,109 @@ impl AudioSampleInner {
         Ok(())
     }
 
-    pub fn process_buf(&mut self) {
-        let mut packet_idx = 0;
+    pub fn process_audio_data(&mut self) {
+        // let mut packet_idx = 0;
 
-        loop {
-            // buffer has not enough spaces to fill buffer
-            // wait for consumer consumes buffer
+        let _process_sample_condvar = self.context.process_sample_condvar.clone();
+        let _process_audio_data_status = self.context.process_audio_data_status.clone();
+
+        let (encoded_sampels, sample_frame_len) = {
+            let (process_sample_mutex, _) = &*_process_sample_condvar;
+            let mut process_sample_guard = process_sample_mutex.lock().unwrap();
+            
+            // Buffer has not enough spaces to fill buffer
+            // Wait for consumer consumes buffer
             let processed_sample_len = self.resampler.resampler.output_frames_max() * 2;
             if processed_sample_len > self.audio_stream_buf_producer.free_len() {
-                // println!("buffer has not enough spaces to fill buffer");
-                std::thread::sleep(Duration::from_millis(50));
+                // Set status to wait for audio stream output function consumes buffer 
+                _process_audio_data_status.store(ProcessAudioDataStatus::WaitConsume as usize, Ordering::SeqCst);
+                // Set wait status
+                *process_sample_guard = false;
 
-                continue;
+                return;
             }
 
             // audio data is not fetched  
             let _packet_buf_guard = self.packet_buf.blocking_read();
-            let data = _packet_buf_guard.frame_buf.get(&packet_idx);
+            let data = _packet_buf_guard.frame_buf.get(&self.context.playback_sample_frame_pos);
             if data.is_none() {
-                // println!("data is not fetched");
+                // Set status that audio sample packet trying to process does not exist
+                _process_audio_data_status.store(ProcessAudioDataStatus::DataNotExist as usize, Ordering::SeqCst);
+                // Set wait status
+                *process_sample_guard = false;
 
-                continue;
-            }
+                return;
+            }            
 
             let data = data.unwrap();
-
+            // Create a reference of encoded samples
             let es_ptr = data.encoded_samples.as_ptr();
             let es_len = data.encoded_samples.len();
-
             let es = unsafe {
                 std::slice::from_raw_parts(es_ptr, es_len)
             };
-
+            
             let sp_frame_num = data.sp_frame_num;
 
-            drop(_packet_buf_guard);
+            (es, sp_frame_num)
+        };
 
-            let mut decoded_samples = vec![0.; (sp_frame_num*2).try_into().unwrap()];
-            let mut decoded_samples = audio::wrap::interleaved(decoded_samples.as_mut_slice(), 2);
+        // drop(_packet_buf_guard);
 
-            if let Err(err) = self.packet_decoder.decode_float(
-                es,
-                &mut decoded_samples.as_interleaved_mut(),
-                false
-            ) {
-                println!("{:?}", err);
-            }
-
-            self.resampler.resample(decoded_samples);
-
-            let mut resampled_output = audio::buf::Interleaved::<f32>::with_topology(
-                2,
-                960
-            );
-
-            for ch_idx in 0..2 {
-                for (c, s) in resampled_output
-                    .get_mut(ch_idx)
-                    .unwrap()
-                    .iter_mut()
-                    .zip(&self.resampler.output_buf[ch_idx])
-                {
-                    *c = *s;
-                }
-            }
-            
-            self.audio_stream_buf_producer.push_slice(resampled_output.as_interleaved());
-
-            packet_idx += 1;
-
-            std::thread::sleep(Duration::from_millis(10));
+        // Create decoded samples buffer
+        let mut decoded_samples = vec![0.; (sample_frame_len*2).try_into().unwrap()];
+        let mut decoded_samples = audio::wrap::interleaved(decoded_samples.as_mut_slice(), 2);
+        // Decode encoded samples with Opus deocder
+        if let Err(err) = self.packet_decoder.decode_float(
+            encoded_sampels,
+            &mut decoded_samples.as_interleaved_mut(),
+            false
+        ) {
+            println!("{:?}", err);
         }
+
+        self.resampler.resample(decoded_samples);
+
+        let mut resampled_output = audio::buf::Interleaved::<f32>::with_topology(
+            2,
+            960
+        );
+
+        for ch_idx in 0..2 {
+            for (c, s) in resampled_output
+                .get_mut(ch_idx)
+                .unwrap()
+                .iter_mut()
+                .zip(&self.resampler.output_buf[ch_idx])
+            {
+                *c = *s;
+            }
+        }
+        
+        self.audio_stream_buf_producer.push_slice(resampled_output.as_interleaved());
+
+        self.context.playback_sample_frame_pos += 1;
+
+        // std::thread::sleep(Duration::from_millis(10));
     }
 }
 
-struct AudioSampleContext {
-    pub playback_sample_frame_pos: usize,
+
+// fn create_
+
+pub struct AudioSampleContext {
+    pub playback_sample_frame_pos: u32,
     pub buffer_status: usize,
     // pub host_sample_rate: u32,
     // pub host_output_channels: usize,
 
     pub packet_playback_idx: usize,
+
+    pub fetch_buffer_status: Arc<AtomicUsize>,
+    pub process_audio_data_status: Arc<AtomicUsize>,
+    // ProcessAudioDataStatus
+    pub fetch_buffer_condvar: Arc<(Mutex<bool>, Condvar)>,
+    pub process_sample_condvar: Arc<(Mutex<bool>, Condvar)>,
 }
 
 impl Default for AudioSampleContext {
@@ -249,7 +375,13 @@ impl Default for AudioSampleContext {
             buffer_status: Default::default(), 
             // host_sample_rate: Default::default(), 
             // host_output_channels: Default::default(), 
-            packet_playback_idx: Default::default() 
+            packet_playback_idx: Default::default(),
+
+            fetch_buffer_status: Arc::new(AtomicUsize::new(FetchBufferStatus::Init as usize)),
+            process_audio_data_status: Arc::new(AtomicUsize::new(ProcessAudioDataStatus::Init as usize)),
+
+            fetch_buffer_condvar: Arc::new((Mutex::new(false), Condvar::new())),
+            process_sample_condvar: Arc::new((Mutex::new(false), Condvar::new())),
         }
     }
 }

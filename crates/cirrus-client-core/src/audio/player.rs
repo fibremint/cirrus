@@ -22,7 +22,7 @@ use crate::dto::AudioSource;
 
 use crate::audio::{device::AudioDeviceContext, stream::AudioStream};
 
-use super::stream::UpdatedStreamMessage;
+use super::stream::{UpdatedStreamMessage, UpdatedPlaybackMessage};
 
 // use super::sample::AudioSample;
 
@@ -284,6 +284,7 @@ impl AudioPlayerInner {
             rt_handle,
             &self.device_context,
             audio_source,
+            Some(5),
             150.,
             self.event_sender.clone(),
         )?;
@@ -306,11 +307,14 @@ impl AudioPlayerInner {
     pub fn stop(&self) -> Result<(), anyhow::Error> {
         println!("process stop request");
 
-        Ok(())    }
+        Ok(())    
+    }
 
     pub fn pause(&self) -> Result<(), anyhow::Error> {
         println!("process pause request");
 
+        self.streams.get(0).unwrap().pause()?;
+        
         Ok(())
     }
 

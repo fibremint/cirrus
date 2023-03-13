@@ -1,6 +1,6 @@
 use std::{sync::{Arc, mpsc::{self}, Mutex, atomic::{AtomicUsize, Ordering}}, mem::MaybeUninit};
 use crossbeam_channel::Sender;
-use ringbuf::{HeapRb, SharedRb, Consumer};
+use ringbuf::{HeapRb, SharedRb, Consumer, Producer};
 
 use cpal::traits::{DeviceTrait, StreamTrait};
 use cirrus_protobuf::api::AudioDataRes;
@@ -15,6 +15,7 @@ pub enum StreamStatus {
     Play,
     Pause,
     Stop,
+    BufferNotEnough,
     Error,
 }
 
@@ -25,7 +26,8 @@ impl From<usize> for StreamStatus {
             0 => Play,
             1 => Pause,
             2 => Stop,
-            3 => Error,
+            3 => BufferNotEnough,
+            4 => Error,
             _ => unreachable!(),
         }
     }
@@ -34,7 +36,7 @@ impl From<usize> for StreamStatus {
 #[derive(Clone, serde_derive::Serialize)]
 pub enum UpdatedPlaybackMessage {
     PositionSec(u32),
-    RemainSampleBufferSec(u32),
+    // RemainSampleBufferSec(u32),
     StreamStatus(StreamStatus),
 }
 
@@ -42,7 +44,10 @@ pub enum UpdatedPlaybackMessage {
 pub struct UpdatedStreamMessage {
     stream_id: String,
     message: UpdatedPlaybackMessage,
+    // message: T,
 }
+
+// pub fn create_atomic_status<T>()
 
 pub struct StreamPlaybackContext {
     pub stream_id: String,
@@ -56,6 +61,7 @@ pub struct StreamPlaybackContext {
     // host_stream_config: Arc<HostStreamConfig>,
     host_stream_config: Arc<cpal::StreamConfig>,
 
+    // notify_update_sender: Option<Sender<UpdatedStreamMessage<UpdatedPlaybackMessage>>>,
     notify_update_sender: Option<Sender<UpdatedStreamMessage>>,
 }
 
@@ -71,7 +77,8 @@ impl StreamPlaybackContext {
             sample_pos: Default::default(),
             playback_pos_sec: Default::default(),
             remain_audio_sample_buffer: Default::default(),
-            stream_status: Default::default(),
+            // stream_status: Default::default(),
+            stream_status: Arc::new(AtomicUsize::new(StreamStatus::Pause as usize)),
             host_stream_config,
             notify_update_sender,
         }
@@ -130,6 +137,21 @@ impl StreamPlaybackContext {
     }
 }
 
+// impl<T> Notify for StreamPlaybackContext<T> {
+//     // fn notify_update<T>(&self, message: T) {
+//     //     if let Some(sender) = &self.notify_update_sender {
+//     //         sender.send(UpdatedStreamMessage { 
+//     //             stream_id: self.stream_id.clone(),
+//     //             message,
+//     //         }).unwrap();
+//     //     }    
+//     // }
+
+//     fn get_sender(&self) -> Option<Sender<T>> {
+//         self.notify_update_sender.clone()
+//     }
+// }
+
 fn convert_from_sample_pos_to_sec(sample_pos: usize, sample_rate: u32) -> u32 {
     (sample_pos as f32 / sample_rate as f32).floor() as u32
 }
@@ -138,7 +160,6 @@ pub struct AudioStream {
     stream: cpal::Stream,
     audio_sample: AudioSample,
     // status: usize,
-
     stream_playback_context: Arc<RwLock<StreamPlaybackContext>>,
 }
 
@@ -148,6 +169,7 @@ impl AudioStream {
         rt_handle: &Handle,
         device_context: &AudioDeviceContext,
         source: AudioSource,
+        fetch_initial_buffer_sec: Option<u32>,
         stream_buffer_len_ms: f32,
         notify_update_sender: Option<Sender<UpdatedStreamMessage>>,
     ) -> Result<Self, anyhow::Error> {
@@ -169,7 +191,7 @@ impl AudioStream {
 
         // let host_stream_config = Arc::new(audio_ctx.output_stream_config);
 
-        let audio_stream_buf = create_audio_stream_buffer::<f32>(
+        let audio_stream_buf = create_audio_stream_buffer(
             stream_buffer_len_ms,
             device_context.output_stream_config.sample_rate.0 as f32,
             device_context.output_stream_config.channels as usize
@@ -186,7 +208,7 @@ impl AudioStream {
             )
         );
 
-        let audio_sample = AudioSample::new(
+        let mut audio_sample = AudioSample::new(
             source,
             // audio_data_tx,
             &device_context.output_stream_config,
@@ -194,15 +216,28 @@ impl AudioStream {
             &stream_playback_context
         )?;
 
-        audio_sample.fetch_buffer(rt_handle).unwrap();
-        audio_sample.start_process_buf();
+        // fetch intial buffer
+        if let Some(fetch_sec) = fetch_initial_buffer_sec {
+            audio_sample.fetch_buffer(rt_handle, fetch_sec).unwrap();
+        }
+        audio_sample.start_process_audio_data_thread();
 
         let _stream_playback_context = stream_playback_context.clone();
+        let _process_sample_condvar = audio_sample.inner.lock().unwrap().context.process_sample_condvar.clone();
 
         let output_data_fn = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
             let mut input_buf_fell_behind = false;
             let mut consumed_ch_samples = 0;
+            // Notify to audio sample processer
+            {
+                let (process_sample_mutex, process_sample_cv) = &*_process_sample_condvar;
+                let mut process_sample_guard = process_sample_mutex.lock().unwrap();
 
+                *process_sample_guard = true;
+                process_sample_cv.notify_one();
+            }
+
+            // consume audio samples from stream buffer
             for sample in data {
                 *sample = match audio_stream_buf_con.pop() {
                     Some(s) => {
@@ -225,7 +260,18 @@ impl AudioStream {
 
             if input_buf_fell_behind {
                 eprintln!("input stream fell behind: try increasing latency");
-            }
+
+                // set status buffer not enough
+                // let s = _stream_playback_context.blocking_read().update_stream_status();
+            } 
+            
+            // else {
+            //     let (process_sample_mutex, process_sample_cv) = &*_process_sample_condvar;
+            //     let mut process_sample_guard = process_sample_mutex.lock().unwrap();
+
+            //     *process_sample_guard = true;
+            //     process_sample_cv.notify_one();
+            // }
         };
 
         let stream = device_context.device.build_output_stream(
@@ -244,6 +290,17 @@ impl AudioStream {
     }
 
     pub fn play(&mut self) -> Result<(), anyhow::Error> {
+        // let process_sample_condvar = self.audio_sample.inner.lock().unwrap().context.process_sample_condvar.clone();
+    
+        // let _audio_sample_inner = self.audio_sample.inner.lock().unwrap();
+        // let process_sample_condvar = self.audio_sample.context.process_sample_condvar.clone();
+        // let (process_sample_mutex, process_sample_cv) = &*process_sample_condvar;
+        // let mut process_sample_guard = process_sample_mutex.lock().unwrap();
+        // // set condvar of process audio sample to start
+        // *process_sample_guard = true;
+        // // // notify 
+        // process_sample_cv.notify_one();
+
         self.stream.play()?;
         self.stream_playback_context.blocking_read().update_stream_status(StreamStatus::Play);
 
@@ -252,7 +309,17 @@ impl AudioStream {
 
     pub fn pause(&self) -> Result<(), anyhow::Error> {
         self.stream.pause()?;
+
+        let process_sample_condvar = self.audio_sample.inner.lock().unwrap().context.process_sample_condvar.clone();
+        // let process_sample_condvar = self.audio_sample.context.process_sample_condvar.clone();
+        let (process_sample_mutex, process_sample_cv) = &*process_sample_condvar;
+        let mut process_sample_guard = process_sample_mutex.lock().unwrap();
+        // set condvar of process audio sample to stop
+        *process_sample_guard = false;
+        // // notify 
+        // process_sample_cv.notify_one();
         self.stream_playback_context.blocking_read().update_stream_status(StreamStatus::Pause);
+
 
         Ok(())
     }
@@ -273,17 +340,19 @@ impl AudioStream {
     }
 }
 
-type AudioStreamBuffer<T> = SharedRb<T, Vec<MaybeUninit<T>>>;
+type AudioStreamBuffer = SharedRb<f32, Vec<MaybeUninit<f32>>>;
+pub type AudioStreamBufferProducer = Producer<f32, Arc<SharedRb<f32, Vec<MaybeUninit<f32>>>>>;
+// type AudioStreamBufferConsumer<T> = Consumer<T, Arc<SharedRb<T, Vec<MaybeUninit<T>>>>>;
 
-fn create_audio_stream_buffer<T>(
+fn create_audio_stream_buffer(
     length_ms: f32,
     sample_rate: f32,
     output_channels: usize
-) -> AudioStreamBuffer<T> {
+) -> AudioStreamBuffer {
     let latency_frames = (length_ms / 1_000.0) * sample_rate as f32;
     let latency_samples = latency_frames as usize * output_channels as usize;
 
-    HeapRb::<T>::new(latency_samples * output_channels)
+    HeapRb::<f32>::new(latency_samples * output_channels)
 }
 
 // #[derive(Debug, PartialEq)]
