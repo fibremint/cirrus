@@ -222,9 +222,17 @@ impl EncodedBuffer {
         self.merge_node_from_current();
     }
 
-    pub fn get_fetch_required_packet_num(&self, fetch_start_idx: u32, duration_sec: f64) -> u32 {
+    pub fn get_fetch_required_packet_num(&self, fetch_start_idx: u32, duration_sec: Option<f64>) -> u32 {
         let max_avail_fetch_pkt = self.content_packets - fetch_start_idx;
-        let desired_fetch_pkt_num = get_packet_idx_from_sec(duration_sec, 0.02);
+
+        // let desired_fetch_pkt_num = get_packet_idx_from_sec(duration_sec, 0.02);
+        let desired_fetch_pkt_num = 
+            if duration_sec.is_some() {
+                get_packet_idx_from_sec(duration_sec.unwrap(), 0.02)
+            } else {
+                std::usize::MAX
+            };
+            
         let default_val = std::cmp::min(desired_fetch_pkt_num, max_avail_fetch_pkt.try_into().unwrap());
 
         let bci = self.buf_chunk_info.get(&self.seek_buf_chunk_node_idx).unwrap();
@@ -358,6 +366,12 @@ impl EncodedBuffer {
         let ci = CI::new(bci_node, NodeSearchDirection::Forward);
 
         ci.into_iter().count().try_into().unwrap()
+    }
+
+    pub fn is_filled_all_packets(&self) -> bool {
+        // TODO: check
+        assert!(self.next_packet_idx <= self.content_packets);
+        self.next_packet_idx == self.content_packets 
     }
 }
 

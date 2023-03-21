@@ -7,7 +7,7 @@ use cirrus_protobuf::api::AudioDataRes;
 use tokio::{runtime::Handle, sync::RwLock};
 // use tokio::sync::mpsc;
 
-use super::{sample::AudioSample, device::AudioDeviceContext};
+use super::{sample::{AudioSample, FetchBufferSpec}, device::AudioDeviceContext};
 use crate::dto::AudioSource;
 
 #[derive(Debug, PartialEq, Clone, serde_derive::Serialize)]
@@ -196,23 +196,7 @@ impl AudioStream {
         stream_buffer_len_ms: f32,
         notify_update_sender: Option<Sender<UpdatedStreamMessage>>,
     ) -> Result<Self, anyhow::Error> {
-        // let (audio_data_tx, audio_data_rx) = mpsc::channel::<AudioDataRes>();
-
         let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
-        // let _audio_sample_tx = Arc::new(audio_sample.tx.clone());
-        // let (tx, rx) = mpsc::channel(64);
-        // let (tx, rx) = std::sync::mpsc::sync_channel(1);
-        // let (tx, rx) = std::sync::mpsc::channel::<&'static str>();
-
-        // let _tx = Arc::new(Mutex::new(tx));
-        // let _tx2 = _tx.clone();
-        
-        // let hsc = audio_ctx.host_output_stream_config();
-        // ringbuf len: (ms)
-
-        // let output_stream_config = audio_ctx.host_output_stream_config();
-
-        // let host_stream_config = Arc::new(audio_ctx.output_stream_config);
 
         let audio_stream_buf = create_audio_stream_buffer(
             stream_buffer_len_ms,
@@ -231,19 +215,24 @@ impl AudioStream {
             )
         );
 
-        let mut audio_sample = AudioSample::new(
+        let audio_sample = AudioSample::new(
             source,
             // audio_data_tx,
             &device_context.output_stream_config,
             audio_stream_buf_prod,
-            &stream_playback_context
+            &stream_playback_context,
+            FetchBufferSpec {
+                init_fetch_sec: fetch_initial_buffer_sec,
+                buffer_margin_sec: 2,
+                fetch_packet_sec: 5,
+            }
         )?;
 
         // fetch intial buffer
-        if let Some(fetch_sec) = fetch_initial_buffer_sec {
-            audio_sample.fetch_buffer(rt_handle, fetch_sec).unwrap();
-        }
-        audio_sample.start_process_audio_data_thread();
+        // if let Some(fetch_sec) = fetch_initial_buffer_sec {
+        //     audio_sample.fetch_buffer(rt_handle, fetch_sec).unwrap();
+        // }
+        audio_sample.start_process_audio_data_thread(rt_handle);
 
         let _stream_playback_context = stream_playback_context.clone();
         let _process_sample_condvar = audio_sample.inner.lock().unwrap().context.process_sample_condvar.clone();
@@ -315,17 +304,6 @@ impl AudioStream {
     }
 
     pub fn play(&mut self) -> Result<(), anyhow::Error> {
-        // let process_sample_condvar = self.audio_sample.inner.lock().unwrap().context.process_sample_condvar.clone();
-    
-        // let _audio_sample_inner = self.audio_sample.inner.lock().unwrap();
-        // let process_sample_condvar = self.audio_sample.context.process_sample_condvar.clone();
-        // let (process_sample_mutex, process_sample_cv) = &*process_sample_condvar;
-        // let mut process_sample_guard = process_sample_mutex.lock().unwrap();
-        // // set condvar of process audio sample to start
-        // *process_sample_guard = true;
-        // // // notify 
-        // process_sample_cv.notify_one();
-
         self.stream.play()?;
         self.stream_playback_context.blocking_read().notify_updated_item(
             UpdatedPlaybackMessage::CurrentStream { 
