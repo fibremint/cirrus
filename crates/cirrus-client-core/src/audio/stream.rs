@@ -1,4 +1,4 @@
-use std::{sync::{Arc, mpsc::{self}, Mutex, atomic::{AtomicUsize, Ordering}}, mem::MaybeUninit};
+use std::{sync::{Arc, mpsc::{self}, Mutex, atomic::{AtomicUsize, Ordering}}, mem::MaybeUninit, fmt::Display};
 use crossbeam_channel::Sender;
 use ringbuf::{HeapRb, SharedRb, Consumer, Producer};
 
@@ -33,16 +33,32 @@ impl From<usize> for StreamStatus {
     }
 }
 
-#[derive(Clone, serde_derive::Serialize)]
+#[derive(Clone, Debug, serde_derive::Serialize)]
 pub enum UpdatedPlaybackMessage {
     PositionSec(u32),
     // RemainSampleBufferSec(u32),
     StreamStatus(StreamStatus),
+    CurrentStream { length: f32 },
+    // StreamCreated,
+}
+
+impl std::fmt::Display for UpdatedPlaybackMessage {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        // std::fmt::Debug::fmt(self, f)
+        match self {
+            UpdatedPlaybackMessage::PositionSec(_) => write!(f, "PositionSec"),
+            UpdatedPlaybackMessage::StreamStatus(_) => write!(f, "StreamStatus"),
+            UpdatedPlaybackMessage::CurrentStream { length: _ } => write!(f, "CurrentStream"),
+            // UpdatedPlaybackMessage::StreamCreated => write!(f, "StreamCreated"),
+        }
+    }
 }
 
 #[derive(Clone, serde_derive::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UpdatedStreamMessage {
     stream_id: String,
+    message_type: String,
     message: UpdatedPlaybackMessage,
     // message: T,
 }
@@ -127,10 +143,17 @@ impl StreamPlaybackContext {
         ));
     }
 
+    // pub fn notify_current_stream_info(&self) {
+    //     self.notify_updated_item(UpdatedPlaybackMessage::CurrentStream { 
+    //         length: () 
+    //     })
+    // }
+
     fn notify_updated_item(&self, message: UpdatedPlaybackMessage) {
         if let Some(sender) = &self.notify_update_sender {
             sender.send(UpdatedStreamMessage { 
                 stream_id: self.stream_id.clone(),
+                message_type: message.to_string(),
                 message,
             }).unwrap();
         }
@@ -280,6 +303,8 @@ impl AudioStream {
             err_fn
         )?;
 
+        // stream_playback_context.blocking_read().notify_updated_item(UpdatedPlaybackMessage::StreamCreated);
+
         Ok(Self {
             stream,
             audio_sample,
@@ -302,6 +327,11 @@ impl AudioStream {
         // process_sample_cv.notify_one();
 
         self.stream.play()?;
+        self.stream_playback_context.blocking_read().notify_updated_item(
+            UpdatedPlaybackMessage::CurrentStream { 
+                length: self.audio_sample.inner.lock().unwrap().source.length as f32 
+            }
+        );
         self.stream_playback_context.blocking_read().update_stream_status(StreamStatus::Play);
 
         Ok(())

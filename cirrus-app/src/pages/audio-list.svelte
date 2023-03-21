@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
 
   import { Navbar, Page, BlockTitle, List, ListItem, Sheet, Toolbar, Link, PageContent, Block, View, Icon, ListItemCell, Range, Button, Segmented } from 'framework7-svelte';
-  import { listen } from '@tauri-apps/api/event';
+  import { listen, emit } from '@tauri-apps/api/event';
   // import { audioStore } from '../js/store';
 
   import differenceBy from 'lodash/differenceBy';
@@ -38,44 +38,44 @@
   let loadedAudioItemIndex = -1;
   let loadedAudioId = '';
 
+  let currentStreamId = '';
+
   const UPDATED_AUDIO_PLAYER_EVENT_NAME = "update-playback"
 
   onMount(async() => {
     fetchAudioTags();
 
-    const unlisten = await listen(UPDATED_AUDIO_PLAYER_EVENT_NAME, event => {
-      const payload = event.payload;
-      console.log("got event: ", payload);
+    const unlisten = await listen(UPDATED_AUDIO_PLAYER_EVENT_NAME, event => {      
+      const { messageType, message } = event.payload;
 
-      if (payload.status === 'Stop') {
-        updatePlaybackContext({
-          audioId: '',
-          audioLength: 0,
-          position: 0,
-          selectedAudioItemIndex: -1
-        });
+      if (messageType === "CurrentStream") {
+        currentStreamId = message.streamId;
+        playbackContext.audioLength = Math.floor(message.CurrentStream.length);
+      }
 
-        updateAudioButton(false);
+      if (currentStreamId !== message.streamId) {
+        return;
+      }
 
-      } else if (payload.status === 'Play') {
-        updatePlaybackContext({
-          audioId: loadedAudioId,
-          audioLength: loadedAudioLength,
-          position: Math.floor(payload.pos),
-          selectedAudioItemIndex: loadedAudioId
-        });
+      if (messageType === "StreamStatus") { 
+        let isAudioPlay = message.StreamStatus === "Play" ? true : false;
+        updateAudioButton(isAudioPlay);
 
+      } else if (messageType === "PositionSec") {
+        playbackContext.position = message.PositionSec;
+      
         if (!isUserModifyPlaybackPos) {
           sliderPos = playbackContext.position;
         }
-
-        updateAudioButton(true);
+        
       }
     });
 
     updatePlaybackPosEventUnlisten = unlisten;
 
     await command.setListenUpdatedEvents(true);
+
+    await emit("stream-status");
   });
 
   onDestroy(async() => {
@@ -83,15 +83,6 @@
     updatePlaybackPosEventUnlisten();
     await command.stopAudio();
   });
-
-  function updatePlaybackContext({ audioId, audioLength, selectedAudioItemIndex, position }) {
-    playbackContext = {
-      audioId,
-      audioLength,
-      selectedAudioItemIndex,
-      position
-    }
-  }
 
   async function fetchAudioTags() {
     const currentDateTime = Date.now();
