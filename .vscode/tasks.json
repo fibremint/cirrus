@@ -27,56 +27,11 @@
         }
       },
       {
-        "label": "client:build-rust-release",
-        "type": "shell",
-        "isBackground": false,
-        "command": "cargo",
-        "args": ["build", "--release"],
-        "options": {
-          "cwd": "${workspaceFolder}/cirrus-app/src-tauri"
-        },
-        "presentation": {
-          "reveal": "always",
-          "revealProblems": "onProblem",
-          "close": true
-        }
-      },
-      // {
-      //   "label": "server:build-rust-debug",
-      //   "type": "shell",
-      //   "isBackground": false,
-      //   "command": "cargo",
-      //   "args": ["build", "--bin", "cirrus-server"],
-      //   "options": {
-      //     "cwd": "${workspaceFolder}"
-      //   },
-      //   "presentation": {
-      //     "reveal": "always",
-      //     "revealProblems": "onProblem",
-      //     "close": true
-      //   }
-      // },
-      {
         "label": "server:build-rust-debug",
         "type": "shell",
         "isBackground": false,
         "command": "cargo",
         "args": ["build", "--bin", "cirrus-server"],
-        "options": {
-          "cwd": "${workspaceFolder}"
-        },
-        "presentation": {
-          "reveal": "always",
-          "revealProblems": "onProblem",
-          "close": true
-        }
-      },
-      {
-        "label": "server:build-rust-release",
-        "type": "shell",
-        "isBackground": false,
-        "command": "cargo",
-        "args": ["build", "--bin", "cirrus-server", "--release"],
         "options": {
           "cwd": "${workspaceFolder}"
         },
@@ -124,30 +79,6 @@
         ]
       },
       {
-        "label": "client:release",
-        "type": "shell",
-        // change this to your `beforeBuildCommand`:
-        "command": "yarn",
-        "args": ["build"],
-        "options": {
-          "cwd": "${workspaceFolder}/cirrus-app"
-        },
-        "presentation": {
-          "reveal": "always",
-          "revealProblems": "onProblem",
-          "close": true
-        },
-        "dependsOn": [
-          "client:build-rust-release"
-        ]
-      },
-      {
-        "label": "task:terminate-all",
-        "command": "echo ${input:terminate}",
-        "type": "shell",
-        "problemMatcher": []
-      },
-      {
         "label": "ui:dev",
         "type": "shell",
         // `dev` keeps running in the background
@@ -167,6 +98,12 @@
         // change this to your `beforeBuildCommand`:
         "command": "yarn",
         "args": ["build"]
-      }
+      },
+      {
+        "label": "task:terminate-all",
+        "command": "echo ${input:terminate}",
+        "type": "shell",
+        "problemMatcher": []
+      },
     ]
   }

@@ -5,97 +5,57 @@
     "version": "0.2.0",
     "configurations": [
       {
+        "type": "lldb",
+        "request": "launch",
+        "name": "(LLDB) Debug Application",
+        "cargo": {
+          "args": [
+            "build",
+            "--manifest-path=./cirrus-app/src-tauri/Cargo.toml",
+            "--no-default-features"
+          ]
+        },
+        "env": {
+          "RUST_BACKTRACE": "1"
+        },
+        // task for the `beforeDevCommand` if used, must be configured in `.vscode/tasks.json`
+        "preLaunchTask": "ui:dev"
+      },
+      {
+        "type": "lldb",
+        "request": "launch",
+        "name": "(LLDB) Debug Server",
+        "cargo": {
+          "args": [
+            "build",
+            "--manifest-path=./cirrus-server/Cargo.toml",
+          ]
+        },
+        "env": {
+          "RUST_BACKTRACE": "1"
+        },
+        // "cwd": "${workspaceRoot}/cirrus-server"
+      },
+      {
         "type": "cppvsdbg",
         "request": "launch",
-        "name": "Debug Application (MSVC)",
+        "name": "(VS Debugger) Debug Application",
         "program": "${workspaceRoot}/target/debug/app.exe",
         "externalConsole": false,
         "preLaunchTask": "client:dev",
         "postDebugTask": "task:terminate-all",
         "cwd": "${workspaceRoot}"
       },
-      // {
-      //   "type": "cppvsdbg",
-      //   "request": "launch",
-      //   "name": "Debug Server (MSVC)",
-      //   "program": "${workspaceRoot}/target/debug/cirrus-server.exe",
-      //   "externalConsole": false,
-      //   "cwd": "${workspaceRoot}/cirrus-server",
-      //   "preLaunchTask": "server:build-rust-debug"
-      // },
       {
         "type": "cppvsdbg",
         "request": "launch",
-        "name": "Debug Server (MSVC)",
+        "name": "(VS Debugger) Debug Server",
         "program": "${workspaceRoot}/target/debug/cirrus-server.exe",
         "externalConsole": false,
         "cwd": "${workspaceRoot}",
         "preLaunchTask": "server:build-rust-debug",
         // "requireExactSource": false
       },
-      {
-        "type": "cppvsdbg",
-        "request": "launch",
-        "name": "Launch Production Application (MSVC)",
-        "program": "${workspaceRoot}/cirrus-app/src-tauri/target/release/cirrus-app.exe",
-        "externalConsole": false,
-        "preLaunchTask": "client:release",
-        // "postDebugTask": "task:terminate-all",
-        "cwd": "${workspaceRoot}",
-        "requireExactSource": true
-      },
-      {
-        "type": "cppvsdbg",
-        "request": "launch",
-        "name": "Launch Production Server (MSVC)",
-        "program": "${workspaceRoot}target/release/cirrus-server.exe",
-        "externalConsole": false,
-        "cwd": "${workspaceRoot}",
-        "preLaunchTask": "server:build-rust-release"
-      },
-      // {
-      //   "type": "lldb",
-      //   "request": "launch",
-      //   "name": "Tauri Development Debug",
-      //   "cargo": {
-      //     "args": [
-      //       "build",
-      //       "--manifest-path=./cirrus-app/src-tauri/Cargo.toml",
-      //       "--no-default-features"
-      //     ]
-      //   },
-      //   "env": {
-      //     "RUST_BACKTRACE": "1"
-      //   },
-      //   // task for the `beforeDevCommand` if used, must be configured in `.vscode/tasks.json`
-      //   "preLaunchTask": "ui:dev"
-      // },
-      // {
-      //   "type": "lldb",
-      //   "request": "launch",
-      //   "name": "Tauri Production Debug",
-      //   "cargo": {
-      //     "args": ["build", "--release", "--manifest-path=./cirrus-app/src-tauri/Cargo.toml"]
-      //   },
-      //   // task for the `beforeBuildCommand` if used, must be configured in `.vscode/tasks.json`
-      //   "preLaunchTask": "ui:build"
-      // },
-      // {
-      //   "type": "lldb",
-      //   "request": "launch",
-      //   "name": "Server Development Debug (lldb)",
-      //   "cargo": {
-      //     "args": [
-      //       "build",
-      //       "--manifest-path=./cirrus-server/Cargo.toml",
-      //     ]
-      //   },
-      //   // "program": "${workspaceRoot}/cirrus-server/target/debug/cirrus-server",
-      //   "env": {
-      //     "RUST_BACKTRACE": "1"
-      //   },
-      //   "cwd": "${workspaceRoot}/cirrus-server"
-      // }
       {
         "name": "Front-end App Debug",
         "type": "msedge",
