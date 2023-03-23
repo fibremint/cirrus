@@ -57,7 +57,7 @@
         // "requireExactSource": false
       },
       {
-        "name": "Front-end App Debug",
+        "name": "Debug Front-end Application",
         "type": "msedge",
         "port": 9222,
         "request": "launch",
