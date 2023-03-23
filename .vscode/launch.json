@@ -56,5 +56,15 @@
         "preLaunchTask": "server:build-rust-debug",
         // "requireExactSource": false
       },
+      {
+        "name": "Debug Front-end Application",
+        "type": "msedge",
+        "port": 9222,
+        "request": "launch",
+        "runtimeExecutable": "${workspaceFolder}/target/debug/app.exe", // Remember to edit the right path to your app.
+        "useWebView": true,
+        "webRoot": "${workspaceFolder}/cirrus-app/src",
+        "preLaunchTask": "ui:dev"
+      },
     ]
   }
