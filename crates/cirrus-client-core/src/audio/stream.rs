@@ -156,15 +156,22 @@ pub struct AudioStream {
 
 impl AudioStream {
     pub fn new(
-        stream_id: String,
+        // stream_id: String,
+        audio_tag_id: &str,
         rt_handle: &Handle,
         device_context: &AudioDeviceContext,
-        source: AudioSource,
+        // source: AudioSource,
         fetch_initial_buffer_sec: Option<u32>,
         stream_buffer_len_ms: f32,
         notify_update_sender: Option<Sender<UpdatedStreamMessage>>,
     ) -> Result<Self, anyhow::Error> {
-        let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
+        let audio_source = rt_handle.block_on(async move {
+            AudioSource::new(
+                "http://localhost:50000",
+                &None,
+                audio_tag_id
+            ).await.unwrap()
+        });
 
         let audio_stream_buf = create_audio_stream_buffer(
             stream_buffer_len_ms,
@@ -177,7 +184,7 @@ impl AudioStream {
         let stream_playback_context = Arc::new(
             RwLock::new(
                 StreamPlaybackContext::new(
-                    stream_id,
+                    audio_source.id.clone(),
                     device_context.output_stream_config.clone(),
                     notify_update_sender,
                 )
@@ -185,7 +192,7 @@ impl AudioStream {
         );
 
         let audio_sample = AudioSample::new(
-            source,
+            audio_source,
             &device_context.output_stream_config,
             audio_stream_buf_producer,
             FetchBufferSpec {
@@ -200,6 +207,8 @@ impl AudioStream {
         let _stream_playback_context = stream_playback_context.clone();
         let _process_sample_condvar = audio_sample.inner.lock().unwrap().context.process_sample_condvar.clone();
         let _audio_stream_buf_consumer = audio_stream_buf_consumer.clone();
+
+        let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
 
         let output_data_fn = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
             let mut consumed_ch_samples = 0;
