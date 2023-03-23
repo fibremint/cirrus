@@ -1,11 +1,9 @@
-use std::{sync::{Arc, mpsc::{self}, Mutex, atomic::{AtomicUsize, Ordering}}, mem::MaybeUninit, fmt::Display};
+use std::{sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering}}, mem::MaybeUninit};
 use crossbeam_channel::Sender;
 use ringbuf::{HeapRb, SharedRb, Consumer, Producer};
 
 use cpal::traits::{DeviceTrait, StreamTrait};
-use cirrus_protobuf::api::AudioDataRes;
 use tokio::{runtime::Handle, sync::RwLock};
-// use tokio::sync::mpsc;
 
 use super::{sample::{AudioSample, FetchBufferSpec}, device::AudioDeviceContext};
 use crate::dto::AudioSource;
@@ -36,7 +34,6 @@ impl From<usize> for StreamStatus {
 #[derive(Clone, Debug, serde_derive::Serialize)]
 pub enum UpdatedPlaybackMessage {
     PositionSec(u32),
-    // RemainSampleBufferSec(u32),
     StreamStatus(StreamStatus),
     CurrentStream { length: f32 },
     // StreamCreated,
@@ -44,7 +41,6 @@ pub enum UpdatedPlaybackMessage {
 
 impl std::fmt::Display for UpdatedPlaybackMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        // std::fmt::Debug::fmt(self, f)
         match self {
             UpdatedPlaybackMessage::PositionSec(_) => write!(f, "PositionSec"),
             UpdatedPlaybackMessage::StreamStatus(_) => write!(f, "StreamStatus"),
@@ -60,24 +56,17 @@ pub struct UpdatedStreamMessage {
     stream_id: String,
     message_type: String,
     message: UpdatedPlaybackMessage,
-    // message: T,
 }
-
-// pub fn create_atomic_status<T>()
 
 pub struct StreamPlaybackContext {
     pub stream_id: String,
-    // sample_pos: Arc<AtomicUsize>,
+
     sample_pos: usize,
     playback_pos_sec: u32,
 
-    remain_audio_sample_buffer: u32,
     stream_status: Arc<AtomicUsize>,
-    // pub sample_rate: u32,
-    // host_stream_config: Arc<HostStreamConfig>,
     host_stream_config: Arc<cpal::StreamConfig>,
 
-    // notify_update_sender: Option<Sender<UpdatedStreamMessage<UpdatedPlaybackMessage>>>,
     notify_update_sender: Option<Sender<UpdatedStreamMessage>>,
 }
 
@@ -92,7 +81,6 @@ impl StreamPlaybackContext {
             stream_id,
             sample_pos: Default::default(),
             playback_pos_sec: Default::default(),
-            remain_audio_sample_buffer: Default::default(),
             // stream_status: Default::default(),
             stream_status: Arc::new(AtomicUsize::new(StreamStatus::Pause as usize)),
             host_stream_config,
@@ -100,54 +88,45 @@ impl StreamPlaybackContext {
         }
     }
 
-    fn set_playback_pos_sec(&mut self, sample_pos: usize) {
-        let updated_sec = convert_from_sample_pos_to_sec(
-            sample_pos,
-            self.host_stream_config.sample_rate.0
-        );
+    fn set_playback_sec(&mut self, sec: f64) {
+        self.sample_pos = convert_sec_to_sample_pos(sec, self.host_stream_config.sample_rate.0);
 
-        if self.playback_pos_sec == updated_sec {
+        self.update_playback_sec(sec as u32);
+    }
+
+    fn increase_sample_pos(&mut self, value: usize) {
+        let increased_sample_pos = self.sample_pos + value;
+
+        self.set_sample_pos(increased_sample_pos);
+    }
+
+    fn set_sample_pos(&mut self, sample_pos: usize) {
+        self.sample_pos = sample_pos;
+        
+        self.update_playback_sec(
+            convert_sample_pos_to_sec(
+                self.sample_pos,
+                self.host_stream_config.sample_rate.0
+            )
+        )
+    }
+
+    fn update_playback_sec(&mut self, sec: u32) {
+        if self.playback_pos_sec == sec {
             return;
         }
 
-        self.playback_pos_sec = updated_sec;
-        self.notify_updated_item(UpdatedPlaybackMessage::PositionSec(updated_sec));
+        self.playback_pos_sec = sec;
+        self.notify_updated_item(UpdatedPlaybackMessage::PositionSec(sec));
     }
 
-    pub fn set_sample_pos(&mut self, sample_pos: usize) {
-        // self.sample_pos.store(sample_pos, Ordering::SeqCst);
-        self.sample_pos = sample_pos;
-        
-        self.set_playback_pos_sec(sample_pos);
-    }
-
-    pub fn increase_sample_pos(&mut self, value: usize) {
-        // let increated_sample_pos = self.sample_pos.load(Ordering::SeqCst) + value;
-        // self.sample_pos.store(increated_sample_pos, Ordering::SeqCst);
-
-        let increased_sample_pos = self.sample_pos + value;
-        self.sample_pos = increased_sample_pos;
-        
-        self.set_playback_pos_sec(increased_sample_pos);
-    }
-
-    pub fn get_stream_status(&self) -> StreamStatus {
-        StreamStatus::from(self.stream_status.load(Ordering::SeqCst))
-    }
-
-    pub fn update_stream_status(&self, stream_status: StreamStatus) {
+    fn update_stream_status(&self, stream_status: StreamStatus) {
         self.stream_status.store(stream_status as usize, Ordering::SeqCst);
 
         self.notify_updated_item(UpdatedPlaybackMessage::StreamStatus(
-            self.get_stream_status()
+            StreamStatus::from(self.stream_status.load(Ordering::SeqCst))
         ));
     }
-
-    // pub fn notify_current_stream_info(&self) {
-    //     self.notify_updated_item(UpdatedPlaybackMessage::CurrentStream { 
-    //         length: () 
-    //     })
-    // }
 
     fn notify_updated_item(&self, message: UpdatedPlaybackMessage) {
         if let Some(sender) = &self.notify_update_sender {
@@ -160,30 +139,19 @@ impl StreamPlaybackContext {
     }
 }
 
-// impl<T> Notify for StreamPlaybackContext<T> {
-//     // fn notify_update<T>(&self, message: T) {
-//     //     if let Some(sender) = &self.notify_update_sender {
-//     //         sender.send(UpdatedStreamMessage { 
-//     //             stream_id: self.stream_id.clone(),
-//     //             message,
-//     //         }).unwrap();
-//     //     }    
-//     // }
-
-//     fn get_sender(&self) -> Option<Sender<T>> {
-//         self.notify_update_sender.clone()
-//     }
-// }
-
-fn convert_from_sample_pos_to_sec(sample_pos: usize, sample_rate: u32) -> u32 {
+fn convert_sample_pos_to_sec(sample_pos: usize, sample_rate: u32) -> u32 {
     (sample_pos as f32 / sample_rate as f32).floor() as u32
+}
+
+fn convert_sec_to_sample_pos(sec: f64, sample_rate: u32) -> usize {
+    (sec * sample_rate as f64) as usize
 }
 
 pub struct AudioStream {
     stream: cpal::Stream,
     audio_sample: AudioSample,
-    // status: usize,
     stream_playback_context: Arc<RwLock<StreamPlaybackContext>>,
+    audio_stream_buf_consumer: Arc<Mutex<AudioStreamBufferConsumer<f32>>>,
 }
 
 impl AudioStream {
@@ -203,8 +171,9 @@ impl AudioStream {
             device_context.output_stream_config.sample_rate.0 as f32,
             device_context.output_stream_config.channels as usize
         );
-        let (audio_stream_buf_prod, mut audio_stream_buf_con) = audio_stream_buf.split();
-        
+        let (audio_stream_buf_producer, audio_stream_buf_consumer) = audio_stream_buf.split();
+        let audio_stream_buf_consumer = Arc::new(Mutex::new(audio_stream_buf_consumer));
+
         let stream_playback_context = Arc::new(
             RwLock::new(
                 StreamPlaybackContext::new(
@@ -217,10 +186,8 @@ impl AudioStream {
 
         let audio_sample = AudioSample::new(
             source,
-            // audio_data_tx,
             &device_context.output_stream_config,
-            audio_stream_buf_prod,
-            &stream_playback_context,
+            audio_stream_buf_producer,
             FetchBufferSpec {
                 init_fetch_sec: fetch_initial_buffer_sec,
                 buffer_margin_sec: 2,
@@ -228,18 +195,15 @@ impl AudioStream {
             }
         )?;
 
-        // fetch intial buffer
-        // if let Some(fetch_sec) = fetch_initial_buffer_sec {
-        //     audio_sample.fetch_buffer(rt_handle, fetch_sec).unwrap();
-        // }
         audio_sample.start_process_audio_data_thread(rt_handle);
 
         let _stream_playback_context = stream_playback_context.clone();
         let _process_sample_condvar = audio_sample.inner.lock().unwrap().context.process_sample_condvar.clone();
+        let _audio_stream_buf_consumer = audio_stream_buf_consumer.clone();
 
         let output_data_fn = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-            let mut input_buf_fell_behind = false;
             let mut consumed_ch_samples = 0;
+
             // Notify to audio sample processer
             {
                 let (process_sample_mutex, process_sample_cv) = &*_process_sample_condvar;
@@ -251,39 +215,20 @@ impl AudioStream {
 
             // consume audio samples from stream buffer
             for sample in data {
-                *sample = match audio_stream_buf_con.pop() {
+                *sample = match _audio_stream_buf_consumer.lock().unwrap().pop() {
                     Some(s) => {
                         consumed_ch_samples += 1;
                         s
                     },
                     None => {
-                        input_buf_fell_behind = true;
                         0.0
                     }
                 };
             }
 
-            // _stream_playback_context.increase_sample_pos(consumed_ch_samples / 2);
             if consumed_ch_samples > 0 {
                 _stream_playback_context.blocking_write().increase_sample_pos(consumed_ch_samples / 2);
             }
-
-            // _sample_pos.store(_sample_pos.load(Ordering::SeqCst) + consumed_samples, Ordering::SeqCst);
-
-            if input_buf_fell_behind {
-                eprintln!("input stream fell behind: try increasing latency");
-
-                // set status buffer not enough
-                // let s = _stream_playback_context.blocking_read().update_stream_status();
-            } 
-            
-            // else {
-            //     let (process_sample_mutex, process_sample_cv) = &*_process_sample_condvar;
-            //     let mut process_sample_guard = process_sample_mutex.lock().unwrap();
-
-            //     *process_sample_guard = true;
-            //     process_sample_cv.notify_one();
-            // }
         };
 
         let stream = device_context.device.build_output_stream(
@@ -292,18 +237,16 @@ impl AudioStream {
             err_fn
         )?;
 
-        // stream_playback_context.blocking_read().notify_updated_item(UpdatedPlaybackMessage::StreamCreated);
-
         Ok(Self {
             stream,
             audio_sample,
-            // status: 0,
             stream_playback_context,
+            audio_stream_buf_consumer,
         })
 
     }
 
-    pub fn play(&mut self) -> Result<(), anyhow::Error> {
+    pub fn play(&self) -> Result<(), anyhow::Error> {
         self.stream.play()?;
         self.stream_playback_context.blocking_read().notify_updated_item(
             UpdatedPlaybackMessage::CurrentStream { 
@@ -319,38 +262,37 @@ impl AudioStream {
         self.stream.pause()?;
 
         let process_sample_condvar = self.audio_sample.inner.lock().unwrap().context.process_sample_condvar.clone();
-        // let process_sample_condvar = self.audio_sample.context.process_sample_condvar.clone();
-        let (process_sample_mutex, process_sample_cv) = &*process_sample_condvar;
+
+        let (process_sample_mutex, _) = &*process_sample_condvar;
         let mut process_sample_guard = process_sample_mutex.lock().unwrap();
         // set condvar of process audio sample to stop
         *process_sample_guard = false;
-        // // notify 
-        // process_sample_cv.notify_one();
-        self.stream_playback_context.blocking_read().update_stream_status(StreamStatus::Pause);
 
+        self.stream_playback_context.blocking_read().update_stream_status(StreamStatus::Pause);
 
         Ok(())
     }
 
-    // pub fn set_playback_position(&self) {
-    //     let prev_playback_status = self.stream_playback_context.get_stream_status();
+    pub fn set_playback_position(
+        &self, 
+        position_sec: f64
+    ) -> Result<(), anyhow::Error> {
+        self.pause()?;
 
-    //     self.pause();
-    //     self.audio_sample.set_playback_position();
+        self.audio_stream_buf_consumer.lock().unwrap().clear();
+        
+        self.audio_sample.set_playback_position(position_sec)?;
+        self.stream_playback_context.blocking_write().set_playback_sec(position_sec as f64);
 
-    //     if prev_playback_status == StreamStatus::Play {
-    //         self.play();
-    //     }
-    // }
+        self.play()?;
 
-    pub fn update_audio_stream_buffer(&mut self) {
-        todo!()
+        Ok(())
     }
 }
 
 type AudioStreamBuffer = SharedRb<f32, Vec<MaybeUninit<f32>>>;
 pub type AudioStreamBufferProducer = Producer<f32, Arc<SharedRb<f32, Vec<MaybeUninit<f32>>>>>;
-// type AudioStreamBufferConsumer<T> = Consumer<T, Arc<SharedRb<T, Vec<MaybeUninit<T>>>>>;
+type AudioStreamBufferConsumer<T> = Consumer<T, Arc<SharedRb<T, Vec<MaybeUninit<T>>>>>;
 
 fn create_audio_stream_buffer(
     length_ms: f32,
@@ -362,30 +304,3 @@ fn create_audio_stream_buffer(
 
     HeapRb::<f32>::new(latency_samples * output_channels)
 }
-
-// #[derive(Debug, PartialEq)]
-// pub enum StreamPlaybackStatus {
-
-// }
-
-// fn increase_audio_sample_pos(as_pos: Arc<AtomicUsize>, value: usize) {
-    
-// }
-
-// fn output_data_fn_test(data: &mut [f32], _: &cpal::OutputCallbackInfo) {
-    
-// }
-
-// fn audio_stream_pipeline(
-//     output: &mut [f32],
-//     // audio_sample_tx: mpsc::Sender<&'static str>,
-//     // audio_sample_tx: SyncSender<&'static str>,
-//     // audio_sample_tx: Arc<Mutex<Sender<&'static str>>>,
-//     consumer: Consumer<f32, Arc<SharedRb<f32, Vec<MaybeUninit<f32>>>>>,
-// ) {
-
-// }
-
-// fn get_packet(audio_sample_tx: mpsc::Sender<&'static str>) -> AudioDataRes {
-//     todo!()
-// }

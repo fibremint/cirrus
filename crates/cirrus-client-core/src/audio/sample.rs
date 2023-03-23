@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::{mpsc, Arc, Mutex, Condvar, atomic::{AtomicUsize, Ordering}}, mem::MaybeUninit, time::Duration};
+use std::{collections::VecDeque, sync::{Arc, Mutex, Condvar, atomic::{AtomicUsize, Ordering}}, mem::MaybeUninit, time::Duration};
 use audio::{InterleavedBufMut, wrap::Interleaved, InterleavedBuf, Buf};
 use cirrus_protobuf::api::AudioDataRes;
 use rand::Fill;
@@ -9,7 +9,7 @@ use tokio_stream::StreamExt;
 
 use crate::{dto::AudioSource, request};
 
-use super::{packet::EncodedBuffer, stream::{StreamPlaybackContext, AudioStreamBufferProducer}};
+use super::{packet::EncodedBuffer, stream::AudioStreamBufferProducer};
 
 #[derive(Debug, PartialEq, Clone, serde_derive::Serialize)]
 pub enum FetchBufferStatus {
@@ -29,6 +29,24 @@ impl From<usize> for FetchBufferStatus {
             2 => Filled,
             3 => Interrupted,
             4 => Error,
+            _ => unreachable!(),
+        }
+    }
+}
+
+
+#[derive(Debug, PartialEq, Clone, serde_derive::Serialize)]
+pub enum FetchBufferRequest {
+    None,
+    Stop,
+}
+
+impl From<usize> for FetchBufferRequest {
+    fn from(value: usize) -> Self {
+        use self::FetchBufferRequest::*;
+        match value {
+            0 => None,
+            1 => Stop,
             _ => unreachable!(),
         }
     }
@@ -59,23 +77,20 @@ impl From<usize> for ProcessAudioDataStatus {
     }
 }
 
-// #[derive(Debug, PartialEq, Clone, serde_derive::Serialize)]
-// pub enum RequestAction {
-//     StartFetch,
-//     StopFetch,
-//     StartDecodeSample,
-//     StopDecodeSample,
-// }
+pub enum Action {
+    Start,
+    Stop,
+}
 
 // #[derive(Debug, PartialEq, Clone, serde_derive::Serialize)]
-// pub enum RunState {
+// pub enum RequestAction {
 //     Start,
 //     Stop,
 // }
 
-// impl From<usize> for RunState {
+// impl From<usize> for RequestAction {
 //     fn from(value: usize) -> Self {
-//         use self::RunState::*;
+//         use self::RequestAction::*;
 //         match value {
 //             0 => Start,
 //             1 => Stop,
@@ -83,23 +98,6 @@ impl From<usize> for ProcessAudioDataStatus {
 //         }
 //     }
 // }
-
-#[derive(Debug, PartialEq, Clone, serde_derive::Serialize)]
-pub enum RequestAction {
-    Start,
-    Stop,
-}
-
-impl From<usize> for RequestAction {
-    fn from(value: usize) -> Self {
-        use self::RequestAction::*;
-        match value {
-            0 => Start,
-            1 => Stop,
-            _ => unreachable!(),
-        }
-    }
-}
 
 #[derive(Clone, serde_derive::Serialize)]
 pub enum UpdatedBufferMessage {
@@ -122,8 +120,7 @@ impl AudioSample {
         source: AudioSource,
         // host_stream_config: HostStreamConfig,
         output_stream_config: &cpal::StreamConfig,
-        ringbuf_producer: AudioStreamBufferProducer,
-        stream_playback_context: &Arc<RwLock<StreamPlaybackContext>>,
+        audio_stream_buf_producer: AudioStreamBufferProducer,
         fetch_buffer_spec: FetchBufferSpec,
     ) -> Result<Self, anyhow::Error> {
 
@@ -133,28 +130,13 @@ impl AudioSample {
                     AudioSampleInner::new(
                         source,
                         output_stream_config,
-                        ringbuf_producer,
-                        stream_playback_context,
+                        audio_stream_buf_producer,
                         fetch_buffer_spec,
                     )?
                 )
             )
         })
     }
-
-    // pub fn fetch_buffer(
-    //     &self,
-    //     rt_handle: &Handle,
-    //     fetch_sec: u32,
-    // ) -> Result<(), anyhow::Error> {
-    //     if FetchBufferStatus::Filling == FetchBufferStatus::from(
-    //         self.inner.lock().unwrap().context.fetch_buffer_status.load(Ordering::SeqCst)
-    //     ) {
-    //         return Err(anyhow::anyhow!("already filling buffer"));
-    //     } 
-
-    //     self.inner.lock().unwrap().fetch_buffer(rt_handle, fetch_sec)
-    // }
 
     pub fn start_process_audio_data_thread(
         &self,
@@ -177,15 +159,25 @@ impl AudioSample {
             }
 
             _inner.lock().unwrap().process_audio_data(&_rt_handle);
+            // if let Err(e) = _inner.lock().unwrap().process_audio_data(&_rt_handle) {
+            //     match e {
+                    
+            //     }
+            // }
         });
     }
 
-    pub fn update_from_output_stream_config(&self) {
-        todo!()
+    pub fn set_playback_position(
+        &self,
+        position_sec: f64
+    ) -> Result<(), anyhow::Error> {
+        self.inner.lock().unwrap().set_playback_position(position_sec)?;
+
+        Ok(())
     }
 
-    // pub fn get_process_sample_condvar(&self) -> Arc<(Mutex<bool>, Condvar)> {
-    //     self.inner.lock().unwrap().context.process_sample_condvar.clone()
+    // pub fn update_from_output_stream_config(&self) {
+    //     todo!()
     // }
 }
 
@@ -217,7 +209,6 @@ impl AudioSampleInner {
         source: AudioSource,
         output_stream_config: &cpal::StreamConfig,
         audio_stream_buf_producer: AudioStreamBufferProducer,
-        stream_playback_context: &Arc<RwLock<StreamPlaybackContext>>,
         fetch_buffer_spec: FetchBufferSpec,
         // audio_data_res_tx: mpsc::Sender<AudioDataRes>,
     ) -> Result<Self, anyhow::Error> {
@@ -253,22 +244,54 @@ impl AudioSampleInner {
         })
     }
 
-    pub fn request_fetch_buffer(
+    pub fn set_playback_position(
         &mut self,
-        rt_handle: &Handle,
+        position_sec: f64
     ) -> Result<(), anyhow::Error> {
-        let is_filling_buf = FetchBufferStatus::Filling == FetchBufferStatus::from(
+        // self.interrupt_fetch_buffer();
+        self.set_fetch_buffer_action(Action::Stop, None);
+
+        let new_position_idx = position_sec as u32 * 50;
+        self.packet_buf.blocking_write().update_seek_position(self.context.playback_sample_frame_pos, new_position_idx);
+
+        self.context.playback_sample_frame_pos = new_position_idx;
+
+        Ok(())
+    }
+
+    pub fn set_fetch_buffer_action(
+        &mut self,
+        action: Action,
+        rt_handle: Option<&Handle>,
+    ) -> Result<(), anyhow::Error> {
+        let is_filling_buf =  FetchBufferStatus::Filling == FetchBufferStatus::from(
             self.context.fetch_buffer_status.load(Ordering::SeqCst)
         );
-
-        let packet_idx_diff = self.packet_buf.blocking_read().next_packet_idx - self.context.playback_sample_frame_pos;
-        let packet_buf_margin_sec = packet_idx_diff / 50;
-
-        if !is_filling_buf && 
-            packet_buf_margin_sec < self.fetch_buffer_spec.buffer_margin_sec &&
-            !self.packet_buf.blocking_read().is_filled_all_packets() {
-
-            self.start_fetch_buffer_task(rt_handle, self.fetch_buffer_spec.fetch_packet_sec)?;
+        
+        match action {
+            Action::Start => {        
+                let packet_idx_diff = self.packet_buf.blocking_read().next_packet_idx - self.context.playback_sample_frame_pos;
+                let packet_buf_margin_sec = packet_idx_diff / 50;
+        
+                if !is_filling_buf && 
+                    packet_buf_margin_sec < self.fetch_buffer_spec.buffer_margin_sec &&
+                    !self.packet_buf.blocking_read().is_filled_all_packets() {
+        
+                    self.start_fetch_buffer_task(rt_handle.unwrap(), self.fetch_buffer_spec.fetch_packet_sec)?;
+                }
+            },
+            Action::Stop => {
+                if is_filling_buf {
+                    self.context.fetch_buffer_request.store(FetchBufferRequest::Stop as usize, Ordering::SeqCst);
+        
+                    let (fetch_buffer_mutex, fetch_buffer_cv) = &*self.context.fetch_buffer_condvar;
+                    let mut fetch_buffer_guard = fetch_buffer_mutex.lock().unwrap();
+        
+                    while *fetch_buffer_guard {
+                        fetch_buffer_guard = fetch_buffer_cv.wait(fetch_buffer_guard).unwrap();
+                    }
+                }
+            },
         }
 
         Ok(())
@@ -283,13 +306,15 @@ impl AudioSampleInner {
         let _fetch_buffer_status = self.context.fetch_buffer_status.clone();
         let _packet_buf = self.packet_buf.clone();
         let _content_packets = self.source.content_packets;
-        // let a = self.context.fetch_buffer_condvar.clone();
 
+        let _fetch_buffer_condvar = self.context.fetch_buffer_condvar.clone();
+        let _fetch_buffer_request = self.context.fetch_buffer_request.clone();
+        
         let mut fetch_packet_cnt = 0;
         let fetch_required_packet_num = fetch_sec * 50;
 
         rt_handle.spawn(async move {
-            _fetch_buffer_status.store(FetchBufferStatus::Filling as usize, Ordering::SeqCst);
+            let (fetch_buffer_mutex, fetch_buffer_condvar) = &*_fetch_buffer_condvar;
 
             loop {
                 let fetch_start_packet_idx = _packet_buf.read().await.next_packet_idx;
@@ -310,26 +335,51 @@ impl AudioSampleInner {
                     break;
                 }
 
-                // if fetch_packet_cnt == fetch_required_packet_num || 
-                //     fetch_start_packet_idx == _content_packets {
-                //     break;
-                // }
+                // start fetch buffer
+                _fetch_buffer_status.store(FetchBufferStatus::Filling as usize, Ordering::SeqCst);
 
-                let mut audio_data_stream = request::get_audio_data_stream(
+                {
+                    let mut fetch_buffer_guard = fetch_buffer_mutex.lock().unwrap();
+                    *fetch_buffer_guard = true;
+                }
+
+                let mut audio_data_stream = match request::get_audio_data_stream(
                     "http://localhost:50000", 
                     &None, 
                     &audio_tag_id, 
                     fetch_start_packet_idx, 
                     fetch_packet_num, 
                     2
-                ).await.unwrap();
+                ).await {
+                    Ok(stream) => stream,
+                    Err(err) => {
+                        eprintln!("{}", err);
+                        _fetch_buffer_status.store(FetchBufferStatus::Error as usize, Ordering::SeqCst);
 
+                        {
+                            let mut fetch_buffer_guard = fetch_buffer_mutex.lock().unwrap();
+                            *fetch_buffer_guard = false;
+                            fetch_buffer_condvar.notify_one();
+                        }
+
+                        return;
+                    },
+                };
+        
                 while let Some(res) = audio_data_stream.next().await {
+                    if FetchBufferRequest::Stop == FetchBufferRequest::from(_fetch_buffer_request.load(Ordering::SeqCst)) {
+                        _fetch_buffer_status.store(FetchBufferStatus::Interrupted as usize, Ordering::SeqCst);
+                        _fetch_buffer_request.store(FetchBufferRequest::None as usize, Ordering::SeqCst);
+
+                        break;
+                    }
 
                     let audio_data = match res {
                         Ok(data) => data,
                         Err(e) => {
                             println!("err: {}", e);
+                            _fetch_buffer_status.store(FetchBufferStatus::Error as usize, Ordering::SeqCst);
+
                             break;
                         }
                     };
@@ -338,9 +388,16 @@ impl AudioSampleInner {
 
                     fetch_packet_cnt += 1;
                 }
-            }
 
-            _fetch_buffer_status.store(FetchBufferStatus::Filled as usize, Ordering::SeqCst);
+                // finished fetch buffer
+                _fetch_buffer_status.store(FetchBufferStatus::Filled as usize, Ordering::SeqCst);
+
+                {
+                    let mut fetch_buffer_guard = fetch_buffer_mutex.lock().unwrap();
+                    *fetch_buffer_guard = false;
+                    fetch_buffer_condvar.notify_one();
+                }
+            }
 
             // return Ok(());
         });
@@ -353,7 +410,8 @@ impl AudioSampleInner {
         rt_handle: &Handle,
     ) -> Result<(), anyhow::Error> {
         
-        self.request_fetch_buffer(rt_handle)?;
+        // self.request_fetch_buffer(rt_handle)?;
+        self.set_fetch_buffer_action(Action::Start, Some(rt_handle))?;
 
         let _process_sample_condvar = self.context.process_sample_condvar.clone();
         let _process_audio_data_status = self.context.process_audio_data_status.clone();
@@ -371,7 +429,9 @@ impl AudioSampleInner {
                 // Set wait status
                 *process_sample_guard = false;
 
-                return Err(anyhow::anyhow!("wait consume"))
+                // return Err(anyhow::anyhow!("wait consume"))
+                return Err(anyhow::anyhow!(ProcessAudioDataStatus::WaitConsume as usize))
+                // return Err(ProcessAudioDataStatus::WaitConsume)
             }
 
             // audio data is not fetched  
@@ -383,7 +443,8 @@ impl AudioSampleInner {
                 // Set wait status
                 *process_sample_guard = false;
 
-                return Err(anyhow::anyhow!("data not exist"))
+                // return Err(anyhow::anyhow!("data not exist"))
+                return Err(anyhow::anyhow!(ProcessAudioDataStatus::DataNotExist as usize))
             }            
 
             let data = data.unwrap();
@@ -453,6 +514,8 @@ pub struct AudioSampleContext {
     // ProcessAudioDataStatus
     pub fetch_buffer_condvar: Arc<(Mutex<bool>, Condvar)>,
     pub process_sample_condvar: Arc<(Mutex<bool>, Condvar)>,
+
+    pub fetch_buffer_request: Arc<AtomicUsize>,
 }
 
 impl Default for AudioSampleContext {
@@ -469,6 +532,8 @@ impl Default for AudioSampleContext {
 
             fetch_buffer_condvar: Arc::new((Mutex::new(false), Condvar::new())),
             process_sample_condvar: Arc::new((Mutex::new(false), Condvar::new())),
+
+            fetch_buffer_request: Arc::new(AtomicUsize::new(FetchBufferRequest::None as usize)),
         }
     }
 }

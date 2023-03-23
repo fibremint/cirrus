@@ -321,6 +321,8 @@ impl AudioPlayerInner {
     pub fn set_playback_position(&self, position_sec: f64) -> Result<(), anyhow::Error> {
         println!("process set_playback_position request, params: {}", position_sec);
 
+        self.streams.get(0).unwrap().set_playback_position(position_sec)?;
+
         Ok(())
     }
 
