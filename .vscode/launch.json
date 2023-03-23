@@ -63,7 +63,7 @@
         "request": "launch",
         "runtimeExecutable": "${workspaceFolder}/target/debug/app.exe", // Remember to edit the right path to your app.
         "useWebView": true,
-        "webRoot": "${workspaceFolder}",
+        "webRoot": "${workspaceFolder}/cirrus-app/src",
         "preLaunchTask": "ui:dev"
       },
     ]
