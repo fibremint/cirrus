@@ -100,7 +100,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::set_listen_updated_events,
             commands::set_playback_position,
         ])
-        .setup(|app| {
+        .setup(|app, api| {
             let audio_event_channel_state = start_audio_event_send_thread::<R>();
 
             let _event_sender = audio_event_channel_state.event_sender.clone();
