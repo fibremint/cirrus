@@ -53,6 +53,15 @@
         playbackContext.audioLength = Math.floor(message.CurrentStream.length);
       }
 
+      if (messageType === "ResetState") {
+        currentStreamId = '';
+        playbackContext.audioId = '';
+        playbackContext.audioLength = 0;
+        playbackContext.position = 0;
+
+        updateAudioButton(false);
+      }
+
       if (currentStreamId !== message.streamId) {
         return;
       }
@@ -183,6 +192,12 @@
   async function onPlayPauseButtonChange(event) {
     if (isAudioPlay) {
       await command.stopAudio();
+
+      currentStreamId = '';
+      playbackContext.audioLength = 0;
+      playbackContext.position = 0;
+
+      updateAudioButton(false);
 
       // resetSelectedAudioInfo();
     } else {

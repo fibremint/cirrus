@@ -56,6 +56,7 @@ pub enum ProcessAudioDataStatus {
     Paused,
     WaitConsume,
     DataNotExist,
+    ReactEnd,
     Error,
 }
 
@@ -68,7 +69,8 @@ impl From<usize> for ProcessAudioDataStatus {
             2 => Paused,
             3 => WaitConsume,
             4 => DataNotExist,
-            5 => Error,
+            5 => ReactEnd,
+            6 => Error,
             _ => unreachable!(),
         }
     }
@@ -401,6 +403,14 @@ impl AudioSampleInner {
             *process_sample_guard = false;
 
             return Err(anyhow::anyhow!(ProcessAudioDataStatus::WaitConsume as usize))
+        }
+
+        if self.context.playback_sample_frame_pos == self.source.content_packets -1 {
+            self.context.process_audio_data_status.store(ProcessAudioDataStatus::ReactEnd as usize, Ordering::SeqCst);
+            
+            *process_sample_guard = false;
+            
+            return Err(anyhow::anyhow!(ProcessAudioDataStatus::ReactEnd as usize))
         }
 
         // audio data is not fetched  

@@ -5,7 +5,7 @@ use ringbuf::{HeapRb, SharedRb, Consumer, Producer};
 use cpal::traits::{DeviceTrait, StreamTrait};
 use tokio::{runtime::Handle, sync::RwLock};
 
-use super::{sample::{AudioSample, FetchBufferSpec}, device::AudioDeviceContext};
+use super::{sample::{AudioSample, FetchBufferSpec, ProcessAudioDataStatus}, device::AudioDeviceContext, AudioPlayerRequest};
 use crate::dto::AudioSource;
 
 #[derive(Debug, PartialEq, Clone, serde_derive::Serialize)]
@@ -36,6 +36,7 @@ pub enum UpdatedPlaybackMessage {
     PositionSec(u32),
     StreamStatus(StreamStatus),
     CurrentStream { length: f32 },
+    ResetState,
     // StreamCreated,
 }
 
@@ -45,6 +46,7 @@ impl std::fmt::Display for UpdatedPlaybackMessage {
             UpdatedPlaybackMessage::PositionSec(_) => write!(f, "PositionSec"),
             UpdatedPlaybackMessage::StreamStatus(_) => write!(f, "StreamStatus"),
             UpdatedPlaybackMessage::CurrentStream { length: _ } => write!(f, "CurrentStream"),
+            UpdatedPlaybackMessage::ResetState => write!(f, "ResetState"),
             // UpdatedPlaybackMessage::StreamCreated => write!(f, "StreamCreated"),
         }
     }
@@ -53,9 +55,9 @@ impl std::fmt::Display for UpdatedPlaybackMessage {
 #[derive(Clone, serde_derive::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdatedStreamMessage {
-    stream_id: String,
-    message_type: String,
-    message: UpdatedPlaybackMessage,
+    pub(crate) stream_id: String,
+    pub(crate) message_type: String,
+    pub(crate) message: UpdatedPlaybackMessage,
 }
 
 pub struct StreamPlaybackContext {
@@ -152,6 +154,7 @@ pub struct AudioStream {
     audio_sample: AudioSample,
     stream_playback_context: Arc<RwLock<StreamPlaybackContext>>,
     audio_stream_buf_consumer: Arc<Mutex<AudioStreamBufferConsumer<f32>>>,
+    // request_sender: Sender<AudioPlayerRequest>,
 }
 
 impl AudioStream {
@@ -164,6 +167,7 @@ impl AudioStream {
         fetch_initial_buffer_sec: Option<u32>,
         stream_buffer_len_ms: f32,
         notify_update_sender: Option<Sender<UpdatedStreamMessage>>,
+        request_sender: Sender<AudioPlayerRequest>,
     ) -> Result<Self, anyhow::Error> {
         let audio_source = rt_handle.block_on(async move {
             AudioSource::new(
@@ -207,6 +211,8 @@ impl AudioStream {
         let _stream_playback_context = stream_playback_context.clone();
         let _process_sample_condvar = audio_sample.inner.lock().unwrap().context.process_sample_condvar.clone();
         let _audio_stream_buf_consumer = audio_stream_buf_consumer.clone();
+        let _process_audio_data_status = audio_sample.inner.lock().unwrap().context.process_audio_data_status.clone();
+        let _request_sender = request_sender.clone();
 
         let err_fn = |err| eprintln!("an error occurred on stream: {}", err);
 
@@ -235,6 +241,14 @@ impl AudioStream {
                 };
             }
 
+            if consumed_ch_samples == 0 && 
+                ProcessAudioDataStatus::ReactEnd == ProcessAudioDataStatus::from(
+                    _process_audio_data_status.load(Ordering::SeqCst)
+                ) {
+                    _request_sender.send(AudioPlayerRequest::StreamReactEnd).unwrap();
+                    // println!("react end");
+                }
+
             if consumed_ch_samples > 0 {
                 _stream_playback_context.blocking_write().increase_sample_pos(consumed_ch_samples / 2);
             }
@@ -251,9 +265,14 @@ impl AudioStream {
             audio_sample,
             stream_playback_context,
             audio_stream_buf_consumer,
+            // request_sender,
         })
 
     }
+
+    // pub fn get_stream_id(&self) -> String {
+    //     self.stream_playback_context.blocking_read().stream_id.clone()
+    // }
 
     pub fn play(&self) -> Result<(), anyhow::Error> {
         self.stream.play()?;
@@ -298,6 +317,14 @@ impl AudioStream {
         Ok(())
     }
 }
+
+// impl Drop for AudioStream {
+//     fn drop(&mut self) {
+//         self.stream_playback_context.blocking_read().notify_updated_item(
+//             UpdatedPlaybackMessage::PositionSec(())
+//         )
+//     }
+// }
 
 type AudioStreamBuffer = SharedRb<f32, Vec<MaybeUninit<f32>>>;
 pub type AudioStreamBufferProducer = Producer<f32, Arc<SharedRb<f32, Vec<MaybeUninit<f32>>>>>;

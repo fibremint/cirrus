@@ -10,7 +10,7 @@ use tonic::transport::ClientTlsConfig;
 
 use crate::audio::{device::AudioDeviceContext, stream::AudioStream};
 
-use super::stream::UpdatedStreamMessage;
+use super::stream::{UpdatedStreamMessage, UpdatedPlaybackMessage};
 
 // use super::sample::AudioSample;
 
@@ -88,6 +88,7 @@ pub enum AudioPlayerRequest {
     Pause,
     Stop,
     SetPlaybackPos(SetPlaybackPosMessage),
+    StreamReactEnd,
 }
 
 // #[derive(Clone, Debug, PartialEq, Eq, Hash, Sequence)]
@@ -168,6 +169,9 @@ fn process_request(
                 AudioPlayerResponse::None
             )?;
         },
+        AudioPlayerRequest::StreamReactEnd => {
+            audio_player.next_stream();
+        }
     }
 
     Ok(())
@@ -176,6 +180,7 @@ fn process_request(
 fn start_audio_player_thread(
     grpc_endpoint: &str,
     event_sender: Option<Sender<UpdatedStreamMessage>>,
+    request_sender: Sender<AudioPlayerRequest>,
     request_receiver: Receiver<AudioPlayerRequest>,
     response_channels: ResponseChannels,
     // response_channels: Arc<ResponseChannels>,
@@ -189,6 +194,7 @@ fn start_audio_player_thread(
         let mut audio_player = AudioPlayerImpl::new(
             &_grpc_endpoint,
             event_sender,
+            request_sender,
         ).unwrap();
 
         loop {
@@ -257,6 +263,7 @@ impl AudioPlayer {
             grpc_endpoint,
             event_sender,
             // None,
+            request_sender.clone(),
             request_receiver,
             response_channels.clone(),
             rt_handle
@@ -345,13 +352,15 @@ pub struct AudioPlayerImpl {
     device_context: AudioDeviceContext,
     streams: VecDeque<AudioStream>,
     status: usize,
-    event_sender: Option<Sender<UpdatedStreamMessage>>
+    event_sender: Option<Sender<UpdatedStreamMessage>>,
+    request_sender: Sender<AudioPlayerRequest>,
 }
 
 impl AudioPlayerImpl {
     pub fn new(
         grpc_endpoint: &str,
         event_sender: Option<Sender<UpdatedStreamMessage>>,
+        request_sender: Sender<AudioPlayerRequest>,
     ) -> Result<Self, anyhow::Error> {
         println!("create audio player core");
 
@@ -360,6 +369,7 @@ impl AudioPlayerImpl {
             streams: VecDeque::default(),
             status: 0,
             event_sender,
+            request_sender,
         })
     }
 
@@ -396,6 +406,7 @@ impl AudioPlayerImpl {
             Some(5),
             150.,
             self.event_sender.clone(),
+            self.request_sender.clone(),
         )?;
 
         self.streams.push_back(audio_stream);
@@ -426,6 +437,24 @@ impl AudioPlayerImpl {
 
         self.streams.get(0).unwrap().pause()?;
         
+        Ok(())
+    }
+
+    pub fn next_stream(&mut self) -> Result<(), anyhow::Error> {
+        self.streams.pop_front();
+
+        if let Some(stream) = self.streams.get(0) {
+            stream.play()?;
+        } else {
+            if let Some(sender) = &self.event_sender {
+                sender.send(UpdatedStreamMessage {
+                    stream_id: "".to_string(),
+                    message_type: UpdatedPlaybackMessage::ResetState.to_string(),
+                    message: UpdatedPlaybackMessage::ResetState,
+                }).unwrap();
+            }
+        }
+
         Ok(())
     }
 
