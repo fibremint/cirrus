@@ -223,7 +223,7 @@ impl EncodedBuffer {
     }
 
     pub fn get_fetch_required_packet_num(&self, fetch_start_idx: u32, duration_sec: Option<f64>) -> u32 {
-        let max_avail_fetch_pkt = self.content_packets - fetch_start_idx;
+        let max_avail_fetch_pkt = self.content_packets -1 - fetch_start_idx;
 
         // let desired_fetch_pkt_num = get_packet_idx_from_sec(duration_sec, 0.02);
         let desired_fetch_pkt_num = 
@@ -381,7 +381,11 @@ impl EncodedBuffer {
     pub fn is_filled_all_packets(&self) -> bool {
         // TODO: check
         assert!(self.next_packet_idx <= self.content_packets);
-        self.next_packet_idx == self.content_packets 
+        if self.next_packet_idx == 0 {
+            return false
+        }
+
+        self.next_packet_idx -1 == self.content_packets 
     }
 }
 

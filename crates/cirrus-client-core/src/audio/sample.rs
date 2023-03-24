@@ -76,9 +76,21 @@ impl From<usize> for ProcessAudioDataStatus {
     }
 }
 
+#[derive(Debug, PartialEq, Clone, serde_derive::Serialize)]
 pub enum Action {
     Start,
     Stop,
+}
+
+impl From<usize> for Action {
+    fn from(value: usize) -> Self {
+        use self::Action::*;
+        match value {
+            0 => Start,
+            1 => Stop,
+            _ => unreachable!(),
+        }
+    }
 }
 
 #[derive(Clone, serde_derive::Serialize)]
@@ -87,14 +99,16 @@ pub enum UpdatedBufferMessage {
     BufferStatus(FetchBufferStatus),
 }
 
-pub struct AudioSample {
-    pub inner: Arc<Mutex<AudioSampleInner>>,
-}
-
 pub struct FetchBufferSpec {
     pub init_fetch_sec: Option<u32>,
     pub buffer_margin_sec: u32,
     pub fetch_packet_sec: u32,
+}
+
+pub struct AudioSample {
+    pub inner: Arc<Mutex<AudioSampleInner>>,
+    
+    fetch_buffer_action: Arc<AtomicUsize>,
 }
 
 impl AudioSample {
@@ -116,7 +130,9 @@ impl AudioSample {
                         fetch_buffer_spec,
                     )?
                 )
-            )
+            ),
+
+            fetch_buffer_action: Arc::new(AtomicUsize::new(Action::Start as usize)),
         })
     }
 
@@ -127,9 +143,16 @@ impl AudioSample {
         let _rt_handle = rt_handle.clone();
         let _inner = self.inner.clone();
         let _process_sample_condvar = _inner.lock().unwrap().context.process_sample_condvar.clone();
+        let _fetch_buffer_action = self.fetch_buffer_action.clone();
 
         std::thread::spawn(move || loop {
             {
+                if Action::Stop == Action::from(
+                    _fetch_buffer_action.load(Ordering::SeqCst)
+                ) {
+                    break;
+                }
+
                 let (process_sample_mutex, process_sample_cv) = &*_process_sample_condvar;
                 let mut process_sample_guard = process_sample_mutex.lock().unwrap();
     
@@ -161,6 +184,12 @@ impl AudioSample {
     // pub fn update_from_output_stream_config(&self) {
     //     todo!()
     // }
+}
+
+impl Drop for AudioSample {
+    fn drop(&mut self) {
+        self.fetch_buffer_action.store(Action::Stop as usize, Ordering::SeqCst);
+    }
 }
 
 pub struct AudioSampleInner {

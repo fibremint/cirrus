@@ -37,6 +37,7 @@
   let loadedAudioLength = 0;
   let loadedAudioItemIndex = -1;
   let loadedAudioId = '';
+  let loadedNextStream = false;
 
   let currentStreamId = '';
 
@@ -46,14 +47,19 @@
     fetchAudioTags();
 
     const unlisten = await listen(UPDATED_AUDIO_PLAYER_EVENT_NAME, event => {      
-      const { messageType, message } = event.payload;
+      // const { messageType, message } = event.payload;
+      const payload = event.payload;
 
-      if (messageType === "CurrentStream") {
-        currentStreamId = message.streamId;
-        playbackContext.audioLength = Math.floor(message.CurrentStream.length);
+      if (payload.messageType === "CurrentStream") {
+        if (currentStreamId !== payload.streamId) {
+          currentStreamId = payload.streamId;
+          loadedNextStream = false;
+        }
+        // currentStreamId = message.streamId;
+        playbackContext.audioLength = Math.floor(payload.message.CurrentStream.length);
       }
 
-      if (messageType === "ResetState") {
+      if (payload.messageType === "ResetState") {
         currentStreamId = '';
         playbackContext.audioId = '';
         playbackContext.audioLength = 0;
@@ -62,21 +68,39 @@
         updateAudioButton(false);
       }
 
-      if (currentStreamId !== message.streamId) {
+      if (currentStreamId !== payload.streamId) {
         return;
       }
 
-      if (messageType === "StreamStatus") { 
-        let isAudioPlay = message.StreamStatus === "Play" ? true : false;
+      if (payload.messageType === "StreamStatus") { 
+        let isAudioPlay = payload.message.StreamStatus === "Play" ? true : false;
         updateAudioButton(isAudioPlay);
 
-      } else if (messageType === "PositionSec") {
-        playbackContext.position = message.PositionSec;
+      } else if (payload.messageType === "PositionSec") {
+        playbackContext.position = payload.message.PositionSec;
       
         if (!isUserModifyPlaybackPos) {
           sliderPos = playbackContext.position;
         }
-        
+
+        // Load next audio stream
+        if (playbackContext.audioLength - playbackContext.position > 5) {
+          return;
+        }
+
+        if (loadedNextStream) {
+          return;
+        }
+
+        if (audioTags[loadedAudioItemIndex+1] === undefined) {
+          return;
+        }
+
+        let nextAudioTag = audioTags[loadedAudioItemIndex+1];
+
+        command.loadAudio(nextAudioTag.id);
+        loadedNextStream = true;
+        loadedAudioItemIndex += 1;
       }
     });
 
