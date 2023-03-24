@@ -39,6 +39,7 @@ env_logger = "0.9.0"
 
 [target."cfg(target_os = \"windows\")".dependencies]
 window-shadows= "0.2"
+tokio = "1"
 
 [features]
 # by default Tauri runs in production mode

@@ -21,9 +21,9 @@ export async function getAudioTags({ itemsPerPage, currentPage }) {
 }
 
 export async function setPlaybackPosition(positionSec) {
-  return await invoke('plugin:cirrus|set_playback_position', {playbackPos: positionSec});
+  return await invoke('plugin:cirrus|set_playback_position', { playbackPos: positionSec });
 }
 
-export async function sendAudioPlayerStatus() {
-  return await invoke('plugin:cirrus|send_audio_player_status');
+export async function setListenUpdatedEvents(isListen) {
+  return await invoke('plugin:cirrus|set_listen_updated_events', { isListen: isListen } );
 }
