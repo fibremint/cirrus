@@ -25,8 +25,11 @@ struct Reply {
 pub type SetupHook = Box<dyn FnOnce(&mut App) -> Result<(), Box<dyn std::error::Error>> + Send>;
 pub type OnEvent = Box<dyn FnMut(&AppHandle, RunEvent)>;
 
+#[tokio::main]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
+pub async fn run() {
+    tauri::async_runtime::set(tokio::runtime::Handle::current());
+
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default();
 
