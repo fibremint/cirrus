@@ -2,7 +2,7 @@ use audio::{Buf, buf::Interleaved, BufMut};
 use rubato::Resampler;
 
 pub struct AudioResampler {
-    resampler: rubato::FftFixedIn<f32>,
+    resampler: rubato::FftFixedOut<f32>,
     resampler_output_buf: Vec<Vec<f32>>,
 
     input_buf: audio::wrap::Dynamic<Vec<Vec<f32>>>,
@@ -16,12 +16,14 @@ impl AudioResampler {
         output_sample_rate: usize,
         channels: usize
     ) -> Result<Self, anyhow::Error> {
-        let resampler = rubato::FftFixedIn::<f32>::new(
+        let chunk_size_out = output_sample_rate / 50;
+
+        let resampler = rubato::FftFixedOut::<f32>::new(
             48_000,
             output_sample_rate,
-            960,
+            chunk_size_out,
             2,
-            channels,
+            channels
         )?;
 
         let resampler_output_buf = resampler.output_buffer_allocate();
@@ -29,7 +31,7 @@ impl AudioResampler {
         let input_buf = audio::wrap::dynamic(vec![vec![0.; 960]; 2]);
         let output_buf = audio::buf::Interleaved::with_topology(
             channels,
-            resampler.output_frames_max() / channels
+            resampler.output_frames_max()
         );
 
         Ok(Self {
@@ -71,7 +73,6 @@ impl AudioResampler {
     }
 
     pub fn get_processed_sample_len(&self) -> usize {
-        // self.resampler.output_frames_max() * self.channels
-        self.resampler.output_frames_max()
+        self.resampler.output_frames_max() * self.channels
     }
 }
