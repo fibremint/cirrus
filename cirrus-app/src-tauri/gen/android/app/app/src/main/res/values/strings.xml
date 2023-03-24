@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">cirrus</string>
+    <string name="main_activity_title">cirrus</string>
 </resources>

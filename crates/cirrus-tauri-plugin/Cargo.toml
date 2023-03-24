@@ -16,7 +16,12 @@ cirrus-protobuf = { path = "../cirrus-protobuf" }
 config = "0.13.1"
 dunce = "1"
 http = "0.2"
-tauri = { git = "https://github.com/tauri-apps/tauri", branch="next" }
+#tauri = { git = "https://github.com/tauri-apps/tauri", branch="next" }
+tauri = { version = "2.0.0-alpha.4" }
+
 tokio = { version = "1.0", features = ["rt-multi-thread", "time", "macros", "fs"] }
 serde = "1"
 serde_derive = "1"
+
+[build-dependencies]
+tauri-build = "2.0.0-alpha.2"
