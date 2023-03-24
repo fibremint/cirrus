@@ -1,4 +1,6 @@
+mod decoder;
 mod device;
+mod resampler;
 mod stream;
 mod sample;
 mod packet;
