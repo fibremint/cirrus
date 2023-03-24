@@ -13,8 +13,8 @@ use tauri::Manager;
 // #[cfg(mobile)]
 // pub use mobile::*;
 
-#[cfg(mobile)]
-use mobile_plugin::{SetPlayerStatusRequest, MobilePluginExt};
+// #[cfg(mobile)]
+// use mobile_plugin::{SetPlayerStatusRequest, MobilePluginExt};
 
 #[derive(Clone, Serialize)]
 struct Reply {
@@ -33,10 +33,10 @@ pub fn run() {
     // init plugins
     builder = builder.plugin(cirrus_tauri_plugin::init());
 
-    #[cfg(mobile)] 
-    {
-        builder = builder.plugin(mobile_plugin::init());
-    }
+    // #[cfg(mobile)] 
+    // {
+    //     builder = builder.plugin(mobile_plugin::init());
+    // }
 
     builder = builder
         .setup(move |app| {
@@ -99,14 +99,14 @@ pub fn run() {
                 }
             });
 
-            #[cfg(mobile)] 
-            {
-                let payload = SetPlayerStatusRequest {
-                    is_playing: Some(true)
-                };
+            // #[cfg(mobile)] 
+            // {
+            //     let payload = SetPlayerStatusRequest {
+            //         is_playing: Some(true)
+            //     };
 
-                let res = app.mobile_plugin().set_player_status(payload);
-            }
+            //     let res = app.mobile_plugin().set_player_status(payload);
+            // }
             
             Ok(())
         })

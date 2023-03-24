@@ -6,5 +6,4 @@ members = [
     "crates/cirrus-client-core",
     "crates/cirrus-protobuf",
     "crates/cirrus-tauri-plugin",
-    "crates/mobile-plugin",
 ]

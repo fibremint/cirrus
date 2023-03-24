@@ -1,7 +1,9 @@
 include ':app'
 
 include ':tauri-android'
-project(':tauri-android').projectDir = new File('../../../../../crates/mobile-plugin/android/tauri-api')
+project(':tauri-android').projectDir = new File('./.tauri/tauri-api')
 
-// include ':tauri-example-plugin'
-// project(':tauri-example-plugin').projectDir = new File('../../../../../crates/mobile-plugin/android')
+include ':cirrus-tauri-plugin'
+project(':cirrus-tauri-plugin').projectDir = new File('./.tauri/plugins/cirrus-tauri-plugin')
+
+apply from: 'tauri.settings.gradle'
