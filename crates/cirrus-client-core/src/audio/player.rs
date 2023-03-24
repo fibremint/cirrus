@@ -10,7 +10,7 @@ use tonic::transport::ClientTlsConfig;
 
 use crate::audio::{device::AudioDeviceContext, stream::AudioStream};
 
-use super::stream::UpdatedStreamMessage;
+use super::stream::{UpdatedStreamMessage, UpdatedPlaybackMessage};
 
 // use super::sample::AudioSample;
 
@@ -445,7 +445,15 @@ impl AudioPlayerImpl {
 
         if let Some(stream) = self.streams.get(0) {
             stream.play()?;
-        } 
+        } else {
+            if let Some(sender) = &self.event_sender {
+                sender.send(UpdatedStreamMessage {
+                    stream_id: "".to_string(),
+                    message_type: UpdatedPlaybackMessage::ResetState.to_string(),
+                    message: UpdatedPlaybackMessage::ResetState,
+                }).unwrap();
+            }
+        }
 
         Ok(())
     }

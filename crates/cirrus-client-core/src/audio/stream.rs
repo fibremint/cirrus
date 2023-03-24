@@ -36,6 +36,7 @@ pub enum UpdatedPlaybackMessage {
     PositionSec(u32),
     StreamStatus(StreamStatus),
     CurrentStream { length: f32 },
+    ResetState,
     // StreamCreated,
 }
 
@@ -45,6 +46,7 @@ impl std::fmt::Display for UpdatedPlaybackMessage {
             UpdatedPlaybackMessage::PositionSec(_) => write!(f, "PositionSec"),
             UpdatedPlaybackMessage::StreamStatus(_) => write!(f, "StreamStatus"),
             UpdatedPlaybackMessage::CurrentStream { length: _ } => write!(f, "CurrentStream"),
+            UpdatedPlaybackMessage::ResetState => write!(f, "ResetState"),
             // UpdatedPlaybackMessage::StreamCreated => write!(f, "StreamCreated"),
         }
     }
@@ -53,9 +55,9 @@ impl std::fmt::Display for UpdatedPlaybackMessage {
 #[derive(Clone, serde_derive::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdatedStreamMessage {
-    stream_id: String,
-    message_type: String,
-    message: UpdatedPlaybackMessage,
+    pub(crate) stream_id: String,
+    pub(crate) message_type: String,
+    pub(crate) message: UpdatedPlaybackMessage,
 }
 
 pub struct StreamPlaybackContext {
