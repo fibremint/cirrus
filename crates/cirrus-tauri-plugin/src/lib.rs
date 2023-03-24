@@ -40,11 +40,14 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::send_audio_player_status,
             commands::set_playback_position,
         ])
-        .setup(|app, _api| {
+        .setup(|app, api| {
             //let res_root_path = resolve_res_path(app, &RES_PATH_STR);
             let state = state::AppState::new().unwrap();
 
             app.manage(state);
+
+            #[cfg(target_os = "android")]
+            let handle = api.register_android_plugin("com.fibremint.cirrus", "ExamplePlugin")?;
 
             Ok(())
         })
