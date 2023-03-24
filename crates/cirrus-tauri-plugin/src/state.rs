@@ -1,32 +1,45 @@
-use std::{sync::Arc, path::PathBuf};
-use cirrus_client_core::AudioPlayer;
+use std::{sync::{Arc, Mutex, Condvar}};
+use cirrus_client_core::{AudioPlayer, audio::UpdatedStreamMessage};
+use crossbeam_channel::{Receiver, Sender};
+use tauri::{Runtime, Window};
 
-use super::settings::Settings;
+pub struct AudioEventChannelState<R: Runtime> {
+    pub event_sender: Sender<UpdatedStreamMessage>,
+    pub event_receiver: Receiver<UpdatedStreamMessage>,
 
-pub struct AppState {
-    pub audio_player: Arc<AudioPlayer>,
-    pub settings: Settings,
+    pub send_event_condvar: Arc<(Mutex<bool>, Condvar)>,
+    pub window: Arc<Mutex<Option<Window<R>>>>,
 }
 
-impl AppState {
-    pub fn new(res_root_path: &PathBuf, config_path_str: &str) -> Result<Self, anyhow::Error> {
-        let config_path = res_root_path.join(config_path_str);
-        let settings = Settings::new(&config_path).unwrap();
+impl<R> AudioEventChannelState<R> 
+where
+    R: Runtime
+{
+    pub fn new(
+        event_sender: Sender<UpdatedStreamMessage>,
+        event_receiver: Receiver<UpdatedStreamMessage>,
+    ) -> Self {
 
-        let mut audio_player = AudioPlayer::new(&settings.server.grpc_endpoint);
+        Self {
+            event_sender,
+            event_receiver,
 
-        if settings.tls.use_tls {
-            let cert_path = res_root_path.join(&settings.tls.cert_path);
-
-            audio_player.load_cert(
-                &cert_path,
-                &settings.tls.domain_name,
-            )?;
+            send_event_condvar: Arc::new((Mutex::new(false), Condvar::new())),
+            window: Arc::new(Mutex::new(None)),
         }
+    }
+}
+
+pub struct AudioPlayerState(pub AudioPlayer);
+
+impl AudioPlayerState {
+    pub fn new(
+        event_sender: Option<Sender<UpdatedStreamMessage>>,
+        grpc_endpoint: &str
+    ) -> Result<Self, anyhow::Error> {
 
         Ok(Self {
-            audio_player: Arc::new(audio_player),
-            settings
-        })
+            0: AudioPlayer::new(event_sender, grpc_endpoint)?
+        })   
     }
 }

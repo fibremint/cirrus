@@ -2,11 +2,13 @@ use tonic::transport::ClientTlsConfig;
 
 use crate::request;
 
+#[derive(Debug)]
 pub struct Server {
     pub grpc_endpoint: String,
     pub tls_config: Option<ClientTlsConfig>,
 }
 
+#[derive(Debug)]
 pub struct AudioSource {
     pub server: Server,
     pub id: String,
