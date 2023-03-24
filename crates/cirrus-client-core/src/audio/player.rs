@@ -1,28 +1,16 @@
 use std::{
     collections::{VecDeque, HashMap},
-    sync::{
-        Arc, 
-        atomic::{AtomicUsize, Ordering, AtomicBool}, mpsc,
-    },
-    thread, path::PathBuf,
+    thread
 };
 
-use anyhow::anyhow;
-use cpal::traits::{HostTrait, DeviceTrait, StreamTrait};
 use crossbeam_channel::{Sender, Receiver};
 use enum_iterator::Sequence;
-use tokio::{
-    time::Duration, 
-    sync::{RwLock}, runtime::Handle,
-};
+use tokio::runtime::Handle;
 use tonic::transport::ClientTlsConfig;
-
-use crate::{audio_player::state::PlaybackStatus, tls};
-use crate::dto::AudioSource;
 
 use crate::audio::{device::AudioDeviceContext, stream::AudioStream};
 
-use super::stream::{UpdatedStreamMessage, UpdatedPlaybackMessage};
+use super::stream::UpdatedStreamMessage;
 
 // use super::sample::AudioSample;
 
@@ -31,13 +19,6 @@ pub struct ServerState {
     pub grpc_endpoint: String,
     pub tls_config: Option<ClientTlsConfig>,
 }
-
-// #[derive(Debug)]
-// pub struct PlayerStatus {
-//     status: usize,
-//     pos: usize,
-//     remain_buf: f32,
-// }
 
 #[derive(Debug)]
 pub struct AudioMeta {
@@ -244,10 +225,11 @@ pub struct AudioPlayer {
 
 impl AudioPlayer {
     pub fn new(
-        rt_handle: Handle,
         event_sender: Option<Sender<UpdatedStreamMessage>>,
         grpc_endpoint: &str,
     ) -> Result<Self, anyhow::Error> {
+        let rt_handle = tokio::runtime::Handle::current();
+
         // let (event_sender, event_receiver) = crossbeam_channel::bounded::<UpdatedStreamMessage>(1);
         let (request_sender, request_receiver) = crossbeam_channel::unbounded::<AudioPlayerRequest>();
         
