@@ -2,7 +2,7 @@
 
 Cirrus is an open source audio streaming service.
 
-![demo-audio-player](assets/demo-audio-player.png)
+![demo-audio-player](assets/doc/demo-audio-player.png)
 
 This repository contains:
 
@@ -46,7 +46,7 @@ At now, supported audio format is restricted as `AIFF` and `16-bit, 2-channel`.
 
 ### Overview
 
-![architecture](assets/architecture-overview.png)
+![architecture](assets/doc/architecture-overview.png)
 
 ### Project Strucutre
 

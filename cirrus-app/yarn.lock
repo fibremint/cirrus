@@ -1171,70 +1171,70 @@
   dependencies:
     defer-to-connect "^1.0.1"
 
-"@tauri-apps/api@^1.0.0-rc.7":
-  version "1.0.2"
-  resolved "https://registry.yarnpkg.com/@tauri-apps/api/-/api-1.0.2.tgz#5228720e35d50fd08df87067dc29e7306c1f7a10"
-  integrity sha512-yuNW0oeJ1/ZA7wNF1KgxhHrSu5viPVzY/UgUczzN5ptLM8dH15Juy5rEGkoHfeXGju90Y/l22hi3BtIrp/za+w==
+"@tauri-apps/api@^2.0.0-alpha.0":
+  version "2.0.0-alpha.0"
+  resolved "https://registry.yarnpkg.com/@tauri-apps/api/-/api-2.0.0-alpha.0.tgz#901abbaf3b9515ba0437716ac0383de549e4e3bc"
+  integrity sha512-PQdy1Ao6JwKwW2/C11nP+IqnrWHB7+UgbM71zbzA1W3+1yyd9Zg+K7rzZ7f3yhvD7kdxmXUN3KgSfGeiDFzZ2A==
 
-"@tauri-apps/cli-darwin-arm64@1.0.5":
-  version "1.0.5"
-  resolved "https://registry.yarnpkg.com/@tauri-apps/cli-darwin-arm64/-/cli-darwin-arm64-1.0.5.tgz#6fd17a8d9e0e7982b5c9887639407fdec783a744"
-  integrity sha512-oxpFb9ZeMiC3xPUJ9NsXWCnnwFSVkPbJUvDKpc9IaoDIUpsMTV72W4P0Nh0uQRbyhx4modPpstt7+ONypNVYNg==
+"@tauri-apps/cli-darwin-arm64@2.0.0-alpha.2":
+  version "2.0.0-alpha.2"
+  resolved "https://registry.yarnpkg.com/@tauri-apps/cli-darwin-arm64/-/cli-darwin-arm64-2.0.0-alpha.2.tgz#0af2c077b80778ac4d138a0d42a5f406fcc205ee"
+  integrity sha512-Wu5QdZUgh0DEE0b3EKdJRkZzFoVngezxgvncQlMdXNaiKjdT767K2fB0XvQps+ycbtVLbUlG15jAwPZbWqRYGw==
 
-"@tauri-apps/cli-darwin-x64@1.0.5":
-  version "1.0.5"
-  resolved "https://registry.yarnpkg.com/@tauri-apps/cli-darwin-x64/-/cli-darwin-x64-1.0.5.tgz#6aaaadd68739c4c4f86546f3d17b2fb60a5a0c04"
-  integrity sha512-hRNYC6L9edz2dEqK33tssPylF2ti6x6udidBlGWc5GSoeEb/05qKMEA1MESQYKBG+4q+wjJvACA2vvz6AfgJ3Q==
+"@tauri-apps/cli-darwin-x64@2.0.0-alpha.2":
+  version "2.0.0-alpha.2"
+  resolved "https://registry.yarnpkg.com/@tauri-apps/cli-darwin-x64/-/cli-darwin-x64-2.0.0-alpha.2.tgz#e82f01e53dabb23c700f82e904e36ac0ee635f38"
+  integrity sha512-e5VLsT/exSW1swUWkhCEAQ/fM8mZaUMoGeyESYtO7VfTNVglS0j+VfQ9a8taRxtOkajDZmqMDvmii4tA5I1Bbw==
 
-"@tauri-apps/cli-linux-arm-gnueabihf@1.0.5":
-  version "1.0.5"
-  resolved "https://registry.yarnpkg.com/@tauri-apps/cli-linux-arm-gnueabihf/-/cli-linux-arm-gnueabihf-1.0.5.tgz#d2d01c8b85ee3771656386bfda3852af8ed811da"
-  integrity sha512-hc/Jp3TtFpxB8XVkLEwWy7MNcUBlS8rNCafQBUt4KSElXB+/oGo50jPO+wd5GSMSOR59UCzH08v11P0b+sAa/w==
+"@tauri-apps/cli-linux-arm-gnueabihf@2.0.0-alpha.2":
+  version "2.0.0-alpha.2"
+  resolved "https://registry.yarnpkg.com/@tauri-apps/cli-linux-arm-gnueabihf/-/cli-linux-arm-gnueabihf-2.0.0-alpha.2.tgz#866000663c66abd8ae88682c0f6cf03734ca7c6e"
+  integrity sha512-+/emaFpDPuqnTIyh+WcDqCbzc/SoREFfLDyumqdnFjRU1Uvc2Z9Eo/sMVnfuUw5vDMc2EPzYtT3uiZGez65ZTA==
 
-"@tauri-apps/cli-linux-arm64-gnu@1.0.5":
-  version "1.0.5"
-  resolved "https://registry.yarnpkg.com/@tauri-apps/cli-linux-arm64-gnu/-/cli-linux-arm64-gnu-1.0.5.tgz#7ca848120c2e90b57188aaa9daee11cf29e2e2f4"
-  integrity sha512-btFlkD2PG+yzJBZzWeJmyCy8ZV+iys2Jl66Fs4g9lSi3KrBDnyfQ26RpGZb2pRfkkcVP8/x1WSfByO+Rj+PTBA==
+"@tauri-apps/cli-linux-arm64-gnu@2.0.0-alpha.2":
+  version "2.0.0-alpha.2"
+  resolved "https://registry.yarnpkg.com/@tauri-apps/cli-linux-arm64-gnu/-/cli-linux-arm64-gnu-2.0.0-alpha.2.tgz#157a893fa2d36e56ec16de213ed2d0a9b209833c"
+  integrity sha512-UHAyqt8fFbp9MEbUHSiEKjJC98w/Dta3r9auE70K+/uNpt9pnP/lGturDWWAJagRIFwYKPyqSEqL5qFcKadYqw==
 
-"@tauri-apps/cli-linux-arm64-musl@1.0.5":
-  version "1.0.5"
-  resolved "https://registry.yarnpkg.com/@tauri-apps/cli-linux-arm64-musl/-/cli-linux-arm64-musl-1.0.5.tgz#5ba65790849e0737f560f3ccd12f7a2a88c25b23"
-  integrity sha512-p5JFdWab2AWhfgAZW/mgOLu+YiIJXKV0NdATGmdiBgQCMmz1k/FM8iOFApCgGbo3/zkR58cJ7Z7hyWmQ07M6Pw==
+"@tauri-apps/cli-linux-arm64-musl@2.0.0-alpha.2":
+  version "2.0.0-alpha.2"
+  resolved "https://registry.yarnpkg.com/@tauri-apps/cli-linux-arm64-musl/-/cli-linux-arm64-musl-2.0.0-alpha.2.tgz#452fb06b5c563500206ba4a8cd5d979b1a3c71de"
+  integrity sha512-3euwm11RWvmTX+ISR/Y+N0TaWTJCRIj1pDgB+r2ZptRKlVTMNTJZDTXQlyJKcWEpi1azlbdxAzRvhN8NrgDmyA==
 
-"@tauri-apps/cli-linux-x64-gnu@1.0.5":
-  version "1.0.5"
-  resolved "https://registry.yarnpkg.com/@tauri-apps/cli-linux-x64-gnu/-/cli-linux-x64-gnu-1.0.5.tgz#d06430c608316cb5a29ec805d4c5d078a293c3ae"
-  integrity sha512-fOXR635AXxwSO7MCfBhMLnGpcg1H83XGw9ocuyg4jjvtE8QoYPwC4ksfb5lLhDVMui9iIKY93NAK3EkQiSGGmQ==
+"@tauri-apps/cli-linux-x64-gnu@2.0.0-alpha.2":
+  version "2.0.0-alpha.2"
+  resolved "https://registry.yarnpkg.com/@tauri-apps/cli-linux-x64-gnu/-/cli-linux-x64-gnu-2.0.0-alpha.2.tgz#155c7ab8c4c2b319bca38580e77bc6f6ffc2d664"
+  integrity sha512-ijJ8Wij5mVd9p6lXQ+pXoFlx3Iv1JS1KQTeySICds43xzE8esGp5+HXRXDwWqQLdVmtI77P5VRIe2ssXiaeDUg==
 
-"@tauri-apps/cli-linux-x64-musl@1.0.5":
-  version "1.0.5"
-  resolved "https://registry.yarnpkg.com/@tauri-apps/cli-linux-x64-musl/-/cli-linux-x64-musl-1.0.5.tgz#813c90531f4001453e73b3ad2d4c75929412a249"
-  integrity sha512-8be4zJVkuMs427JqONhFx5Ia5zWsQ5tbZXd80C3dHNL+5/3VIOK6nGQ0iijyZSLXiE9JKEH2jp1EHB+1TVJRcw==
+"@tauri-apps/cli-linux-x64-musl@2.0.0-alpha.2":
+  version "2.0.0-alpha.2"
+  resolved "https://registry.yarnpkg.com/@tauri-apps/cli-linux-x64-musl/-/cli-linux-x64-musl-2.0.0-alpha.2.tgz#9965b076965bc8faf5623c9f67724ebeb9a197e7"
+  integrity sha512-sg8OTQfG/zJ4+6MA/+hk08hVb57iJn5VZDzBb3o6IpJ0cwtM8YDNv5C+6HWttBuxsn4oEoYxGml/FvowMfsOCg==
 
-"@tauri-apps/cli-win32-ia32-msvc@1.0.5":
-  version "1.0.5"
-  resolved "https://registry.yarnpkg.com/@tauri-apps/cli-win32-ia32-msvc/-/cli-win32-ia32-msvc-1.0.5.tgz#a3eb6f56c3f4ba35f6311e1fb31bd30e6892b316"
-  integrity sha512-WpnIfzS1e4InGhvd1IDSKC3w6kbI5c6oJgMmtkMTBlhjhiZXhZmQF4XA784A5Y13pzsbXnbNJKOp8DuPVkoTRQ==
+"@tauri-apps/cli-win32-ia32-msvc@2.0.0-alpha.2":
+  version "2.0.0-alpha.2"
+  resolved "https://registry.yarnpkg.com/@tauri-apps/cli-win32-ia32-msvc/-/cli-win32-ia32-msvc-2.0.0-alpha.2.tgz#808447504cdb22a2d998ac79810cf1035c710a03"
+  integrity sha512-R1AmO3GEm97ptM0tjxZjZ1fLnxzN3ZeOEKc85nR7ayqVqKVhMu+dhq5lKa/Y3GdMUR6Yj9GoCnaLp2xy4bV6JQ==
 
-"@tauri-apps/cli-win32-x64-msvc@1.0.5":
-  version "1.0.5"
-  resolved "https://registry.yarnpkg.com/@tauri-apps/cli-win32-x64-msvc/-/cli-win32-x64-msvc-1.0.5.tgz#f1e0860166e8f86b550e35aaf22ef95d6da5a7c8"
-  integrity sha512-8iEhVD3X4LZfrlxEPOV+mAj4QrJrEqKTICiJnwmgjvhYQOOsNHzg5kca7pcBbqcgorQOBydLpfGJtxWRusVPaw==
+"@tauri-apps/cli-win32-x64-msvc@2.0.0-alpha.2":
+  version "2.0.0-alpha.2"
+  resolved "https://registry.yarnpkg.com/@tauri-apps/cli-win32-x64-msvc/-/cli-win32-x64-msvc-2.0.0-alpha.2.tgz#f7890a94cd8a0cc70faa831046ca8d8576a357d9"
+  integrity sha512-cLJJWxCdvvQP+I0B4h6h0TMMNYISoatQu57QVxPqypbkC/lK/ljjrbD5nu7M9wTFBkLkCTGyMC7N99esCmgIBQ==
 
-"@tauri-apps/cli@^1.0.0-rc.7":
-  version "1.0.5"
-  resolved "https://registry.yarnpkg.com/@tauri-apps/cli/-/cli-1.0.5.tgz#a15a61e8467be29277b72707c4189c58c33d94bf"
-  integrity sha512-vbY+MwK+xN65x0R/o16UQPxBtJl8pmzVzC0TZKokZfmeOkomoqOEOinSwznAMeyR1ZMJW+fXVgJCPvGsRQ0LGg==
+"@tauri-apps/cli@^2.0.0-alpha.2":
+  version "2.0.0-alpha.2"
+  resolved "https://registry.yarnpkg.com/@tauri-apps/cli/-/cli-2.0.0-alpha.2.tgz#bef242ce3c8b286f0ab74595c5e069b0ce7c5b4f"
+  integrity sha512-M5o2ESOv9jGr7oIDl3sR3Q5++DXSW4xyfxzKCyu1JVGlOc+C9Q4y0dbKhlpd0wPCAxRa0ikbfu7z8qfEhHSpVQ==
   optionalDependencies:
-    "@tauri-apps/cli-darwin-arm64" "1.0.5"
-    "@tauri-apps/cli-darwin-x64" "1.0.5"
-    "@tauri-apps/cli-linux-arm-gnueabihf" "1.0.5"
-    "@tauri-apps/cli-linux-arm64-gnu" "1.0.5"
-    "@tauri-apps/cli-linux-arm64-musl" "1.0.5"
-    "@tauri-apps/cli-linux-x64-gnu" "1.0.5"
-    "@tauri-apps/cli-linux-x64-musl" "1.0.5"
-    "@tauri-apps/cli-win32-ia32-msvc" "1.0.5"
-    "@tauri-apps/cli-win32-x64-msvc" "1.0.5"
+    "@tauri-apps/cli-darwin-arm64" "2.0.0-alpha.2"
+    "@tauri-apps/cli-darwin-x64" "2.0.0-alpha.2"
+    "@tauri-apps/cli-linux-arm-gnueabihf" "2.0.0-alpha.2"
+    "@tauri-apps/cli-linux-arm64-gnu" "2.0.0-alpha.2"
+    "@tauri-apps/cli-linux-arm64-musl" "2.0.0-alpha.2"
+    "@tauri-apps/cli-linux-x64-gnu" "2.0.0-alpha.2"
+    "@tauri-apps/cli-linux-x64-musl" "2.0.0-alpha.2"
+    "@tauri-apps/cli-win32-ia32-msvc" "2.0.0-alpha.2"
+    "@tauri-apps/cli-win32-x64-msvc" "2.0.0-alpha.2"
 
 "@types/estree@0.0.39":
   version "0.0.39"
@@ -1740,7 +1740,7 @@ cross-env@^7.0.3:
   dependencies:
     cross-spawn "^7.0.1"
 
-cross-spawn@^7.0.1:
+cross-spawn@^7.0.1, cross-spawn@^7.0.3:
   version "7.0.3"
   resolved "https://registry.yarnpkg.com/cross-spawn/-/cross-spawn-7.0.3.tgz#f73a85b9d5d41d045551c177e2882d4ac85728a6"
   integrity sha512-iRDPJKUPVEND7dHPO8rkbOnPpyDygcDFtWjpeWNCgy8WP2rXcxXL8TskReQl6OrB2G7+UJrags1q15Fudc7G6w==
@@ -1831,6 +1831,13 @@ deepmerge@^4.2.2:
   version "4.2.2"
   resolved "https://registry.yarnpkg.com/deepmerge/-/deepmerge-4.2.2.tgz#44d2ea3679b8f4d4ffba33f03d865fc1e7bf4955"
   integrity sha512-FJ3UgI4gIl+PHZm53knsuSFpE+nESMr7M4v9QcgB7S63Kj/6WqMiFQJpBBYz1Pt+66bZpP3Q7Lye0Oo9MPKEdg==
+
+default-gateway@^6.0.3:
+  version "6.0.3"
+  resolved "https://registry.yarnpkg.com/default-gateway/-/default-gateway-6.0.3.tgz#819494c888053bdb743edbf343d6cdf7f2943a71"
+  integrity sha512-fwSOJsbbNzZ/CUFpqFBqYfYNLj1NbMPm8MMCIzHjC83iSJRBEGmDUxU+WP661BaBQImeC2yHwXtz+P/O9o+XEg==
+  dependencies:
+    execa "^5.0.0"
 
 defaults@^1.0.3:
   version "1.0.3"
@@ -2116,6 +2123,21 @@ esutils@^2.0.2:
   resolved "https://registry.yarnpkg.com/esutils/-/esutils-2.0.3.tgz#74d2eb4de0b8da1293711910d50775b9b710ef64"
   integrity sha512-kVscqXk4OCp68SZ0dkgEKVi6/8ij300KBWTJq32P/dYeWTSwK41WyTxalN1eRmA5Z9UU/LX9D7FWSmV9SAYx6g==
 
+execa@^5.0.0:
+  version "5.1.1"
+  resolved "https://registry.yarnpkg.com/execa/-/execa-5.1.1.tgz#f80ad9cbf4298f7bd1d4c9555c21e93741c411dd"
+  integrity sha512-8uSpZZocAZRBAPIEINJj3Lo9HyGitllczc27Eh5YYojjMFMn8yHMDMaUHE2Jqfq05D/wucwI4JGURyXt1vchyg==
+  dependencies:
+    cross-spawn "^7.0.3"
+    get-stream "^6.0.0"
+    human-signals "^2.1.0"
+    is-stream "^2.0.0"
+    merge-stream "^2.0.0"
+    npm-run-path "^4.0.1"
+    onetime "^5.1.2"
+    signal-exit "^3.0.3"
+    strip-final-newline "^2.0.0"
+
 external-editor@^3.0.3:
   version "3.1.0"
   resolved "https://registry.yarnpkg.com/external-editor/-/external-editor-3.1.0.tgz#cb03f740befae03ea4d283caed2741a83f335495"
@@ -2290,6 +2312,11 @@ get-stream@^5.1.0:
   dependencies:
     pump "^3.0.0"
 
+get-stream@^6.0.0:
+  version "6.0.1"
+  resolved "https://registry.yarnpkg.com/get-stream/-/get-stream-6.0.1.tgz#a262d8eef67aced57c2852ad6167526a43cbf7b7"
+  integrity sha512-ts6Wi+2j3jQjqi70w5AlN8DFnkSwC+MqmxEzdEALB2qXZYV3X/b1CTfgPLGJNMeAWxdPfU8FO1ms3NUfaHCPYg==
+
 get-symbol-description@^1.0.0:
   version "1.0.0"
   resolved "https://registry.yarnpkg.com/get-symbol-description/-/get-symbol-description-1.0.0.tgz#7fdb81c900101fbd564dd5f1a30af5aadc1e58d6"
@@ -2435,6 +2462,11 @@ http-cache-semantics@^4.0.0:
   resolved "https://registry.yarnpkg.com/http-cache-semantics/-/http-cache-semantics-4.1.0.tgz#49e91c5cbf36c9b94bcfcd71c23d5249ec74e390"
   integrity sha512-carPklcUh7ROWRK7Cv27RPtdhYhUsela/ue5/jKzjegVvXDqM2ILE9Q2BGn9JZJh1g87cp56su/FgQSzcWS8cQ==
 
+human-signals@^2.1.0:
+  version "2.1.0"
+  resolved "https://registry.yarnpkg.com/human-signals/-/human-signals-2.1.0.tgz#dc91fcba42e4d06e4abaed33b3e7a3c02f514ea0"
+  integrity sha512-B4FFZ6q/T2jhhksgkbEW3HBvWIfDW85snkQgawt07S7J5QXTk6BkNV+0yAeZrM5QpMAdYlocGoljn0sJ/WQkFw==
+
 iconv-lite@^0.4.24:
   version "0.4.24"
   resolved "https://registry.yarnpkg.com/iconv-lite/-/iconv-lite-0.4.24.tgz#2022b4b25fbddc21d2f524974a474aafe733908b"
@@ -2531,6 +2563,16 @@ inquirer@^7.3.3:
     strip-ansi "^6.0.0"
     through "^2.3.6"
 
+internal-ip@^7.0.0:
+  version "7.0.0"
+  resolved "https://registry.yarnpkg.com/internal-ip/-/internal-ip-7.0.0.tgz#5b1c6a9d7e188aa73a1b69717daf50c8d8ed774f"
+  integrity sha512-qE4TeD4brqC45Vq/+VASeMiS1KRyfBkR6HT2sh9pZVVCzSjPkaCEfKFU+dL0PRv7NHJtvoKN2r82G6wTfzorkw==
+  dependencies:
+    default-gateway "^6.0.3"
+    ipaddr.js "^2.0.1"
+    is-ip "^3.1.0"
+    p-event "^4.2.0"
+
 internal-slot@^1.0.3:
   version "1.0.3"
   resolved "https://registry.yarnpkg.com/internal-slot/-/internal-slot-1.0.3.tgz#7347e307deeea2faac2ac6205d4bc7d34967f59c"
@@ -2539,6 +2581,16 @@ internal-slot@^1.0.3:
     get-intrinsic "^1.1.0"
     has "^1.0.3"
     side-channel "^1.0.4"
+
+ip-regex@^4.0.0:
+  version "4.3.0"
+  resolved "https://registry.yarnpkg.com/ip-regex/-/ip-regex-4.3.0.tgz#687275ab0f57fa76978ff8f4dddc8a23d5990db5"
+  integrity sha512-B9ZWJxHHOHUhUjCPrMpLD4xEq35bUTClHM1S6CBU5ixQnkZmwipwgc96vAd7AAGM9TGHvJR+Uss+/Ak6UphK+Q==
+
+ipaddr.js@^2.0.1:
+  version "2.0.1"
+  resolved "https://registry.yarnpkg.com/ipaddr.js/-/ipaddr.js-2.0.1.tgz#eca256a7a877e917aeb368b0a7497ddf42ef81c0"
+  integrity sha512-1qTgH9NG+IIJ4yfKs2e6Pp1bZg8wbDbKHT21HrLIeYBTRLgMYKnMTPAuI3Lcs61nfx5h1xlXnbJtH1kX5/d/ng==
 
 is-arrayish@^0.2.1:
   version "0.2.1"
@@ -2622,6 +2674,13 @@ is-interactive@^1.0.0:
   version "1.0.0"
   resolved "https://registry.yarnpkg.com/is-interactive/-/is-interactive-1.0.0.tgz#cea6e6ae5c870a7b0a0004070b7b587e0252912e"
   integrity sha512-2HvIEKRoqS62guEC+qBjpvRubdX910WCMuJTZ+I9yvqKU2/12eSL549HMwtabb4oupdj2sMP50k+XJfB/8JE6w==
+
+is-ip@^3.1.0:
+  version "3.1.0"
+  resolved "https://registry.yarnpkg.com/is-ip/-/is-ip-3.1.0.tgz#2ae5ddfafaf05cb8008a62093cf29734f657c5d8"
+  integrity sha512-35vd5necO7IitFPjd/YBeqwWnyDWbuLH9ZXQdMfDA8TEo7pv5X8yfrvVO3xbJbLUlERCMvf6X0hTUamQxCYJ9Q==
+  dependencies:
+    ip-regex "^4.0.0"
 
 is-module@^1.0.0:
   version "1.0.0"
@@ -3143,6 +3202,13 @@ normalize-url@^4.1.0:
   resolved "https://registry.yarnpkg.com/normalize-url/-/normalize-url-4.5.1.tgz#0dd90cf1288ee1d1313b87081c9a5932ee48518a"
   integrity sha512-9UZCFRHQdNrfTpGg8+1INIg93B6zE0aXMVFkw1WFwvO4SlZywU6aLg5Of0Ap/PgcbSw4LNxvMWXMeugwMCX0AA==
 
+npm-run-path@^4.0.1:
+  version "4.0.1"
+  resolved "https://registry.yarnpkg.com/npm-run-path/-/npm-run-path-4.0.1.tgz#b7ecd1e5ed53da8e37a55e1c2269e0b97ed748ea"
+  integrity sha512-S48WzZW777zhNIrn7gxOlISNAqi9ZC/uQFnRdbeIHhZhCA6UqpkOT8T1G7BvfdgP4Er8gF4sUbaS0i7QvIfCWw==
+  dependencies:
+    path-key "^3.0.0"
+
 object-inspect@^1.12.2, object-inspect@^1.9.0:
   version "1.12.2"
   resolved "https://registry.yarnpkg.com/object-inspect/-/object-inspect-1.12.2.tgz#c0641f26394532f28ab8d796ab954e43c009a8ea"
@@ -3170,7 +3236,7 @@ once@^1.3.0, once@^1.3.1, once@^1.4.0:
   dependencies:
     wrappy "1"
 
-onetime@^5.1.0:
+onetime@^5.1.0, onetime@^5.1.2:
   version "5.1.2"
   resolved "https://registry.yarnpkg.com/onetime/-/onetime-5.1.2.tgz#d0e96ebb56b07476df1dd9c4806e5237985ca45e"
   integrity sha512-kbpaSSGJTWdAY5KPVeMOKXSrPtr8C8C7wodJbcsd51jRnmD+GZu8Y0VoU6Dm5Z4vWr0Ig/1NKuWRKf7j5aaYSg==
@@ -3202,7 +3268,7 @@ p-cancelable@^1.0.0:
   resolved "https://registry.yarnpkg.com/p-cancelable/-/p-cancelable-1.1.0.tgz#d078d15a3af409220c886f1d9a0ca2e441ab26cc"
   integrity sha512-s73XxOZ4zpt1edZYZzvhqFa6uvQc1vwUa0K0BdtIZgQMAJj9IbebH+JkgKZc9h+B05PKHLOTl4ajG1BmNrVZlw==
 
-p-event@^4.1.0:
+p-event@^4.1.0, p-event@^4.2.0:
   version "4.2.0"
   resolved "https://registry.yarnpkg.com/p-event/-/p-event-4.2.0.tgz#af4b049c8acd91ae81083ebd1e6f5cae2044c1b5"
   integrity sha512-KXatOjCRXXkSePPb1Nbi0p0m+gQAwdlbhi4wQKJPI1HsMQS9g+Sqp2o+QHziPr7eYJyOZet836KoHEVM1mwOrQ==
@@ -3303,7 +3369,7 @@ path-is-absolute@^1.0.0:
   resolved "https://registry.yarnpkg.com/path-is-absolute/-/path-is-absolute-1.0.1.tgz#174b9268735534ffbc7ace6bf53a5a9e1b5c5f5f"
   integrity sha512-AVbw3UJ2e9bq64vSaS9Am0fje1Pa8pbGqTTsmXfaIiMpnr5DlDhfJOuLj9Sf95ZPVDAUerDfEk88MPmPe7UCQg==
 
-path-key@^3.1.0:
+path-key@^3.0.0, path-key@^3.1.0:
   version "3.1.1"
   resolved "https://registry.yarnpkg.com/path-key/-/path-key-3.1.1.tgz#581f6ade658cbba65a0d3380de7753295054f375"
   integrity sha512-ojmeN0qd+y0jszEtoY48r0Peq5dwMEkIlCOu6Q5f41lfkswXuKtYrhgoTpLnyIcHm24Uhqx+5Tqm2InSwLhE6Q==
@@ -3955,7 +4021,7 @@ side-channel@^1.0.4:
     get-intrinsic "^1.0.2"
     object-inspect "^1.9.0"
 
-signal-exit@^3.0.2:
+signal-exit@^3.0.2, signal-exit@^3.0.3:
   version "3.0.7"
   resolved "https://registry.yarnpkg.com/signal-exit/-/signal-exit-3.0.7.tgz#a9a1767f8af84155114eaabd73f99273c8f59ad9"
   integrity sha512-wnD2ZE+l+SPC/uoS0vXeE9L1+0wuaMqKlfz9AMUo38JsyLSBWSFcHR1Rri62LZc12vLr1gb3jl7iwQhgwpAbGQ==
@@ -4099,6 +4165,11 @@ strip-comments@^2.0.1:
   version "2.0.1"
   resolved "https://registry.yarnpkg.com/strip-comments/-/strip-comments-2.0.1.tgz#4ad11c3fbcac177a67a40ac224ca339ca1c1ba9b"
   integrity sha512-ZprKx+bBLXv067WTCALv8SSz5l2+XhpYCsVtSqlMnkAXMWDq+/ekVbl1ghqP9rUHTzv6sm/DwCOiYutU/yp1fw==
+
+strip-final-newline@^2.0.0:
+  version "2.0.0"
+  resolved "https://registry.yarnpkg.com/strip-final-newline/-/strip-final-newline-2.0.0.tgz#89b852fb2fcbe936f6f4b3187afb0a12c1ab58ad"
+  integrity sha512-BrpvfNAE3dcvq7ll3xVumzjKjZQ5tI1sEUIKr3Uoks0XUl45St3FlatVqef9prk4jRDzhW6WZg+3bk93y6pLjA==
 
 strip-indent@^3.0.0:
   version "3.0.0"

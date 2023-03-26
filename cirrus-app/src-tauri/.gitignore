@@ -8,3 +8,12 @@ resources/configs/cirrus/*
 
 resources/tls/*
 !resources/tls/.gitkeep
+# Rust
+**/*.rs.bk
+
+# cargo-mobile
+.cargo/
+#/gen
+
+# macOS
+.DS_Store

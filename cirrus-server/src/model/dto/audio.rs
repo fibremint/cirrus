@@ -10,12 +10,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::util;
 
-// pub type PathProp<'a> = (&'a str, &'a str);
-
-// pub trait GetMaterializedPath {
-//     fn get_mat_path(&self) -> PathProp;
-// }
-
 pub trait GetPathKey {
     fn get_mat_path_key() -> &'static str;
 }
@@ -66,13 +60,6 @@ impl GetPathValue for AudioLibrary {
         &self.materialized_path
     }
 }
-
-// impl GetMaterializedPath for AudioLibrary {
-//     fn get_mat_path(&self) -> PathProp {
-//         // &self.materialized_path
-//         ("materialized_path", self.materialized_path.as_str())
-//     }
-// }
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct AudioFile {
@@ -133,12 +120,6 @@ impl GetPathValue for AudioFile {
         &self.parent_path
     }
 }
-
-// impl GetMaterializedPath for AudioFile {
-//     fn get_mat_path(&self) -> PathProp {
-//         ("parent_path", self.parent_path.as_str())
-//     }
-// }
 
 #[derive(Deserialize, Serialize, Debug, Default)]
 pub struct AudioTag {

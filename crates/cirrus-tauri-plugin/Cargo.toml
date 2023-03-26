@@ -17,7 +17,12 @@ crossbeam-channel = "0.5"
 config = "0.13.1"
 dunce = "1"
 http = "0.2"
-tauri = { version = "1.0.0-rc.4", default-features = false, features = [] }
+#tauri = { git = "https://github.com/tauri-apps/tauri", branch="next" }
+tauri = { version = "2.0.0-alpha.4" }
+
 tokio = { version = "1.0", features = ["rt-multi-thread", "time", "macros", "fs"] }
 serde = "1"
 serde_derive = "1"
+
+[build-dependencies]
+tauri-build = "2.0.0-alpha.2"

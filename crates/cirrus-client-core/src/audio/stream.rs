@@ -318,13 +318,11 @@ impl AudioStream {
     }
 }
 
-// impl Drop for AudioStream {
-//     fn drop(&mut self) {
-//         self.stream_playback_context.blocking_read().notify_updated_item(
-//             UpdatedPlaybackMessage::PositionSec(())
-//         )
-//     }
-// }
+impl Drop for AudioStream {
+    fn drop(&mut self) {
+        self.pause().unwrap();
+    }
+}
 
 type AudioStreamBuffer = SharedRb<f32, Vec<MaybeUninit<f32>>>;
 pub type AudioStreamBufferProducer = Producer<f32, Arc<SharedRb<f32, Vec<MaybeUninit<f32>>>>>;
