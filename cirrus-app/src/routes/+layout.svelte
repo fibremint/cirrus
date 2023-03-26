@@ -1,6 +1,8 @@
 <script>
+	// import { append } from 'svelte/internal';
 	import Header from './Header.svelte';
 	import './styles.css';
+	import '../app.css';
 </script>
 
 <div class="app">
