@@ -222,9 +222,17 @@ impl EncodedBuffer {
         self.merge_node_from_current();
     }
 
-    pub fn get_fetch_required_packet_num(&self, fetch_start_idx: u32, duration_sec: f64) -> u32 {
-        let max_avail_fetch_pkt = self.content_packets - fetch_start_idx;
-        let desired_fetch_pkt_num = get_packet_idx_from_sec(duration_sec, 0.02);
+    pub fn get_fetch_required_packet_num(&self, fetch_start_idx: u32, duration_sec: Option<f64>) -> u32 {
+        let max_avail_fetch_pkt = self.content_packets -1 - fetch_start_idx;
+
+        // let desired_fetch_pkt_num = get_packet_idx_from_sec(duration_sec, 0.02);
+        let desired_fetch_pkt_num = 
+            if duration_sec.is_some() {
+                get_packet_idx_from_sec(duration_sec.unwrap(), 0.02)
+            } else {
+                std::usize::MAX
+            };
+            
         let default_val = std::cmp::min(desired_fetch_pkt_num, max_avail_fetch_pkt.try_into().unwrap());
 
         let bci = self.buf_chunk_info.get(&self.seek_buf_chunk_node_idx).unwrap();
@@ -240,17 +248,27 @@ impl EncodedBuffer {
         std::cmp::min(default_val.try_into().unwrap(), (nn_start_idx - fetch_start_idx).try_into().unwrap())
     }
 
-    pub fn update_seek_position(&mut self, position_sec: f64, direction: NodeSearchDirection) {
+    pub fn update_seek_position(
+        &mut self, 
+        from_packet_idx: u32,
+        to_packet_idx: u32, 
+    ) {
+        let direction = if to_packet_idx as i32 - from_packet_idx as i32 > 0 {
+            NodeSearchDirection::Forward
+        } else {
+            NodeSearchDirection::Backward
+        };
+
         println!("previous seek index: {}", self.seek_buf_chunk_node_idx);
         println!("direction: {:?}", direction);
 
-        let packet_idx = get_packet_idx_from_sec(position_sec, 0.02) as u32;
+        // let packet_idx = get_packet_idx_from_sec(position_sec, 0.02) as u32;
         let bci_node = self.buf_chunk_info.get(&self.seek_buf_chunk_node_idx).unwrap();                
         
         {
             let bc = bci_node.lock().unwrap();
-            if bc.start_idx <= packet_idx &&
-                bc.end_idx > packet_idx {
+            if bc.start_idx <= to_packet_idx &&
+                bc.end_idx > to_packet_idx {
                     self.seek_buf_chunk_node_idx = bc.id;
                     return;
                 }
@@ -270,17 +288,17 @@ impl EncodedBuffer {
 
             drop(c);
 
-            if start_idx <= packet_idx && end_idx > packet_idx {
+            if start_idx <= to_packet_idx && end_idx > to_packet_idx {
                 self.seek_buf_chunk_node_idx = node_id;
                 break;
             }
 
             match direction {
                 NodeSearchDirection::Forward => {                    
-                    if start_idx > packet_idx {
+                    if start_idx > to_packet_idx {
                         let nid = self.append_new_node_from(
                             prev_node.unwrap(),
-                            packet_idx
+                            to_packet_idx
                         );
 
                         new_node_id = Some(nid);
@@ -290,7 +308,7 @@ impl EncodedBuffer {
                     if next_node.is_none() {
                         let nid = self.append_new_node_from(
                             s.clone(), 
-                            packet_idx
+                            to_packet_idx
                         );
                         
                         new_node_id = Some(nid);
@@ -298,10 +316,10 @@ impl EncodedBuffer {
                     }
                 },
                 NodeSearchDirection::Backward => {
-                    if end_idx <= packet_idx {
+                    if end_idx <= to_packet_idx {
                         let nid = self.append_new_node_from(
                             s.clone(), 
-                            packet_idx
+                            to_packet_idx
                         );
                         
                         new_node_id = Some(nid);
@@ -318,18 +336,18 @@ impl EncodedBuffer {
 
         println!("updated seek index: {}", self.seek_buf_chunk_node_idx);
 
-        self.set_buf_reqest_idx(position_sec);
+        self.set_buf_reqest_idx(to_packet_idx);
     }
 
-    fn set_buf_reqest_idx(&mut self, position_sec: f64) {
+    fn set_buf_reqest_idx(&mut self, packet_idx: u32) {
         let bci_node = self.buf_chunk_info.get(&self.seek_buf_chunk_node_idx).unwrap().to_owned();        
         let bc = bci_node.lock().unwrap();
 
-        let request_packet_idx = get_packet_idx_from_sec(position_sec, 0.02) as u32;
+        // let request_packet_idx = get_packet_idx_from_sec(position_sec, 0.02) as u32;
 
-        if request_packet_idx > bc.end_idx || 
-            request_packet_idx < bc.start_idx {
-                self.next_packet_idx = request_packet_idx;
+        if packet_idx > bc.end_idx || 
+            packet_idx < bc.start_idx {
+                self.next_packet_idx = packet_idx;
                 return;
             }
 
@@ -358,6 +376,16 @@ impl EncodedBuffer {
         let ci = CI::new(bci_node, NodeSearchDirection::Forward);
 
         ci.into_iter().count().try_into().unwrap()
+    }
+
+    pub fn is_filled_all_packets(&self) -> bool {
+        // TODO: check
+        assert!(self.next_packet_idx <= self.content_packets);
+        if self.next_packet_idx == 0 {
+            return false
+        }
+
+        self.next_packet_idx -1 == self.content_packets 
     }
 }
 

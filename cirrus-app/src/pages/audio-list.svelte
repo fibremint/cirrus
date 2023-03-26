@@ -2,16 +2,19 @@
   import { onMount, onDestroy } from 'svelte';
 
   import { Navbar, Page, BlockTitle, List, ListItem, Sheet, Toolbar, Link, PageContent, Block, View, Icon, ListItemCell, Range, Button, Segmented } from 'framework7-svelte';
-  import { listen } from '@tauri-apps/api/event';
+  import { listen, emit } from '@tauri-apps/api/event';
   // import { audioStore } from '../js/store';
 
+  import differenceBy from 'lodash/differenceBy';
+
   import * as command from '../js/command';
+  import { filter } from 'dom7';
 
   let allowInfinite = true;
   let showPreloader = true;
 
   let currentPage = 1;
-  const itemsPerPage = 100;
+  const itemsPerPage = 50;
 
   let audioTags = [];
 
@@ -34,42 +37,78 @@
   let loadedAudioLength = 0;
   let loadedAudioItemIndex = -1;
   let loadedAudioId = '';
+  let loadedNextStream = false;
+
+  let currentStreamId = '';
+
+  const UPDATED_AUDIO_PLAYER_EVENT_NAME = "update-playback"
 
   onMount(async() => {
     fetchAudioTags();
 
-    const unlisten = await listen('update-playback-pos', event => {
+    const unlisten = await listen(UPDATED_AUDIO_PLAYER_EVENT_NAME, event => {      
+      // const { messageType, message } = event.payload;
       const payload = event.payload;
 
-      if (payload.status === 'Stop') {
-        updatePlaybackContext({
-          audioId: '',
-          audioLength: 0,
-          position: 0,
-          selectedAudioItemIndex: -1
-        });
+      if (payload.messageType === "CurrentStream") {
+        if (currentStreamId !== payload.streamId) {
+          currentStreamId = payload.streamId;
+          loadedNextStream = false;
+        }
+        // currentStreamId = message.streamId;
+        playbackContext.audioLength = Math.floor(payload.message.CurrentStream.length);
+      }
+
+      if (payload.messageType === "ResetState") {
+        currentStreamId = '';
+        playbackContext.audioId = '';
+        playbackContext.audioLength = 0;
+        playbackContext.position = 0;
 
         updateAudioButton(false);
+      }
 
-      } else if (payload.status === 'Play') {
-        updatePlaybackContext({
-          audioId: loadedAudioId,
-          audioLength: loadedAudioLength,
-          position: Math.floor(payload.pos),
-          selectedAudioItemIndex: loadedAudioId
-        });
+      if (currentStreamId !== payload.streamId) {
+        return;
+      }
 
+      if (payload.messageType === "StreamStatus") { 
+        let isAudioPlay = payload.message.StreamStatus === "Play" ? true : false;
+        updateAudioButton(isAudioPlay);
+
+      } else if (payload.messageType === "PositionSec") {
+        playbackContext.position = payload.message.PositionSec;
+      
         if (!isUserModifyPlaybackPos) {
           sliderPos = playbackContext.position;
         }
 
-        updateAudioButton(true);
+        // Load next audio stream
+        if (playbackContext.audioLength - playbackContext.position > 5) {
+          return;
+        }
+
+        if (loadedNextStream) {
+          return;
+        }
+
+        if (audioTags[loadedAudioItemIndex+1] === undefined) {
+          return;
+        }
+
+        let nextAudioTag = audioTags[loadedAudioItemIndex+1];
+
+        command.loadAudio(nextAudioTag.id);
+        loadedNextStream = true;
+        loadedAudioItemIndex += 1;
       }
     });
 
     updatePlaybackPosEventUnlisten = unlisten;
 
-    await command.sendAudioPlayerStatus();
+    await command.setListenUpdatedEvents(true);
+
+    await emit("stream-status");
   });
 
   onDestroy(async() => {
@@ -77,15 +116,6 @@
     updatePlaybackPosEventUnlisten();
     await command.stopAudio();
   });
-
-  function updatePlaybackContext({ audioId, audioLength, selectedAudioItemIndex, position }) {
-    playbackContext = {
-      audioId,
-      audioLength,
-      selectedAudioItemIndex,
-      position
-    }
-  }
 
   async function fetchAudioTags() {
     const currentDateTime = Date.now();
@@ -106,9 +136,12 @@
         return;
     }
 
-    audioTags = [...audioTags, ...response];
+    const uniqueItems = differenceBy(response, audioTags, "id");
+    audioTags = [...audioTags, ...uniqueItems];
 
-    currentPage++;
+    if (uniqueItems.length === itemsPerPage) {
+      currentPage++;
+    }
 
     allowInfinite = true;
     showPreloader = false;
@@ -183,6 +216,12 @@
   async function onPlayPauseButtonChange(event) {
     if (isAudioPlay) {
       await command.stopAudio();
+
+      currentStreamId = '';
+      playbackContext.audioLength = 0;
+      playbackContext.position = 0;
+
+      updateAudioButton(false);
 
       // resetSelectedAudioInfo();
     } else {

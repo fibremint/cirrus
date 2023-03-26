@@ -27,56 +27,11 @@
         }
       },
       {
-        "label": "client:build-rust-release",
-        "type": "shell",
-        "isBackground": false,
-        "command": "cargo",
-        "args": ["build", "--release"],
-        "options": {
-          "cwd": "${workspaceFolder}/cirrus-app/src-tauri"
-        },
-        "presentation": {
-          "reveal": "always",
-          "revealProblems": "onProblem",
-          "close": true
-        }
-      },
-      // {
-      //   "label": "server:build-rust-debug",
-      //   "type": "shell",
-      //   "isBackground": false,
-      //   "command": "cargo",
-      //   "args": ["build", "--bin", "cirrus-server"],
-      //   "options": {
-      //     "cwd": "${workspaceFolder}"
-      //   },
-      //   "presentation": {
-      //     "reveal": "always",
-      //     "revealProblems": "onProblem",
-      //     "close": true
-      //   }
-      // },
-      {
         "label": "server:build-rust-debug",
         "type": "shell",
         "isBackground": false,
         "command": "cargo",
         "args": ["build", "--bin", "cirrus-server"],
-        "options": {
-          "cwd": "${workspaceFolder}"
-        },
-        "presentation": {
-          "reveal": "always",
-          "revealProblems": "onProblem",
-          "close": true
-        }
-      },
-      {
-        "label": "server:build-rust-release",
-        "type": "shell",
-        "isBackground": false,
-        "command": "cargo",
-        "args": ["build", "--bin", "cirrus-server", "--release"],
         "options": {
           "cwd": "${workspaceFolder}"
         },
@@ -124,28 +79,31 @@
         ]
       },
       {
-        "label": "client:release",
+        "label": "ui:dev",
         "type": "shell",
-        // change this to your `beforeBuildCommand`:
+        // `dev` keeps running in the background
+        // ideally you should also configure a `problemMatcher`
+        // see https://code.visualstudio.com/docs/editor/tasks#_can-a-background-task-be-used-as-a-prelaunchtask-in-launchjson
+        "isBackground": true,
+        // change this to your `beforeDevCommand`:
         "command": "yarn",
-        "args": ["build"],
+        "args": ["dev"],
         "options": {
           "cwd": "${workspaceFolder}/cirrus-app"
         },
-        "presentation": {
-          "reveal": "always",
-          "revealProblems": "onProblem",
-          "close": true
-        },
-        "dependsOn": [
-          "client:build-rust-release"
-        ]
+      },
+      {
+        "label": "ui:build",
+        "type": "shell",
+        // change this to your `beforeBuildCommand`:
+        "command": "yarn",
+        "args": ["build"]
       },
       {
         "label": "task:terminate-all",
         "command": "echo ${input:terminate}",
         "type": "shell",
         "problemMatcher": []
-      }
+      },
     ]
   }
