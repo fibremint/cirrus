@@ -15,6 +15,12 @@ pub mod state;
 pub mod commands;
 mod settings;
 
+pub mod models;
+
+#[cfg(mobile)]
+pub mod mobile;
+
+
 // fn manage_player_event<R: Runtime>(window: &Window<R>) {
 //     // let id = window.listen(event, handler)
 // }
@@ -111,8 +117,10 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
                 "http://localhost:50000")?
             );
 
-            #[cfg(target_os = "android")]
-            let handle = api.register_android_plugin("com.fibremint.cirrus", "ExamplePlugin")?;
+            #[cfg(mobile)] {
+                let mobile_plugin = mobile::init(app, api)?;
+                app.manage(mobile_plugin);
+            }
 
             Ok(())
         })

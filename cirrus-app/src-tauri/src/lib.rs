@@ -5,22 +5,14 @@
 
 use serde::Serialize;
 use tauri::{window::WindowBuilder, App, AppHandle, RunEvent, WindowUrl};
-// use tauri_plugin_sample::{PingRequest, SampleExt};
-use tauri::Manager;
 
-// #[cfg(mobile)]
-// mod mobile;
-// #[cfg(mobile)]
-// pub use mobile::*;
-
-// #[cfg(mobile)]
-// use mobile_plugin::{SetPlayerStatusRequest, MobilePluginExt};
+#[cfg(mobile)]
+use cirrus_tauri_plugin::{models::SetPlayerStatusRequest, mobile::CirrusMobilePluginExt};
 
 #[derive(Clone, Serialize)]
 struct Reply {
   data: String,
 }
-
 
 pub type SetupHook = Box<dyn FnOnce(&mut App) -> Result<(), Box<dyn std::error::Error>> + Send>;
 pub type OnEvent = Box<dyn FnMut(&AppHandle, RunEvent)>;
@@ -31,17 +23,8 @@ pub async fn run() {
     tauri::async_runtime::set(tokio::runtime::Handle::current());
 
     #[allow(unused_mut)]
-    let mut builder = tauri::Builder::default();
-
-    // init plugins
-    builder = builder.plugin(cirrus_tauri_plugin::init());
-
-    // #[cfg(mobile)] 
-    // {
-    //     builder = builder.plugin(mobile_plugin::init());
-    // }
-
-    builder = builder
+    let mut builder = tauri::Builder::default()
+        .plugin(cirrus_tauri_plugin::init())
         .setup(move |app| {
             // #[cfg(desktop)]
             // tray::create_try(app)?;
@@ -69,14 +52,6 @@ pub async fn run() {
             #[cfg(debug_assertions)]
             window.open_devtools();
 
-            // let value = Some("test".to_string());
-            // let response = app.sample().ping(PingRequest {
-            //   value: value.clone(),
-            // });
-            // println!("got response: {:?}", response);
-            // if let Ok(res) = response {
-            //   assert_eq!(res.value, value);
-            // }
             #[cfg(desktop)]
             std::thread::spawn(|| {
                 let server = match tiny_http::Server::http("localhost:3003") {
@@ -102,14 +77,15 @@ pub async fn run() {
                 }
             });
 
-            // #[cfg(mobile)] 
-            // {
-            //     let payload = SetPlayerStatusRequest {
-            //         is_playing: Some(true)
-            //     };
+            #[cfg(mobile)] 
+            {
+                let payload = SetPlayerStatusRequest {
+                    is_playing: Some(true)
+                };
 
-            //     let res = app.mobile_plugin().set_player_status(payload);
-            // }
+                let res = app.cirrus_mobile_plugin().set_player_status(payload);
+                println!("mobile res: {:?}", res);
+            }
             
             Ok(())
         })
@@ -149,37 +125,3 @@ pub async fn run() {
         // }
     })
 }
-
-// #[derive(Default)]
-// pub struct AppBuilder {
-//     setup: Option<SetupHook>,
-// }
-
-// impl AppBuilder {
-//     pub fn new() -> Self {
-//         Self::default()
-//     }
-
-//     #[must_use]
-//     pub fn setup<F>(mut self, setup: F) -> Self
-//     where
-//         F: FnOnce(&mut App) -> Result<(), Box<dyn std::error::Error>> + Send + 'static,
-//     {
-//         self.setup.replace(Box::new(setup));
-//         self
-//     }
-
-//     pub fn run(self) {
-//         let setup = self.setup;
-//         tauri::Builder::default()
-//             .plugin(cirrus_tauri_plugin::init())
-//             .setup(move |app| {
-//                 if let Some(setup) = setup {
-//                     (setup)(app)?;
-//                 }
-//                 Ok(())
-//             })
-//         .run(tauri::generate_context!())
-//         .expect("error while running tauri application");
-//     }
-// }
