@@ -266,6 +266,10 @@ impl BufferContext {
         }
 
         let new_node_id = new_node.id;
+        if new_node.next_node_id.is_none() {
+            self.last_node_id = Some(new_node_id);
+        }
+
         self.buffer_nodes.insert(new_node_id, new_node);
 
         new_node_id
@@ -307,9 +311,7 @@ impl BufferContext {
             ).unwrap();
 
             next2_node.prev_node_id = Some(current_node_id);
-        }
-
-        if self.last_node_id.unwrap() == next_node_id {
+        } else {
             self.last_node_id = Some(current_node_id);
         }
 
@@ -486,7 +488,6 @@ impl PacketBuffer {
             found_node.buf_end_idx.unwrap() +1,
             self.calc_avail_fetch_packets(
                 desired_fetch_packets,
-                // false,
                 None
             )
         )
@@ -562,11 +563,19 @@ impl PacketBuffer {
         )
     }
 
-    pub fn is_filled_all(
+    pub fn is_reached_last_fetch_index(
         &self
     ) -> bool {
-        // TODO: edit check condition
-        self.ctx.buffer_nodes.len() == 1
+        if self.ctx.last_node_id.is_none() {
+            return false;
+        }
+
+        let last_node = self.ctx.buffer_nodes.get(
+            &self.ctx.last_node_id.unwrap()
+        ).unwrap();
+
+        // TODO: check condition
+        last_node.buf_end_idx.unwrap() == self.max_packet_idx -1
     }
 
     // fn clear(

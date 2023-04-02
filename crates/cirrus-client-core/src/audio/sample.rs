@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::{Arc, Mutex, Condvar, atomic::{AtomicUsize, Ordering, AtomicU32}}};
+use std::{sync::{Arc, Mutex, Condvar, atomic::{AtomicUsize, Ordering, AtomicU32}}};
 use audio::InterleavedBuf;
 use cirrus_protobuf::api::AudioDataRes;
 use tokio::{runtime::Handle, sync::RwLock};
@@ -93,11 +93,11 @@ impl From<usize> for Action {
     }
 }
 
-#[derive(Clone, serde_derive::Serialize)]
-pub enum UpdatedBufferMessage {
-    RemainSampleBufferSec(f32),
-    BufferStatus(FetchBufferStatus),
-}
+// #[derive(Clone, serde_derive::Serialize)]
+// pub enum UpdatedBufferMessage {
+//     RemainSampleBufferSec(f32),
+//     BufferStatus(FetchBufferStatus),
+// }
 
 pub struct FetchBufferSpec {
     pub init_fetch_sec: Option<u32>,
@@ -196,7 +196,6 @@ pub struct AudioSampleInner {
     pub source: AudioSource,
     pub context: AudioSampleContext,
 
-    sample_frame_buf: Vec<VecDeque<f32>>,
     packet_buffer: Arc<RwLock<PacketBuffer>>,
 
     packet_decoder: PacketDecoder,
@@ -208,30 +207,18 @@ pub struct AudioSampleInner {
 
 }
 
-// fn set_status<T>(status_store: Arc<AtomicUsize>, state: T) {
-//     status_store.store(state as usize, Ordering::SeqCst);
-// }
-
 impl AudioSampleInner {
     pub fn new(
         source: AudioSource,
         output_stream_config: &cpal::StreamConfig,
         audio_stream_buf_producer: AudioStreamBufferProducer,
         fetch_buffer_spec: FetchBufferSpec,
-        // audio_data_res_tx: mpsc::Sender<AudioDataRes>,
     ) -> Result<Self, anyhow::Error> {
-        let mut sample_frame_buf: Vec<VecDeque<f32>> = Vec::with_capacity(2);
-
-        for _ in 0..output_stream_config.channels {
-            sample_frame_buf.push(VecDeque::new());
-        }
-
         let packet_buffer = PacketBuffer::new(source.content_packets);
         let packet_decoder = PacketDecoder::new()?;
 
         Ok(Self {
             source,
-            sample_frame_buf,
             packet_buffer: Arc::new(RwLock::new(packet_buffer)),
             packet_decoder,
             resampler: AudioResampler::new(
@@ -248,16 +235,12 @@ impl AudioSampleInner {
         &mut self,
         position_sec: f64
     ) -> Result<(), anyhow::Error> {
-        // self.interrupt_fetch_buffer();
-        self.set_fetch_buffer_action(Action::Stop, None);
+        self.set_fetch_buffer_action(Action::Stop, None)?;
 
         let new_position_idx = position_sec as u32 * 50;
 
         self.context.playback_sample_frame_pos.store(new_position_idx, Ordering::SeqCst);
 
-        // self.packet_buffer.blocking_write().clear_previous_fetch_idx();
-
-        // TODO
         self.context.fetch_buffer_status.store(FetchBufferStatus::Filled as usize, Ordering::SeqCst);
 
         Ok(())
@@ -285,6 +268,10 @@ impl AudioSampleInner {
                 ) / 50;
 
                 if remain_buffer_sec > self.fetch_buffer_spec.buffer_margin_sec {
+                    return Ok(())
+                }
+
+                if self.packet_buffer.blocking_read().is_reached_last_fetch_index() {
                     return Ok(())
                 }
                 
@@ -353,10 +340,6 @@ impl AudioSampleInner {
                     fetch_required_packet_num - fetch_packet_cnt
                 );
 
-                // let fetch_packet_num = _packet_buffer.read().await.get_fetch_required_packet_num(
-                //     fetch_required_packet_num - fetch_packet_cnt,
-                // );
-
                 if fetch_size == 0 {
                     _fetch_buffer_status.store(FetchBufferStatus::Filled as usize, Ordering::SeqCst);
                     break;
@@ -364,13 +347,8 @@ impl AudioSampleInner {
 
                 if is_interrupted {
                     _fetch_buffer_status.store(FetchBufferStatus::Interrupted as usize, Ordering::SeqCst);
-                    
                     break;
                 }
-
-                // let fetch_start_packet_idx = _packet_buffer.read().await.get_fetch_start_packet_idx(
-                //     _playback_sample_frame_pos.load(Ordering::SeqCst)
-                // );
 
                 let mut audio_data_stream = match request::get_audio_data_stream(
                     "http://localhost:50000", 
@@ -395,7 +373,6 @@ impl AudioSampleInner {
                     },
                 };
 
-                // println!("fetch packet: {}..{}", fetch_start_packet_idx, fetch_start_packet_idx+fetch_packet_num);
                 println!("fetch packet: {}..{}", fetch_start_idx, fetch_start_idx+fetch_size);
         
                 while let Some(res) = audio_data_stream.next().await {
@@ -419,7 +396,7 @@ impl AudioSampleInner {
                     if let Err(e) = _packet_buffer.write().await.insert(audio_data) {
                         eprintln!("failed to insert audio data: {}", e.to_string());
                     }
-                    
+
                     fetch_packet_cnt += 1;
                 }
             }
@@ -431,8 +408,6 @@ impl AudioSampleInner {
             }
 
             println!("done fetch buffer, fetch cnt: {}", fetch_packet_cnt )
-
-            // return Ok(());
         });
 
         Ok(())
@@ -470,8 +445,7 @@ impl AudioSampleInner {
 
         // audio data is not fetched  
         let packet_buf_guard = self.packet_buffer.blocking_read();
-        // let data = packet_buf_guard.frame_buf.get(&self.context.playback_sample_frame_pos);
-        // let data = packet_buf_guard.get_data(self.context.playback_sample_frame_pos);
+
         let data = packet_buf_guard.get_data(playback_sample_frame_pos);
         if data.is_none() {
             // Set status that audio sample packet trying to process does not exist
@@ -502,7 +476,6 @@ impl AudioSampleInner {
         // Push audio samples into the stream buffer
         self.audio_stream_buf_producer.push_slice(samples.as_interleaved());
 
-        // self.context.playback_sample_frame_pos += 1;
         self.context.playback_sample_frame_pos.store(
             self.context.playback_sample_frame_pos.load(Ordering::SeqCst) +1,
             Ordering::SeqCst
@@ -515,17 +488,13 @@ impl AudioSampleInner {
 // fn create_
 
 pub struct AudioSampleContext {
-    // pub playback_sample_frame_pos: u32,
     pub playback_sample_frame_pos: Arc<AtomicU32>,
     pub buffer_status: usize,
-    // pub host_sample_rate: u32,
-    // pub host_output_channels: usize,
 
     pub packet_playback_idx: usize,
 
     pub fetch_buffer_status: Arc<AtomicUsize>,
     pub process_audio_data_status: Arc<AtomicUsize>,
-    // ProcessAudioDataStatus
     pub fetch_buffer_condvar: Arc<(Mutex<bool>, Condvar)>,
     pub process_sample_condvar: Arc<(Mutex<bool>, Condvar)>,
 
@@ -537,8 +506,6 @@ impl Default for AudioSampleContext {
         Self { 
             playback_sample_frame_pos: Arc::new(AtomicU32::new(0)), 
             buffer_status: Default::default(), 
-            // host_sample_rate: Default::default(), 
-            // host_output_channels: Default::default(), 
             packet_playback_idx: Default::default(),
 
             fetch_buffer_status: Arc::new(AtomicUsize::new(FetchBufferStatus::Init as usize)),
