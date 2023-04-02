@@ -535,7 +535,7 @@ impl PacketBuffer {
                         &next_node_id
                     ).unwrap();
 
-                    next_node.buf_start_idx.unwrap() -1
+                    next_node.buf_start_idx.unwrap()
                 },
                 None => self.max_packet_idx,
             }
@@ -545,7 +545,7 @@ impl PacketBuffer {
             if let Some(new_node_idx) = new_node_init_idx {
                 new_node_idx
             } else {
-                current_node.buf_end_idx.unwrap()
+                current_node.buf_end_idx.unwrap() +1
             }
         };
 
