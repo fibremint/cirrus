@@ -37,7 +37,6 @@ impl Display for BufferNodeAddError {
 
 impl BufferNode {
     fn new(
-        // initial_buf_idx: u32,
         prev_node_id: Option<u32>,
         next_node_id: Option<u32>,
     ) -> Self {
@@ -46,8 +45,6 @@ impl BufferNode {
 
         Self {
             id,
-            // buf_start_idx: initial_buf_idx,
-            // buf_end_idx: initial_buf_idx,
             buf_start_idx: Default::default(),
             buf_end_idx: Default::default(),
             prev_node_id,
@@ -73,9 +70,6 @@ impl BufferNode {
         if self.buf_end_idx.unwrap() +1 != packet_idx {
             return Err(anyhow!(BufferNodeAddError::AfterEndIdx)) 
         }
-
-        // self.buf_end_idx.map(|mut item| item += 1);
-        // self.buf_end_idx.as_mut().
 
         if let Some(ref mut buf_end_idx) = self.buf_end_idx {
             *buf_end_idx = packet_idx;
@@ -179,7 +173,6 @@ impl BufferContext {
         let search_direction = match mismatch_err {
             BufferNodeAddError::BeforeStartIdx => SearchDirection::Backward,
             BufferNodeAddError::AfterEndIdx => SearchDirection::Forward,
-            _ => unreachable!()
         };
 
         let (mut current_node_id, is_append_node_required) = self.find_current_node(
@@ -200,7 +193,7 @@ impl BufferContext {
     fn insert(
         &mut self,
         packet_idx: u32
-    ) -> Result<u32, anyhow::Error> {
+    ) -> Result<(), anyhow::Error> {
         if self.current_node_id.is_none() {
             self.set_init_buffer();
         }
@@ -224,7 +217,6 @@ impl BufferContext {
                         &self.current_node_id.unwrap()
                     ).unwrap();
     
-                    // resolved_current_node.add_packet(packet_idx).unwrap();    
                     if let Err(_) = resolved_current_node.add_packet(packet_idx) {
                         eprintln!("before current id: {}", before_current_node_id);
                         eprintln!("resolved current id: {}", resolved_current_node.id);
@@ -236,10 +228,6 @@ impl BufferContext {
                                 eprintln!("node: {} {}..{}", k, v.buf_start_idx.unwrap(), v.buf_end_idx.unwrap());
                             }
 
-                        // for k in self.buffer_nodes.keys().sorted() {
-                        //     println!("node: {} {}..{}", k, self.buffer_nodes[k].buf_start_idx.unwrap(), self.buffer_nodes[k].buf_end_idx.unwrap());
-                        // }
-
                         return Err(anyhow!("failed to resolve node mismatch"));
                     }
                 }
@@ -250,11 +238,7 @@ impl BufferContext {
             self.merge_node_from_current();
         }
 
-        let current_node = self.buffer_nodes.get(
-            &self.current_node_id.unwrap()
-        ).unwrap();
-
-        Ok(current_node.buf_end_idx.unwrap() +1)
+        Ok(())
     }
 
     fn create_node_from(
@@ -324,24 +308,6 @@ impl BufferContext {
 
             next2_node.prev_node_id = Some(current_node_id);
         }
-        
-
-        // let current_node = self.buffer_nodes.get_mut(
-        //     &current_node_id
-        // ).unwrap();
-
-        // let current_node_buf_end_idx = current_node.buf_end_idx.unwrap();
-
-        // current_node.buf_end_idx = next_buf_end_idx;
-        // current_node.next_node_id = next2_node_id;
-
-        // if next2_node_id.is_some() {
-        //     let next2_node = self.buffer_nodes.get_mut(
-        //         &next2_node_id.unwrap()
-        //     ).unwrap();
-
-        //     next2_node.prev_node_id = Some(current_node_id);
-        // }
 
         if self.last_node_id.unwrap() == next_node_id {
             self.last_node_id = Some(current_node_id);
@@ -369,12 +335,8 @@ impl BufferContext {
         self.buffer_nodes.remove(&next_node_id);
     }
 
-    fn set_init_buffer(
-        &mut self,
-        // packet_idx: u32
-    ) {
+    fn set_init_buffer(&mut self) {
         let buffer_node = BufferNode::new(
-            // packet_idx,
             None,
             None
         );
@@ -386,13 +348,11 @@ impl BufferContext {
         self.buffer_nodes.insert(buffer_node.id, buffer_node);
     }
 
-    fn clear(
-        &mut self,
-    ) {
-        self.first_node_id = None;
-        self.last_node_id = None;
-        self.current_node_id = None;
-    }
+    // fn clear(&mut self) {
+    //     self.first_node_id = None;
+    //     self.last_node_id = None;
+    //     self.current_node_id = None;
+    // }
 }
 
 enum FetchStatus {
@@ -411,33 +371,17 @@ impl From<usize> for FetchStatus {
             1 => Pending,
             2 => Fetched,
             3 => Exists,
-            41 => Error,
+            4 => Error,
             _ => unreachable!(),
         }
     }
 }
-
-// struct PacketFetchStatus {
-//     packet_idx: Option<u32>,
-//     status: usize,
-// }
-
-// impl Default for PacketFetchStatus {
-//     fn default() -> Self {
-//         Self { 
-//             packet_idx: Default::default(),
-//             status: Default::default() 
-//         }
-//     }
-// }
 
 pub struct PacketBuffer {
     data: HashMap<u32, AudioDataRes>,
     ctx: BufferContext,
     
     max_packet_idx: u32,
-    // packet_fetch_status: PacketFetchStatus,
-    // next_fetch_idx: Option<u32>
     prev_fetched_idx: Option<u32>,
 }
 
@@ -450,8 +394,6 @@ impl PacketBuffer {
             data: Default::default(),
             ctx: BufferContext::new(),
             max_packet_idx: content_packets -1,
-            // packet_fetch_status: Default::default(),
-            // next_fetch_idx: Default::default(),
             prev_fetched_idx: Default::default(),
         }
     }
@@ -460,13 +402,9 @@ impl PacketBuffer {
         &mut self,
         audio_data: AudioDataRes
     ) -> Result<(), anyhow::Error> {
-        let next_fetch_idx = self.ctx.insert(audio_data.packet_idx)?;
+        self.ctx.insert(audio_data.packet_idx)?;
         
         self.prev_fetched_idx = Some(audio_data.packet_idx);
-
-        // if next_fetch_idx <= self.max_packet_idx {
-        //     self.next_fetch_idx = Some(next_fetch_idx)
-        // }
 
         if let Some(d) = self.data.insert(
             audio_data.packet_idx,
@@ -605,9 +543,6 @@ impl PacketBuffer {
 
         let fetch_start_idx = {
             if let Some(new_node_idx) = new_node_init_idx {
-                // if new_node_idx > current_node.buf_end_idx.unwrap() {
-                //     new_node_idx
-                // }
                 new_node_idx
             } else {
                 current_node.buf_end_idx.unwrap()
@@ -634,11 +569,11 @@ impl PacketBuffer {
         self.ctx.buffer_nodes.len() == 1
     }
 
-    fn clear(
-        &mut self,
-    ) {
-        self.data.clear();
-        self.ctx.clear();
-    }
+    // fn clear(
+    //     &mut self,
+    // ) {
+    //     self.data.clear();
+    //     self.ctx.clear();
+    // }
 }
 
