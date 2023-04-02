@@ -79,7 +79,8 @@ impl From<usize> for ProcessAudioDataStatus {
 #[derive(Debug, PartialEq, Clone, serde_derive::Serialize)]
 pub enum Action {
     Start,
-    Stop,
+    Pause,
+    Terminate
 }
 
 impl From<usize> for Action {
@@ -87,7 +88,8 @@ impl From<usize> for Action {
         use self::Action::*;
         match value {
             0 => Start,
-            1 => Stop,
+            1 => Pause,
+            2 => Terminate,
             _ => unreachable!(),
         }
     }
@@ -147,12 +149,6 @@ impl AudioSample {
 
         std::thread::spawn(move || loop {
             {
-                if Action::Stop == Action::from(
-                    _fetch_buffer_action.load(Ordering::SeqCst)
-                ) {
-                    break;
-                }
-
                 let (process_sample_mutex, process_sample_cv) = &*_process_sample_condvar;
                 let mut process_sample_guard = process_sample_mutex.lock().unwrap();
     
@@ -161,6 +157,12 @@ impl AudioSample {
                     process_sample_guard = process_sample_cv.wait(process_sample_guard).unwrap();
                 }
     
+            }
+
+            if Action::Terminate == Action::from(
+                _fetch_buffer_action.load(Ordering::SeqCst)
+            ) {
+                break;
             }
 
             _inner.lock().unwrap().process_audio_data(&_rt_handle);
@@ -188,7 +190,14 @@ impl AudioSample {
 
 impl Drop for AudioSample {
     fn drop(&mut self) {
-        self.fetch_buffer_action.store(Action::Stop as usize, Ordering::SeqCst);
+        let (process_sample_mutex, process_sample_cv) = &*self.inner.lock().unwrap().context.process_sample_condvar;
+
+        self.fetch_buffer_action.store(Action::Terminate as usize, Ordering::SeqCst);
+
+        let mut process_sample_guard = process_sample_mutex.lock().unwrap();
+        *process_sample_guard = true;
+
+        process_sample_cv.notify_one();
     }
 }
 
@@ -235,7 +244,7 @@ impl AudioSampleInner {
         &mut self,
         position_sec: f64
     ) -> Result<(), anyhow::Error> {
-        self.set_fetch_buffer_action(Action::Stop, None)?;
+        self.set_fetch_buffer_action(Action::Pause, None)?;
 
         let new_position_idx = position_sec as u32 * 50;
 
@@ -280,7 +289,7 @@ impl AudioSampleInner {
                 self.start_fetch_buffer_task(rt_handle.unwrap(), self.fetch_buffer_spec.fetch_packet_sec)?;
 
             },
-            Action::Stop => {
+            Action::Pause => {
                 if fetch_buffer_status != FetchBufferStatus::Filling {
                     return Ok(())
                 } 
@@ -294,6 +303,7 @@ impl AudioSampleInner {
                     fetch_buffer_guard = fetch_buffer_cv.wait(fetch_buffer_guard).unwrap();
                 }
             },
+            _ => unreachable!(),
         }
 
         Ok(())
