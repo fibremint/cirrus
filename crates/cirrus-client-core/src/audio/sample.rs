@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::{Arc, Mutex, Condvar, atomic::{AtomicUsize, Ordering}}};
+use std::{collections::VecDeque, sync::{Arc, Mutex, Condvar, atomic::{AtomicUsize, Ordering, AtomicU32}}};
 use audio::{InterleavedBufMut, wrap::Interleaved, InterleavedBuf, Buf};
 use cirrus_protobuf::api::AudioDataRes;
 use tokio::{runtime::Handle, sync::RwLock};
@@ -6,7 +6,7 @@ use tokio_stream::StreamExt;
 
 use crate::{dto::AudioSource, request};
 
-use super::{packet::EncodedBuffer, stream::AudioStreamBufferProducer, resampler::AudioResampler, decoder::PacketDecoder};
+use super::{packet::{EncodedBuffer, PacketBuffer}, stream::AudioStreamBufferProducer, resampler::AudioResampler, decoder::PacketDecoder};
 
 #[derive(Debug, PartialEq, Clone, serde_derive::Serialize)]
 pub enum FetchBufferStatus {
@@ -197,7 +197,8 @@ pub struct AudioSampleInner {
     pub context: AudioSampleContext,
 
     sample_frame_buf: Vec<VecDeque<f32>>,
-    packet_buf: Arc<RwLock<EncodedBuffer>>,
+    // packet_buf: Arc<RwLock<EncodedBuffer>>,
+    packet_buffer: Arc<RwLock<PacketBuffer>>,
 
     // packet_decoder: opus::Decoder,
     packet_decoder: PacketDecoder,
@@ -230,7 +231,8 @@ impl AudioSampleInner {
             sample_frame_buf.push(VecDeque::new());
         }
 
-        let packet_buf = EncodedBuffer::new(source.content_packets);
+        let packet_buffer = PacketBuffer::new(source.content_packets);
+        // let packet_buf = EncodedBuffer::new(source.content_packets);
         // let packet_decoder = opus::Decoder::new(48_000, opus::Channels::Stereo).unwrap();
         let packet_decoder = PacketDecoder::new()?;
         // let (tx, rx) = mpsc::channel(64);
@@ -239,7 +241,8 @@ impl AudioSampleInner {
         Ok(Self {
             source,
             sample_frame_buf,
-            packet_buf: Arc::new(RwLock::new(packet_buf)),
+            // packet_buf: Arc::new(RwLock::new(packet_buf)),
+            packet_buffer: Arc::new(RwLock::new(packet_buffer)),
             packet_decoder,
             resampler: AudioResampler::new(
                 output_stream_config.sample_rate.0.try_into()?,
@@ -263,9 +266,15 @@ impl AudioSampleInner {
         self.set_fetch_buffer_action(Action::Stop, None);
 
         let new_position_idx = position_sec as u32 * 50;
-        self.packet_buf.blocking_write().update_seek_position(self.context.playback_sample_frame_pos, new_position_idx);
+        // self.packet_buf.blocking_write().update_seek_position(self.context.playback_sample_frame_pos, new_position_idx);
 
-        self.context.playback_sample_frame_pos = new_position_idx;
+        // self.context.playback_sample_frame_pos = new_position_idx;
+        self.context.playback_sample_frame_pos.store(new_position_idx, Ordering::SeqCst);
+
+        self.packet_buffer.blocking_write().clear_previous_fetch_idx();
+
+        // TODO
+        self.context.fetch_buffer_status.store(FetchBufferStatus::Filled as usize, Ordering::SeqCst);
 
         Ok(())
     }
@@ -275,38 +284,91 @@ impl AudioSampleInner {
         action: Action,
         rt_handle: Option<&Handle>,
     ) -> Result<(), anyhow::Error> {
-        let is_filling_buf =  FetchBufferStatus::Filling == FetchBufferStatus::from(
+        let fetch_buffer_status = FetchBufferStatus::from(
             self.context.fetch_buffer_status.load(Ordering::SeqCst)
         );
         
         match action {
-            Action::Start => {        
-                let packet_idx_diff = self.packet_buf.blocking_read().next_packet_idx - self.context.playback_sample_frame_pos;
-                let packet_buf_margin_sec = packet_idx_diff / 50;
-        
-                if !is_filling_buf && 
-                    packet_buf_margin_sec < self.fetch_buffer_spec.buffer_margin_sec &&
-                    !self.packet_buf.blocking_read().is_filled_all_packets() {
-        
-                    self.start_fetch_buffer_task(rt_handle.unwrap(), self.fetch_buffer_spec.fetch_packet_sec)?;
+            Action::Start => {
+                if fetch_buffer_status == FetchBufferStatus::Filling || 
+                    fetch_buffer_status == FetchBufferStatus::Interrupted {
+                    
+                    return Ok(())
                 }
+
+                // let remain_buffer_sec = self.packet_buffer.blocking_read().get_remain_buffer(self.context.playback_sample_frame_pos);
+                let remain_buffer_sec = self.packet_buffer.blocking_read().get_remain_buffer(
+                    self.context.playback_sample_frame_pos.load(Ordering::SeqCst)
+                ) / 50;
+
+                if remain_buffer_sec > self.fetch_buffer_spec.buffer_margin_sec {
+                    return Ok(())
+                }
+                
+                self.context.fetch_buffer_status.store(FetchBufferStatus::Filling as usize, Ordering::SeqCst);
+
+                self.start_fetch_buffer_task(rt_handle.unwrap(), self.fetch_buffer_spec.fetch_packet_sec)?;
+
+                // Calculate remain buffers 
+                // let fetch_start_idx = match self.packet_buffer.blocking_read().get_fetch_start_idx() {
+                //     Some(idx) => idx - ,
+                //     None => ,
+                // };
+
+                // let packet_idx_diff = self.packet_buffer.blocking_read().get_fetch_start_idx() - self.context.playback_sample_frame_pos;
+                // let packet_idx_diff = self.packet_buf.blocking_read().next_packet_idx - self.context.playback_sample_frame_pos;
+                // let packet_buf_margin_sec = packet_idx_diff / 50;
+        
+                // if !is_filling_buf && 
+                    // packet_buf_margin_sec < self.fetch_buffer_spec.buffer_margin_sec &&
+                    // !self.packet_buf.blocking_read().is_filled_all_packets() {
+                    // self.packet_buffer.blocking_read().is_filled_all() {
+        
+                    // self.start_fetch_buffer_task(rt_handle.unwrap(), self.fetch_buffer_spec.fetch_packet_sec)?;
+                // }
+
             },
             Action::Stop => {
-                if is_filling_buf {
-                    self.context.fetch_buffer_request.store(FetchBufferRequest::Stop as usize, Ordering::SeqCst);
+                if fetch_buffer_status != FetchBufferStatus::Filling {
+                    return Ok(())
+                } 
+
+                self.context.fetch_buffer_request.store(FetchBufferRequest::Stop as usize, Ordering::SeqCst);
         
-                    let (fetch_buffer_mutex, fetch_buffer_cv) = &*self.context.fetch_buffer_condvar;
-                    let mut fetch_buffer_guard = fetch_buffer_mutex.lock().unwrap();
-        
-                    while *fetch_buffer_guard {
-                        fetch_buffer_guard = fetch_buffer_cv.wait(fetch_buffer_guard).unwrap();
-                    }
+                let (fetch_buffer_mutex, fetch_buffer_cv) = &*self.context.fetch_buffer_condvar;
+                let mut fetch_buffer_guard = fetch_buffer_mutex.lock().unwrap();
+    
+                while *fetch_buffer_guard {
+                    fetch_buffer_guard = fetch_buffer_cv.wait(fetch_buffer_guard).unwrap();
                 }
             },
         }
 
         Ok(())
     }
+
+    // async fn get_fetch_packet_num(
+    //     fetch_sec: u32,
+    //     fetched_packets: u32,
+    //     // packet_buf: &Arc<RwLock<EncodedBuffer>>,
+    //     packet_buffer: PacketBuffer,
+    // ) -> u32 {
+    //     let fetch_required_packet_num = fetch_sec * 50;
+    
+    //     let fetch_start_packet_idx = packet_buf.read().await.next_packet_idx;
+    
+    //     let max_avail_fetch_packet_num = packet_buf.read().await.get_fetch_required_packet_num(
+    //         fetch_start_packet_idx,
+    //         None
+    //     );
+    
+    //     let fetch_packet_num = std::cmp::min(
+    //         fetch_required_packet_num - fetched_packets,
+    //         max_avail_fetch_packet_num
+    //     );
+    
+    //     fetch_packet_num
+    // }
 
     fn start_fetch_buffer_task(
         &mut self,
@@ -315,24 +377,36 @@ impl AudioSampleInner {
     ) -> Result<(), anyhow::Error> {
         let audio_tag_id = self.source.id.clone();
         let _fetch_buffer_status = self.context.fetch_buffer_status.clone();
-        let _packet_buf = self.packet_buf.clone();
+        let _packet_buffer = self.packet_buffer.clone();
         let _content_packets = self.source.content_packets;
 
         let _fetch_buffer_condvar = self.context.fetch_buffer_condvar.clone();
         let _fetch_buffer_request = self.context.fetch_buffer_request.clone();
+
+        // TODO: check this
+        // let playback_pos = self.context.playback_sample_frame_pos;
+        let _playback_sample_frame_pos = self.context.playback_sample_frame_pos.clone();
         
         let mut fetch_packet_cnt = 0;
+        let mut is_interrupted = false;
         // let fetch_required_packet_num = fetch_sec * 50;
 
         rt_handle.spawn(async move {
             let (fetch_buffer_mutex, fetch_buffer_condvar) = &*_fetch_buffer_condvar;
 
+            // start fetch buffer
+            _fetch_buffer_status.store(FetchBufferStatus::Filling as usize, Ordering::SeqCst);
+
             loop {
-                let fetch_packet_num = get_fetch_packet_num(
-                    fetch_sec,
-                    fetch_packet_cnt,
-                    &_packet_buf
-                ).await;
+                // let fetch_packet_num = get_fetch_packet_num(
+                //     fetch_sec,
+                //     fetch_packet_cnt,
+                //     &_packet_buf
+                // ).await;
+
+                let fetch_packet_num = _packet_buffer.read().await.get_fetch_required_packet_num(
+                    fetch_sec * 50 - fetch_packet_cnt,
+                );
 
                 if fetch_packet_num == 0 {
                     _fetch_buffer_status.store(FetchBufferStatus::Filled as usize, Ordering::SeqCst);
@@ -343,19 +417,36 @@ impl AudioSampleInner {
                     break;
                 }
 
-                // start fetch buffer
-                _fetch_buffer_status.store(FetchBufferStatus::Filling as usize, Ordering::SeqCst);
+                if is_interrupted {
+                    _fetch_buffer_status.store(FetchBufferStatus::Interrupted as usize, Ordering::SeqCst);
+                    
+                    break;
+                }
+
+                // // start fetch buffer
+                // _fetch_buffer_status.store(FetchBufferStatus::Filling as usize, Ordering::SeqCst);
 
                 {
                     let mut fetch_buffer_guard = fetch_buffer_mutex.lock().unwrap();
                     *fetch_buffer_guard = true;
                 }
 
+                // let fetch_start_packet_idx = match _packet_buffer.read().await.get_latest_packet_idx() {
+                //     Some(idx) => idx,
+                //     None => playback_pos,
+                // };
+
+                let fetch_start_packet_idx = _packet_buffer.read().await.get_fetch_start_packet_idx(
+                    _playback_sample_frame_pos.load(Ordering::SeqCst)
+                );
+
                 let mut audio_data_stream = match request::get_audio_data_stream(
                     "http://localhost:50000", 
                     &None, 
                     &audio_tag_id,
-                    _packet_buf.read().await.next_packet_idx,
+                    fetch_start_packet_idx,
+                    // _packet_buffer.blocking_read().get_fetch_start_idx().unwrap(),
+                    // _packet_buf.read().await.next_packet_idx,
                     // fetch_start_packet_idx, 
                     fetch_packet_num, 
                     2
@@ -374,11 +465,14 @@ impl AudioSampleInner {
                         return;
                     },
                 };
+
+                println!("fetch packet: {}..{}", fetch_start_packet_idx, fetch_start_packet_idx+fetch_packet_num);
         
                 while let Some(res) = audio_data_stream.next().await {
                     if FetchBufferRequest::Stop == FetchBufferRequest::from(_fetch_buffer_request.load(Ordering::SeqCst)) {
-                        _fetch_buffer_status.store(FetchBufferStatus::Interrupted as usize, Ordering::SeqCst);
+                        // _fetch_buffer_status.store(FetchBufferStatus::Interrupted as usize, Ordering::SeqCst);
                         _fetch_buffer_request.store(FetchBufferRequest::None as usize, Ordering::SeqCst);
+                        is_interrupted = true;
 
                         break;
                     }
@@ -392,20 +486,49 @@ impl AudioSampleInner {
                             break;
                         }
                     };
-    
-                    _packet_buf.write().await.insert(audio_data);
+
+                    _packet_buffer.write().await.insert(audio_data);
+                    // _packet_buf.write().await.insert(audio_data);
 
                     fetch_packet_cnt += 1;
                 }
 
-                // finished fetch buffer
-                _fetch_buffer_status.store(FetchBufferStatus::Filled as usize, Ordering::SeqCst);
+                // if !is_interrupted {
+                //     _fetch_buffer_status.store(FetchBufferStatus::Filled as usize, Ordering::SeqCst);
+                // } else {
+                //     _fetch_buffer_status.store(FetchBufferStatus::Interrupted as usize, Ordering::SeqCst);
+                //     _fetch_buffer_request.store(FetchBufferRequest::None as usize, Ordering::SeqCst);
+                // }
+    
+                // {
+                //     let mut fetch_buffer_guard = fetch_buffer_mutex.lock().unwrap();
+                //     *fetch_buffer_guard = false;
+                //     fetch_buffer_condvar.notify_one();
+                // }
 
-                {
-                    let mut fetch_buffer_guard = fetch_buffer_mutex.lock().unwrap();
-                    *fetch_buffer_guard = false;
-                    fetch_buffer_condvar.notify_one();
-                }
+                // // finished fetch buffer
+                // _fetch_buffer_status.store(FetchBufferStatus::Filled as usize, Ordering::SeqCst);
+
+                // {
+                //     let mut fetch_buffer_guard = fetch_buffer_mutex.lock().unwrap();
+                //     *fetch_buffer_guard = false;
+                //     fetch_buffer_condvar.notify_one();
+                // }
+            }
+
+            // finished fetch buffer
+            // _fetch_buffer_status.store(FetchBufferStatus::Filled as usize, Ordering::SeqCst);
+            // if !is_interrupted {
+            //     _fetch_buffer_status.store(FetchBufferStatus::Filled as usize, Ordering::SeqCst);
+            // } else {
+            //     _fetch_buffer_status.store(FetchBufferStatus::Interrupted as usize, Ordering::SeqCst);
+            //     _fetch_buffer_request.store(FetchBufferRequest::None as usize, Ordering::SeqCst);
+            // }
+
+            {
+                let mut fetch_buffer_guard = fetch_buffer_mutex.lock().unwrap();
+                *fetch_buffer_guard = false;
+                fetch_buffer_condvar.notify_one();
             }
 
             // return Ok(());
@@ -418,6 +541,7 @@ impl AudioSampleInner {
         &self,
     ) -> Result<AudioDataRes, anyhow::Error> {
         let (process_sample_mutex, _) = &*self.context.process_sample_condvar;
+        let playback_sample_frame_pos = self.context.playback_sample_frame_pos.load(Ordering::SeqCst);
         let mut process_sample_guard = process_sample_mutex.lock().unwrap();
         
         // Buffer has not enough spaces to fill buffer
@@ -434,7 +558,8 @@ impl AudioSampleInner {
             return Err(anyhow::anyhow!(ProcessAudioDataStatus::WaitConsume as usize))
         }
 
-        if self.context.playback_sample_frame_pos == self.source.content_packets -1 {
+        // if self.context.playback_sample_frame_pos == self.source.content_packets -1 {
+        if playback_sample_frame_pos == self.source.content_packets -1 {
             self.context.process_audio_data_status.store(ProcessAudioDataStatus::ReactEnd as usize, Ordering::SeqCst);
             
             *process_sample_guard = false;
@@ -443,8 +568,10 @@ impl AudioSampleInner {
         }
 
         // audio data is not fetched  
-        let packet_buf_guard = self.packet_buf.blocking_read();
-        let data = packet_buf_guard.frame_buf.get(&self.context.playback_sample_frame_pos);
+        let packet_buf_guard = self.packet_buffer.blocking_read();
+        // let data = packet_buf_guard.frame_buf.get(&self.context.playback_sample_frame_pos);
+        // let data = packet_buf_guard.get_data(self.context.playback_sample_frame_pos);
+        let data = packet_buf_guard.get_data(playback_sample_frame_pos);
         if data.is_none() {
             // Set status that audio sample packet trying to process does not exist
             self.context.process_audio_data_status.store(ProcessAudioDataStatus::DataNotExist as usize, Ordering::SeqCst);
@@ -474,38 +601,21 @@ impl AudioSampleInner {
         // Push audio samples into the stream buffer
         self.audio_stream_buf_producer.push_slice(samples.as_interleaved());
 
-        self.context.playback_sample_frame_pos += 1;
+        // self.context.playback_sample_frame_pos += 1;
+        self.context.playback_sample_frame_pos.store(
+            self.context.playback_sample_frame_pos.load(Ordering::SeqCst) +1,
+            Ordering::SeqCst
+        );
 
         Ok(())
     }
 }
 
-async fn get_fetch_packet_num(
-    fetch_sec: u32,
-    fetched_packets: u32,
-    packet_buf: &Arc<RwLock<EncodedBuffer>>,
-) -> u32 {
-    let fetch_required_packet_num = fetch_sec * 50;
-
-    let fetch_start_packet_idx = packet_buf.read().await.next_packet_idx;
-
-    let max_avail_fetch_packet_num = packet_buf.read().await.get_fetch_required_packet_num(
-        fetch_start_packet_idx,
-        None
-    );
-
-    let fetch_packet_num = std::cmp::min(
-        fetch_required_packet_num - fetched_packets,
-        max_avail_fetch_packet_num
-    );
-
-    fetch_packet_num
-}
-
 // fn create_
 
 pub struct AudioSampleContext {
-    pub playback_sample_frame_pos: u32,
+    // pub playback_sample_frame_pos: u32,
+    pub playback_sample_frame_pos: Arc<AtomicU32>,
     pub buffer_status: usize,
     // pub host_sample_rate: u32,
     // pub host_output_channels: usize,
@@ -524,7 +634,7 @@ pub struct AudioSampleContext {
 impl Default for AudioSampleContext {
     fn default() -> Self {
         Self { 
-            playback_sample_frame_pos: Default::default(), 
+            playback_sample_frame_pos: Arc::new(AtomicU32::new(0)), 
             buffer_status: Default::default(), 
             // host_sample_rate: Default::default(), 
             // host_output_channels: Default::default(), 
