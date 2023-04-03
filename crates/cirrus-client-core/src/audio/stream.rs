@@ -5,7 +5,7 @@ use ringbuf::{HeapRb, SharedRb, Consumer, Producer};
 use cpal::traits::{DeviceTrait, StreamTrait};
 use tokio::{runtime::Handle, sync::RwLock};
 
-use super::{sample::{AudioSample, FetchBufferSpec, ProcessAudioDataStatus}, device::AudioDeviceContext, AudioPlayerRequest};
+use super::{sample::{AudioSample, FetchBufferSpec, ProcessAudioDataStatus, SetPlaybackPositionError}, device::AudioDeviceContext, AudioPlayerRequest};
 use crate::dto::AudioSource;
 
 #[derive(Debug, PartialEq, Clone, serde_derive::Serialize)]
@@ -156,7 +156,7 @@ pub struct AudioStream {
     audio_sample: AudioSample,
     stream_playback_context: Arc<RwLock<StreamPlaybackContext>>,
     audio_stream_buf_consumer: Arc<Mutex<AudioStreamBufferConsumer<f32>>>,
-    // request_sender: Sender<AudioPlayerRequest>,
+    request_sender: Sender<AudioPlayerRequest>,
 }
 
 impl AudioStream {
@@ -247,13 +247,10 @@ impl AudioStream {
                 ProcessAudioDataStatus::ReactEnd == ProcessAudioDataStatus::from(
                     _process_audio_data_status.load(Ordering::SeqCst)
                 ) {
-                    _stream_playback_context
-                        .blocking_read()
-                        .update_stream_status(StreamStatus::ReachEnd);
-
-                    _request_sender
-                        .send(AudioPlayerRequest::StreamReactEnd)
-                        .unwrap();
+                    Self::notify_reach_end(
+                        &_stream_playback_context,
+                        &_request_sender
+                    );
                 }
 
             if consumed_ch_samples > 0 {
@@ -272,8 +269,21 @@ impl AudioStream {
             audio_sample,
             stream_playback_context,
             audio_stream_buf_consumer,
-            // request_sender,
+            request_sender,
         })
+    }
+
+    fn notify_reach_end(
+        stream_playback_context: &Arc<RwLock<StreamPlaybackContext>>,
+        request_sender: &Sender<AudioPlayerRequest>,
+    ) {
+        stream_playback_context
+            .blocking_read()
+            .update_stream_status(StreamStatus::ReachEnd);
+
+        request_sender
+            .send(AudioPlayerRequest::StreamReactEnd)
+            .unwrap();
     }
 
     // pub fn get_stream_id(&self) -> String {
@@ -315,7 +325,15 @@ impl AudioStream {
 
         self.audio_stream_buf_consumer.lock().unwrap().clear();
         
-        self.audio_sample.set_playback_position(position_sec)?;
+        if let Err(e) = self.audio_sample.set_playback_position(position_sec) {
+            match e.downcast_ref::<SetPlaybackPositionError>().unwrap() {
+                SetPlaybackPositionError::ReactEnd => Self::notify_reach_end(
+                    &self.stream_playback_context,
+                    &self.request_sender,
+                ),
+            }
+        }
+
         self.stream_playback_context.blocking_write().set_playback_sec(position_sec as f64);
 
         self.play()?;

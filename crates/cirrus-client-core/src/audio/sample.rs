@@ -1,4 +1,5 @@
-use std::{sync::{Arc, Mutex, Condvar, atomic::{AtomicUsize, Ordering, AtomicU32}}};
+use std::{sync::{Arc, Mutex, Condvar, atomic::{AtomicUsize, Ordering, AtomicU32}}, fmt::Display};
+use anyhow::anyhow;
 use audio::InterleavedBuf;
 use cirrus_protobuf::api::AudioDataRes;
 use tokio::{runtime::Handle, sync::RwLock};
@@ -91,6 +92,19 @@ impl From<usize> for Action {
             1 => Pause,
             2 => Terminate,
             _ => unreachable!(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum SetPlaybackPositionError {
+    ReactEnd,
+}
+
+impl Display for SetPlaybackPositionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::ReactEnd => write!(f, "ReactEnd"),
         }
     }
 }
@@ -248,6 +262,10 @@ impl AudioSampleInner {
 
         let new_position_idx = position_sec as u32 * 50;
 
+        if new_position_idx >= self.source.content_packets {
+            return Err(anyhow!(SetPlaybackPositionError::ReactEnd));
+        }
+
         self.context.playback_sample_frame_pos.store(new_position_idx, Ordering::SeqCst);
 
         self.context.fetch_buffer_status.store(FetchBufferStatus::Filled as usize, Ordering::SeqCst);
@@ -317,7 +335,6 @@ impl AudioSampleInner {
         let audio_tag_id = self.source.id.clone();
         let _fetch_buffer_status = self.context.fetch_buffer_status.clone();
         let _packet_buffer = self.packet_buffer.clone();
-        let _content_packets = self.source.content_packets;
 
         let _fetch_buffer_condvar = self.context.fetch_buffer_condvar.clone();
         let _fetch_buffer_request = self.context.fetch_buffer_request.clone();
@@ -501,8 +518,6 @@ pub struct AudioSampleContext {
     pub playback_sample_frame_pos: Arc<AtomicU32>,
     pub buffer_status: usize,
 
-    pub packet_playback_idx: usize,
-
     pub fetch_buffer_status: Arc<AtomicUsize>,
     pub process_audio_data_status: Arc<AtomicUsize>,
     pub fetch_buffer_condvar: Arc<(Mutex<bool>, Condvar)>,
@@ -516,7 +531,6 @@ impl Default for AudioSampleContext {
         Self { 
             playback_sample_frame_pos: Arc::new(AtomicU32::new(0)), 
             buffer_status: Default::default(), 
-            packet_playback_idx: Default::default(),
 
             fetch_buffer_status: Arc::new(AtomicUsize::new(FetchBufferStatus::Init as usize)),
             process_audio_data_status: Arc::new(AtomicUsize::new(ProcessAudioDataStatus::Init as usize)),
