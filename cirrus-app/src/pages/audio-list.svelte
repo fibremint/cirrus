@@ -9,6 +9,7 @@
 
   import * as command from '../js/command';
   import { filter } from 'dom7';
+    import { message } from '@tauri-apps/api/dialog';
 
   let allowInfinite = true;
   let showPreloader = true;
@@ -54,6 +55,9 @@
         if (currentStreamId !== payload.streamId) {
           currentStreamId = payload.streamId;
           loadedNextStream = false;
+          playbackContext.audioLength = 0;
+          playbackContext.position = 0;
+          sliderPos = 0;
         }
         // currentStreamId = message.streamId;
         playbackContext.audioLength = Math.floor(payload.message.CurrentStream.length);
@@ -64,6 +68,7 @@
         playbackContext.audioId = '';
         playbackContext.audioLength = 0;
         playbackContext.position = 0;
+        sliderPos = 0;
 
         updateAudioButton(false);
       }
@@ -72,7 +77,23 @@
         return;
       }
 
-      if (payload.messageType === "StreamStatus") { 
+      if (payload.messageType === "StreamStatus") {
+        if (payload.message.StreamStatus === "ReachEnd") {
+          if (loadedNextStream) {
+            return
+          }
+
+          if (audioTags[loadedAudioItemIndex+1] === undefined) {
+            return;
+          }
+
+          let nextAudioTag = audioTags[loadedAudioItemIndex+1];
+
+          command.loadAudio(nextAudioTag.id);
+          loadedNextStream = true;
+          loadedAudioItemIndex += 1;
+        }
+
         let isAudioPlay = payload.message.StreamStatus === "Play" ? true : false;
         updateAudioButton(isAudioPlay);
 

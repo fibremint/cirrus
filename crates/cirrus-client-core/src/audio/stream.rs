@@ -14,6 +14,7 @@ pub enum StreamStatus {
     Pause,
     Stop,
     BufferNotEnough,
+    ReachEnd,
     Error,
 }
 
@@ -25,7 +26,8 @@ impl From<usize> for StreamStatus {
             1 => Pause,
             2 => Stop,
             3 => BufferNotEnough,
-            4 => Error,
+            4 => ReachEnd,
+            5 => Error,
             _ => unreachable!(),
         }
     }
@@ -245,8 +247,13 @@ impl AudioStream {
                 ProcessAudioDataStatus::ReactEnd == ProcessAudioDataStatus::from(
                     _process_audio_data_status.load(Ordering::SeqCst)
                 ) {
-                    _request_sender.send(AudioPlayerRequest::StreamReactEnd).unwrap();
-                    // println!("react end");
+                    _stream_playback_context
+                        .blocking_read()
+                        .update_stream_status(StreamStatus::ReachEnd);
+
+                    _request_sender
+                        .send(AudioPlayerRequest::StreamReactEnd)
+                        .unwrap();
                 }
 
             if consumed_ch_samples > 0 {
@@ -267,7 +274,6 @@ impl AudioStream {
             audio_stream_buf_consumer,
             // request_sender,
         })
-
     }
 
     // pub fn get_stream_id(&self) -> String {
