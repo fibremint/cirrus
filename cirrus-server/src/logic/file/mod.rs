@@ -89,7 +89,7 @@ impl AudioFile {
             settings.audio_sample_frame_packet.len as f64 
                 / settings.audio_sample_frame_packet.sample_rate as f64;
 
-        let sample_frame_packet_num = (content_length / sample_frame_packet_dur).ceil() as u32;
+        let sample_frame_packet_num = (content_length / sample_frame_packet_dur).floor() as u32;
 
         Ok(AudioMetaRes {
             content_length,
