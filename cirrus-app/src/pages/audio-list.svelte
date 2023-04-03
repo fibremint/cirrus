@@ -255,7 +255,7 @@
   infiniteDistance={itemsPerPage}
   infinitePreloader={showPreloader}
   onInfinite={fetchAudioTags}>
-
+  
   <Navbar title="Audio list" backLink="Back" />
 
   <List mediaList noHairlines>
@@ -280,7 +280,7 @@
         <ListItemCell class="width-auto">
           <Button 
             id="play-pause-btn" 
-            iconF7={isAudioPlay === true ? 'pause_fill' : 'play_fill'} 
+            iconF7={isAudioPlay === true ? 'pause_fill' : 'play_fill'}
             on:click={async(e) => {
               if (isAudioPlay) {
                 await command.pauseAudio();
