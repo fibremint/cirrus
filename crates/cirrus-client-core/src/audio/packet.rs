@@ -575,7 +575,7 @@ impl PacketBuffer {
         ).unwrap();
 
         // TODO: check condition
-        last_node.buf_end_idx.unwrap() == self.max_packet_idx -1
+        last_node.buf_end_idx.unwrap() == self.max_packet_idx
     }
 
     // fn clear(
