@@ -9,8 +9,8 @@
 /.idea/assetWizardSettings.xml
 .DS_Store
 build
-# /buildSrc/src/main/java/com/fibremint/app/kotlin/BuildTask.kt
-# /buildSrc/src/main/java/com/fibremint/app/kotlin/RustPlugin.kt
+/buildSrc/src/main/java/com/fibremint/app/kotlin/BuildTask.kt
+/buildSrc/src/main/java/com/fibremint/app/kotlin/RustPlugin.kt
 /captures
 .externalNativeBuild
 .cxx
