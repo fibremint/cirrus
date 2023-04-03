@@ -383,7 +383,7 @@ pub struct PacketBuffer {
     data: HashMap<u32, AudioDataRes>,
     ctx: BufferContext,
     
-    max_packet_idx: u32,
+    content_packets: u32,
     prev_fetched_idx: Option<u32>,
 }
 
@@ -395,7 +395,7 @@ impl PacketBuffer {
         Self {
             data: Default::default(),
             ctx: BufferContext::new(),
-            max_packet_idx: content_packets -1,
+            content_packets,
             prev_fetched_idx: Default::default(),
         }
     }
@@ -520,9 +520,8 @@ impl PacketBuffer {
         desired_fetch_packets: u32,
         new_node_init_idx: Option<u32>,
     ) -> u32 {
-
         if self.ctx.current_node_id.is_none() {
-            return std::cmp::min(desired_fetch_packets, self.max_packet_idx);
+            return std::cmp::min(desired_fetch_packets, self.content_packets);
         }
 
         let current_node = self.ctx.buffer_nodes.get(
@@ -538,7 +537,7 @@ impl PacketBuffer {
 
                     next_node.buf_start_idx.unwrap()
                 },
-                None => self.max_packet_idx,
+                None => self.content_packets,
             }
         };
 
@@ -574,8 +573,7 @@ impl PacketBuffer {
             &self.ctx.last_node_id.unwrap()
         ).unwrap();
 
-        // TODO: check condition
-        last_node.buf_end_idx.unwrap() == self.max_packet_idx
+        last_node.buf_end_idx.unwrap() == self.content_packets -1
     }
 
     // fn clear(
