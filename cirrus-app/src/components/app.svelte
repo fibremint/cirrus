@@ -3,7 +3,7 @@
 
  
   <!-- Your main view, should have "view-main" class -->
-  <View main class="safe-areas" url="/" />
+  <View main class="safe-areas dark color-deeppurple" url="/" />
 
 </App>
 
