@@ -136,7 +136,7 @@
     "security": {
       "csp": {
         "default-src": "'self' customprotocol: asset:",
-        "font-src": ["https://fonts.gstatic.com"],
+        "font-src": ["'self'", "https://fonts.gstatic.com", "data:"],
         "img-src": "'self' asset: https://asset.localhost blob: data:",
         "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com"
       },
