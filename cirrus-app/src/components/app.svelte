@@ -1,3 +1,4 @@
+
 <App { ...f7params } >
 
  
@@ -5,6 +6,7 @@
   <View main class="safe-areas" url="/" />
 
 </App>
+
 <script>
   import { onMount } from 'svelte';
 
@@ -25,10 +27,6 @@
     // store: store,
     // App routes
     routes: routes,
-    // Register service worker (only on production build)
-    serviceWorker: process.env.NODE_ENV ==='production' ? {
-      path: '/service-worker.js',
-    } : {},
   };
 
   onMount(() => {
