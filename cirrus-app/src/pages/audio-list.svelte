@@ -50,6 +50,7 @@
     const unlisten = await listen(UPDATED_AUDIO_PLAYER_EVENT_NAME, event => {      
       // const { messageType, message } = event.payload;
       const payload = event.payload;
+      console.log("payload: ", payload);
 
       if (payload.messageType === "CurrentStream") {
         if (currentStreamId !== payload.streamId) {
@@ -78,21 +79,9 @@
       }
 
       if (payload.messageType === "StreamStatus") {
-        if (payload.message.StreamStatus === "ReachEnd") {
-          if (loadedNextStream) {
-            return
-          }
-
-          if (audioTags[loadedAudioItemIndex+1] === undefined) {
-            return;
-          }
-
-          let nextAudioTag = audioTags[loadedAudioItemIndex+1];
-
-          command.loadAudio(nextAudioTag.id);
-          loadedNextStream = true;
-          loadedAudioItemIndex += 1;
-        }
+        // if (payload.message.StreamStatus === "ReachEnd") {
+        //   console.log("Reach end");
+        // }
 
         let isAudioPlay = payload.message.StreamStatus === "Play" ? true : false;
         updateAudioButton(isAudioPlay);
@@ -109,19 +98,7 @@
           return;
         }
 
-        if (loadedNextStream) {
-          return;
-        }
-
-        if (audioTags[loadedAudioItemIndex+1] === undefined) {
-          return;
-        }
-
-        let nextAudioTag = audioTags[loadedAudioItemIndex+1];
-
-        command.loadAudio(nextAudioTag.id);
-        loadedNextStream = true;
-        loadedAudioItemIndex += 1;
+        nextAudio();
       }
     });
 
@@ -131,6 +108,30 @@
 
     await emit("stream-status");
   });
+
+  async function nextAudio() {
+    if (loadedNextStream) {
+      return
+    }
+
+    if (audioTags.length <= loadedAudioItemIndex +1) {
+      await fetchAudioTags();
+    } 
+
+    if (audioTags[loadedAudioItemIndex+1] === undefined) {
+      return;
+    }
+
+    let nextAudioTag = audioTags[loadedAudioItemIndex+1];
+
+    let loadedAudioMeta = await command.loadAudio(nextAudioTag.id);
+    loadedNextStream = true;
+    loadedAudioItemIndex += 1;
+
+    if (!isAudioPlay) {
+      await command.playAudio();
+    }
+  }
 
   onDestroy(async() => {
     console.log('destroy');
@@ -207,8 +208,6 @@
   }
 
   async function onAudioListItemClick({ itemIndex, audioId }) {
-    // let loadedAudioLength;
-
     if (playbackContext.audioId === audioId) {
       console.log(`selected same audio`);
 
