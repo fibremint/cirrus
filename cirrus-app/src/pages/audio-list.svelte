@@ -1,18 +1,32 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
 
-  import { Navbar, Page, BlockTitle, List, ListItem, Sheet, Toolbar, Link, PageContent, Block, View, Icon, ListItemCell, Range, Button, Segmented } from 'framework7-svelte';
+  import { 
+    Navbar, 
+    Page, 
+    BlockTitle, 
+    List, 
+    ListItem, 
+    Sheet, 
+    Toolbar, 
+    Link, 
+    PageContent, 
+    Block, 
+    View, 
+    Icon, 
+    Range, 
+    Button, 
+    Segmented,
+    Progressbar,
+    BlockHeader,
+  } from 'framework7-svelte';
   import { listen, emit } from '@tauri-apps/api/event';
   // import { audioStore } from '../js/store';
 
   import differenceBy from 'lodash/differenceBy';
-
   import * as command from '../js/command';
-  import { filter } from 'dom7';
-    import { message } from '@tauri-apps/api/dialog';
 
-  let allowInfinite = true;
-  let showPreloader = true;
+  let isLoading = false;
 
   let currentPage = 1;
   const itemsPerPage = 50;
@@ -23,7 +37,7 @@
   let latestFetchDatetime = 0;
 
   let playbackContext = {
-    audioId: '',
+    audio: null,
     audioLength: 0,
     selectedAudioItemIndex: -1,
     position: 0,
@@ -37,15 +51,20 @@
 
   let loadedAudioLength = 0;
   let loadedAudioItemIndex = -1;
-  let loadedAudioId = '';
   let loadedNextStream = false;
-
-  let currentStreamId = '';
 
   const UPDATED_AUDIO_PLAYER_EVENT_NAME = "update-playback"
 
   onMount(async() => {
-    fetchAudioTags();
+    const audioListMainNode = Array.from(document.getElementById('audio-list-main').children);
+    const pageContent = audioListMainNode.find(e => e.classList.contains('page-content'))
+    pageContent.style = "overflow: hidden;";
+
+    const playerToolbarNode = Array.from(document.getElementById('player-toolbar').children);
+    const toolbarInner = playerToolbarNode.find(e => e.classList.contains('toolbar-inner'))
+    toolbarInner.style = "overflow: visible;";
+
+    fetchAllAudio();
 
     const unlisten = await listen(UPDATED_AUDIO_PLAYER_EVENT_NAME, event => {      
       // const { messageType, message } = event.payload;
@@ -53,30 +72,27 @@
       console.log("payload: ", payload);
 
       if (payload.messageType === "CurrentStream") {
-        if (currentStreamId !== payload.streamId) {
-          currentStreamId = payload.streamId;
-          // loadedNextStream = false;
-          playbackContext.audioLength = 0;
-          playbackContext.position = 0;
-          sliderPos = 0;
-        }
+        let currentAudio = audioTags.filter(item => item.id === payload.streamId)[0];
+        console.log("currentAudio: ", currentAudio);
+
+        playbackContext.audio = currentAudio;
         // currentStreamId = message.streamId;
         playbackContext.audioLength = Math.floor(payload.message.CurrentStream.length);
       }
 
       if (payload.messageType === "ResetState") {
-        currentStreamId = '';
-        playbackContext.audioId = '';
+        playbackContext.audio = null;
         playbackContext.audioLength = 0;
         playbackContext.position = 0;
-        sliderPos = 0;
 
+        sliderPos = 0;
+        
         updateAudioButton(false);
 
         nextAudio();
       }
 
-      if (currentStreamId !== payload.streamId) {
+      if (playbackContext.audio.id !== payload.streamId) {
         return;
       }
 
@@ -105,7 +121,9 @@
   });
 
   async function nextAudio() {
+    console.log('next audio');
     if (loadedNextStream) {
+      console.log('already loaded next audio');
       return
     }
 
@@ -138,22 +156,31 @@
     await command.stopAudio();
   });
 
-  async function fetchAudioTags() {
-    const currentDateTime = Date.now();
-    const isCalledWithinIdleTime = currentDateTime - latestFetchDatetime < 1000;
-    latestFetchDatetime = currentDateTime;
+  async function fetchAllAudio() {
+    while (true) {
+      console.log('fetch all audio');
+      let fetchedItems = await fetchAudioTags();
+      console.log('fetched num: ', fetchedItems)
+      if (fetchedItems === 0 || fetchedItems === undefined) {
+        break;
+      }
+    }
+  }
 
-    if (!allowInfinite || isCalledWithinIdleTime) return;
+  async function fetchAudioTags() {
     console.log("fetch audio tags")
 
-    allowInfinite = false;
-    showPreloader = true;
+    if (isLoading) {
+      return;
+    }
+
+    isLoading = true;
 
     const response = await command.getAudioTags({ itemsPerPage, currentPage });
     if (!Array.isArray(response)) {
         console.log("failed to get audio tags");
-        showPreloader = false;
-        allowInfinite = true;
+        isLoading = false;
+
         return;
     }
 
@@ -164,8 +191,19 @@
       currentPage++;
     }
 
-    allowInfinite = true;
-    showPreloader = false;
+    isLoading = false;
+
+    return uniqueItems.length;
+  }
+
+  function fetchAudioTagsWithDelay() {
+    const currentDateTime = Date.now();
+    const isCalledWithinIdleTime = currentDateTime - latestFetchDatetime < 1000;
+    latestFetchDatetime = currentDateTime;
+
+    if (isCalledWithinIdleTime) return;
+
+    fetchAudioTags();
   }
 
   function updateAudioButton(playStatus) {
@@ -174,7 +212,7 @@
     const foundButtonInner = childrenNodeArr.find(e => e.classList.contains('icon'));
 
     if (foundButtonInner) {
-      foundButtonInner.innerText = playStatus === true ? 'pause_fill' : 'play_fill';
+      foundButtonInner.innerText = playStatus === true ? 'pause' : 'play_arrow';
     }
 
     isAudioPlay = playStatus;
@@ -206,8 +244,11 @@
     userSetPos = 0;
   }
 
-  async function onAudioListItemClick({ itemIndex, audioId }) {
-    if (playbackContext.audioId === audioId) {
+  async function onAudioListItemClick({ itemIndex, audio }) {
+    console.log(audio);
+    if (playbackContext.audio !== null && 
+      playbackContext.audio.id === audio.id) {
+
       console.log(`selected same audio`);
 
       return;
@@ -218,8 +259,8 @@
         await command.stopAudio();
       }
 
-      loadedAudioLength = await command.loadAudio(audioId);
-      loadedAudioId = audioId;
+      loadedAudioLength = await command.loadAudio(audio.id);
+      // loadedAudioId = audioId;
       loadedAudioItemIndex = itemIndex;
       
       await command.playAudio();
@@ -229,14 +270,16 @@
 
     updateAudioButton(true);
 
-    console.log(`play audio: id: ${loadedAudioId}, content length: ${loadedAudioLength}`)
+    playbackContext.audio = audio;
+
+    // console.log(`play audio: id: ${loadedAudioId}, content length: ${loadedAudioLength}`)
   }
 
   async function onPlayPauseButtonChange(event) {
     if (isAudioPlay) {
       await command.stopAudio();
 
-      currentStreamId = '';
+      playbackContext.audio = null;
       playbackContext.audioLength = 0;
       playbackContext.position = 0;
 
@@ -248,39 +291,106 @@
     }
   }
 
+  async function handleForward() {
+    await command.stopAudio();
+    await nextAudio();
+  }
+
 </script>
 
 <Page
-  infinite
-  infiniteDistance={itemsPerPage}
-  infinitePreloader={showPreloader}
-  onInfinite={fetchAudioTags}>
+  id="audio-list-main" >
+  
+  <Navbar title="All Music" backLink="Back" />
 
-  <Navbar title="Audio list" backLink="Back" />
+  <Progressbar infinite={isLoading} ></Progressbar>
 
-  <List mediaList noHairlines>
-    {#each audioTags as item, index (index)}
-      <ListItem
-        selected={index === playbackContext.selectedAudioItemIndex}
-        title={` ${item.title}`} 
-        footer={item.artist}
-        link='#'
-        on:click={onAudioListItemClick({ itemIndex: index, audioId: item.id })} />
-    {/each}
-  </List>
+  <Block
+    style="
+      width: 50%;
+      margin-top: 16px;
+      margin-bottom: 8px;" >
 
-  <Toolbar bottom>
-    <List simpleList style='width:100%'>
-      <ListItem>
-        <!-- <ListItemCell class="width-auto">
+    <div 
+      class="grid grid-gap"
+      style="grid-template-columns: 20fr 40fr 40fr">
+      <p>Sort by</p>
+      <Button raised round>Artist</Button>
+      <Button raised round>Music</Button>
+    </div>
+  </Block>
+  
+  <PageContent
+    id="audio-list-container"
+    infinite
+    infiniteDistance={itemsPerPage}
+    infinitePreloader={false}
+    onInfinite={fetchAudioTagsWithDelay}
+    style="padding-top: 0; margin-bottom: 48px" >
+
+    <List 
+      mediaList
+      noHairlines
+      style="margin: 0;" >
+
+      {#each audioTags as audio, index}
+        <ListItem
+          title={` ${audio.title}`} 
+          footer={audio.artist}
+          link='#'
+          on:click={onAudioListItemClick({ itemIndex: index, audio: audio })} />
+      {/each}
+
+      {#if isLoading}
+        <ListItem
+          class={`skeleton-text skeleton-effect-wave`}
+          title="Skeleton Music Name Field" 
+          footer="Skeleton Artist Name Field" />
+      {/if}
+
+    </List>
+  
+  </PageContent>
+
+  <Toolbar bottom id="player-toolbar">
+    <div style="width: 100%">
+      <!-- recreate range component if 'audioLength' is changed -->
+      {#key playbackContext.audioLength}
+        <Range
+          max={playbackContext.audioLength}
+          step=1
+          value={sliderPos}
+          label={true}
+          formatLabel={i => convertSecToMMSS(i)}
+          onRangeChange={value => onAudioRangeChange(value)} 
+          onRangeChanged={value => onAudioRangeChanged(value)} 
+          style="
+            position: relative;
+            top: -6px;" />
+
+      {/key}
+
+      <div
+        class="grid"
+        style="
+          grid-template-columns: 16fr 84fr;
+          position: relative;
+          top: -6px" >
+        
+        <div 
+          class="grid"
+          style="grid-template-columns: 10fr 10fr 10fr 70fr">
+          <Button
+            small={true}
+            round
+            iconMd="material:first_page"
+            on:click={(e) => onPlayPauseButtonChange(e)} />
+
           <Button 
-            iconF7='backward_fill' />
-        </ListItemCell> -->
-
-        <ListItemCell class="width-auto">
-          <Button 
+            small={true}
+            round
             id="play-pause-btn" 
-            iconF7={isAudioPlay === true ? 'pause_fill' : 'play_fill'} 
+            iconMd={isAudioPlay === true ? "material:pause" : "material:play_arrow"}
             on:click={async(e) => {
               if (isAudioPlay) {
                 await command.pauseAudio();
@@ -290,45 +400,31 @@
 
               updateAudioButton(!isAudioPlay);
             }} />
-        </ListItemCell>
 
-        <!-- <ListItemCell class="width-auto">
-          <Button 
-            iconF7='forward_fill' />
-        </ListItemCell> -->
+          <Button
+            small={true}
+            round
+            iconMd="material:last_page"
+            on:click={(e) => handleForward()} />
+        </div>
 
-        <ListItemCell class="width-auto flex-shrink-0">
-          <!-- <p>{convertSecToMMSS(sliderPos)}</p> -->
-          {#if isUserModifyPlaybackPos}
-            <p>{convertSecToMMSS(userSetPos)}</p>
-          {:else }
-            <p>{convertSecToMMSS(playbackContext.position)}</p>
+        <div
+          style="height: 40px; position: relative;" >
+
+          {#if playbackContext.audio !== null}
+            <BlockTitle
+              style="margin: 0 0 0 10px"
+              >{playbackContext.audio.title}</BlockTitle>
+            <Block
+              style="padding: 0 0 0 10px">
+              <p>{playbackContext.audio.artist}</p>
+            </Block>
           {/if}
-        </ListItemCell>
+        </div>
 
-        {#key playbackContext.audioLength}
-          <ListItemCell class="flex-shrink-3">
-            <!-- recreate range component if 'audioLength' is changed -->
-              <Range
-                max={playbackContext.audioLength}
-                step=1
-                value={sliderPos}
-                onRangeChange={value => onAudioRangeChange(value)} 
-                onRangeChanged={value => onAudioRangeChanged(value)} />
-          </ListItemCell>
-        
-          <ListItemCell class="width-auto flex-shrink-0">
-            <p>{convertSecToMMSS(playbackContext.audioLength)}</p>
-          </ListItemCell>
-        {/key}
+      </div>
+      
+    </div>
 
-        <ListItemCell class="width-auto flex-shrink-0">
-          <Button 
-            id="play-pause-btn" 
-            iconF7='xmark'
-            on:click={(e) => onPlayPauseButtonChange(e)}/>        
-        </ListItemCell>
-      </ListItem>
-    </List>
   </Toolbar>
 </Page>
