@@ -1,10 +1,16 @@
 <Page name="home">
   <!-- Top Navbar -->
-  <Navbar large sliding={false}>
-    <NavLeft>
-      <Link iconIos="f7:menu" iconAurora="f7:menu" iconMd="material:menu" panelOpen="left" />
-    </NavLeft>
-    <NavTitle sliding>Cirrus</NavTitle>
+  <Navbar
+    title="Cirrus"
+    large={false}
+    sliding={false}
+    noHairline={true} >
+
+    <!-- <NavTitle sliding>Cirrus</NavTitle> -->
+    <NavRight>
+      <!-- <Link iconIos="f7:setting" iconAurora="f7:menu" iconMd="material:settings" panelOpen="left" /> -->
+      <Link iconMd="material:settings" panelOpen="left" />
+    </NavRight>
     <!-- <NavRight>
       <Link iconIos="f7:menu" iconAurora="f7:menu" iconMd="material:menu" panelOpen="right" />
     </NavRight> -->
@@ -20,11 +26,15 @@
     <p>Here is your blank Framework7 app. Let's see what we have here.</p>
   </Block> -->
 
-  <BlockTitle>Navigation</BlockTitle>
+  <BlockTitle>Music</BlockTitle>
   <List>
-    <ListItem link='/audio-list/' title="Audio list"/>
+    <ListItem link='/audio-list/' title="All"/>
   </List>
 
+  <!-- <BlockTitle>Settings</BlockTitle>
+  <List>
+    <ListItem link='#' title="Setting"/>
+  </List> -->
 
 </Page>
 
@@ -32,13 +42,14 @@
   import {
     Page,
     Navbar,
-    NavLeft,
+    // NavLeft,
     NavTitle,
     NavTitleLarge,
     Link,
     BlockTitle,
     List,
     ListItem,
+    NavRight,
   } from 'framework7-svelte';
 
 </script>
