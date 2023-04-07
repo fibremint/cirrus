@@ -23,11 +23,11 @@ const config = {
 
 		// ref: https://kit.svelte.dev/docs/adapter-static
 		adapter: adapter({
-			pages: 'build',
-			assets: 'build',
+			pages: 'dist',
+			assets: 'dist',
 			fallback: null,
 			precompress: false,
-			strict: true
+			strict: true,
 		})
 	}
 };

@@ -1,27 +1,19 @@
 {
-  "$schema": "../node_modules/@tauri-apps/cli/schema.json",
-  "build": {
-    "beforeBuildCommand": "yarn build",
-    "beforeDevCommand": "yarn dev",
-    "devPath": "http://localhost:5173",
-    "distDir": "../build"
-  },
   "package": {
     "productName": "cirrus",
     "version": "0.4.0"
   },
+  "build": {
+    "distDir": "../dist",
+    "devPath": "http://localhost:5173",
+    "beforeDevCommand": "yarn dev",
+    "beforeBuildCommand": "yarn build"
+  },
   "tauri": {
-    "allowlist": {
-      "all": false
-    },
     "bundle": {
       "active": true,
-      "category": "DeveloperTool",
-      "copyright": "",
-      "deb": {
-        "depends": []
-      },
-      "externalBin": [],
+      "targets": "all",
+      "identifier": "com.fibremint.cirrus",
       "icon": [
         "icons/32x32.png",
         "icons/128x128.png",
@@ -29,26 +21,30 @@
         "icons/icon.icns",
         "icons/icon.ico"
       ],
-      "identifier": "com.fibremint.cirrus",
-      "longDescription": "",
-      "macOS": {
-        "entitlements": null,
-        "exceptionDomain": "",
-        "frameworks": [],
-        "providerShortName": null,
-        "signingIdentity": null
-      },
-      "resources": [],
+      "resources": [
+        "resources/*"
+      ],
+      "externalBin": [],
+      "copyright": "",
+      "category": "DeveloperTool",
       "shortDescription": "",
-      "targets": "all",
+      "longDescription": "",
+      "deb": {
+        "depends": []
+      },
+      "macOS": {
+        "frameworks": [],
+        "minimumSystemVersion": "",
+        "exceptionDomain": "",
+        "signingIdentity": null,
+        "providerShortName": null,
+        "entitlements": null
+      },
       "windows": {
         "certificateThumbprint": null,
         "digestAlgorithm": "sha256",
         "timestampUrl": ""
       }
-    },
-    "security": {
-      "csp": null
     },
     "updater": {
       "active": false
