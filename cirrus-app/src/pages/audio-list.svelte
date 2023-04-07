@@ -55,7 +55,7 @@
       if (payload.messageType === "CurrentStream") {
         if (currentStreamId !== payload.streamId) {
           currentStreamId = payload.streamId;
-          loadedNextStream = false;
+          // loadedNextStream = false;
           playbackContext.audioLength = 0;
           playbackContext.position = 0;
           sliderPos = 0;
@@ -72,6 +72,8 @@
         sliderPos = 0;
 
         updateAudioButton(false);
+
+        nextAudio();
       }
 
       if (currentStreamId !== payload.streamId) {
@@ -92,13 +94,6 @@
         if (!isUserModifyPlaybackPos) {
           sliderPos = playbackContext.position;
         }
-
-        // Load next audio stream
-        if (playbackContext.audioLength - playbackContext.position > 5) {
-          return;
-        }
-
-        nextAudio();
       }
     });
 
@@ -114,23 +109,27 @@
       return
     }
 
+    loadedNextStream = true;
+
     if (audioTags.length <= loadedAudioItemIndex +1) {
       await fetchAudioTags();
     } 
 
     if (audioTags[loadedAudioItemIndex+1] === undefined) {
+      loadedNextStream = false;
       return;
     }
 
     let nextAudioTag = audioTags[loadedAudioItemIndex+1];
 
     let loadedAudioMeta = await command.loadAudio(nextAudioTag.id);
-    loadedNextStream = true;
     loadedAudioItemIndex += 1;
 
     if (!isAudioPlay) {
       await command.playAudio();
     }
+
+    loadedNextStream = false;
   }
 
   onDestroy(async() => {
