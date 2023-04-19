@@ -25,9 +25,9 @@
         "resources/*"
       ],
       "externalBin": [],
-      "copyright": "",
-      "category": "DeveloperTool",
-      "shortDescription": "",
+      "copyright": "MIT",
+      "category": "Music",
+      "shortDescription": "Cirrus is an open source audio streaming service",
       "longDescription": "",
       "deb": {
         "depends": []
