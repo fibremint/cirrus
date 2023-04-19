@@ -32,7 +32,7 @@ pub async fn run() {
         window_builder = window_builder
           .transparent(true)
           .shadow(true)
-          .decorations(false);
+          .decorations(true);
       }
 
       let window = window_builder.build().unwrap();
