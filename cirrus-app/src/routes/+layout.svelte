@@ -1,55 +1,15 @@
 <script>
-	// import { append } from 'svelte/internal';
-	import Header from './Header.svelte';
-	import './styles.css';
-	import '../app.css';
+  import { TitleBar } from '$lib/components/titlebar';
+	
+  import '../app.css';
+
 </script>
 
-<div class="app">
-	<Header />
+<div class="flex flex-col min-h-screen bg-transparent">
+	<TitleBar />
+  <!-- <Header /> -->
 
-	<main>
+	<main class="flex flex-grow flex-col p-4 w-full max-w-5xl my-0 mx-auto box-border bg-transparent">
 		<slot />
 	</main>
-
-	<footer>
-		<p>visit <a href="https://kit.svelte.dev">kit.svelte.dev</a> to learn SvelteKit</p>
-	</footer>
 </div>
-
-<style>
-	.app {
-		display: flex;
-		flex-direction: column;
-		min-height: 100vh;
-	}
-
-	main {
-		flex: 1;
-		display: flex;
-		flex-direction: column;
-		padding: 1rem;
-		width: 100%;
-		max-width: 64rem;
-		margin: 0 auto;
-		box-sizing: border-box;
-	}
-
-	footer {
-		display: flex;
-		flex-direction: column;
-		justify-content: center;
-		align-items: center;
-		padding: 12px;
-	}
-
-	footer a {
-		font-weight: bold;
-	}
-
-	@media (min-width: 480px) {
-		footer {
-			padding: 12px 0;
-		}
-	}
-</style>
