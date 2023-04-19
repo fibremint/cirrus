@@ -49,7 +49,14 @@
     "updater": {
       "active": false
     },
-    "allowlist": {},
+    "allowlist": {
+      "window": {
+        "all": true
+      },
+      "os": {
+        "all": true
+      }
+    },
     "security": {
       "csp": null
     }
