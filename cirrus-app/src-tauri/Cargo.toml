@@ -1,25 +1,31 @@
 [package]
 name = "app"
-version = "0.3.0"
-description = "Cirrus client application"
-authors = ["fibremint"]
+version = "0.4.0-alpha.0"
+description = "A Tauri App"
+authors = ["Dave Kim (fibremint)"]
 license = "MIT"
 repository = "https://github.com/fibremint/cirrus"
-default-run = "app"
+#default-run = "app"
 edition = "2021"
 rust-version = "1.57"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "1.0.0-rc.4", features = [] }
+tauri-build = { version = "2.0.0-alpha.4", features = ["codegen"] }
 
 [dependencies]
-cirrus-tauri-plugin = { path = "../../crates/cirrus-tauri-plugin" }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
-tauri = { version = "1.1.1", features = [] }
 tokio = "1"
+
+[dependencies.cirrus-tauri-plugin]
+path = "../../crates/cirrus-tauri-plugin"
+
+[dependencies.tauri]
+version = "2.0.0-alpha.8"
+features = []
 
 [features]
 # by default Tauri runs in production mode
